@@ -69,10 +69,23 @@ v1.0 新增（PRD 没有）：`component_of`、`issued_by`、`belongs_to`（stru
 
 ---
 
-## 待决事项（M1 plugin.proto 定稿前必须拍板）
+## 2026-07-31 (M1 proto freeze)
 
-1. **PushSnapshots 的 ack 通路**：流式推送（`PluginMessage.push_snapshots`）没有对应的 ack 载荷——`PushSnapshotsResponse` 当前不可达（`CoreMessage` oneof 无该变体，也无 unary push RPC），插件拿不到 inserted / deduplicated / rejected 计数。候选：(a) `CoreMessage` 增加 `push_ack` 变体（推荐，保持单连接语义与背压路径）；(b) 增加 unary `PushSnapshots` RPC 作为并行路径。
-2. **ContextTemplates 是否入 v1 契约**：PRD §10.2 的 Context Builder 能力在 `RegisterPluginRequest` 中无字段。候选：(a) 推迟到 Phase 2（推荐，MVP Research 仅用 Ontology 展开，PRD 勘误已注明）；(b) M1 扩展 proto 增加 `ContextTemplate` 声明。
+### ADR-9: PushSnapshots ack via CoreMessage.push_ack
+**Decision:** Add `PushAck` message and `CoreMessage.push_ack` oneof variant. Plugins receive push acks over the same bidirectional stream.
+**Rationale:** Keeps single-connection semantics (ADR-1) and reuses the existing sendCh backpressure path. No new unary RPC needed.
+**Alternatives:** (a) unary `PushSnapshots` RPC — would require separate connection management and bypass stream-aware flow control.
+
+### ADR-10: ContextTemplates deferred to Phase 2
+**Decision:** Do NOT add `ContextTemplate` to `RegisterPluginRequest` in M1. MVP Research assembler uses Ontology expansion only (entities + relations + rules).
+**Rationale:** PRD erratum already notes Context Builder as Phase 2. Keeping proto lean for M1 reduces scope risk. Can be added later via proto field addition (backward compatible).
+
+---
+
+## 待决事项（已解决）
+
+~~1. PushSnapshots ack~~ → ADR-9 (M1)
+~~2. ContextTemplates~~ → ADR-10 (deferred to Phase 2)
 
 ---
 

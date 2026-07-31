@@ -1,10 +1,10 @@
 version: v2
+inputs:
+  - directory: proto
 plugins:
-  - plugin: go
+  - local: protoc-gen-go
     out: pkg/proto
-    opt:
-      - paths=source_relative
-  - plugin: go-grpc
+    opt: paths=source_relative
+  - local: protoc-gen-go-grpc
     out: pkg/proto
-    opt:
-      - paths=source_relative
+    opt: paths=source_relative

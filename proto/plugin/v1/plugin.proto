@@ -243,5 +243,14 @@ message CoreMessage {
   oneof payload {
     SyncCommand sync = 1;
     BackfillCommand backfill = 2;
+    PushAck push_ack = 3;       // M1: ack for stream push (ADR-9)
   }
+}
+
+message PushAck {
+  string plugin_id = 1;
+  int32 inserted = 2;
+  int32 deduplicated = 3;
+  int32 rejected = 4;
+  string message = 5;
 }
