@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Capital Observatory</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #0a0e1a;
+            color: #e0e6f0;
+            line-height: 1.6;
+        }
+        header {
+            background: linear-gradient(135deg, #1a1f35, #0f1525);
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid #2a3450;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        h1 { font-size: 1.4rem; font-weight: 600; color: #64ffda; }
+        .subtitle { font-size: 0.85rem; color: #8892b0; margin-top: 2px; }
+        main { padding: 2rem; max-width: 1200px; margin: 0 auto; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+        .card {
+            background: #131a2e;
+            border: 1px solid #1e2a45;
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+        .card h2 { font-size: 1rem; color: #64ffda; margin-bottom: 1rem; }
+        .alert-item {
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            background: #1a2340;
+            border-radius: 8px;
+            border-left: 3px solid;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .alert-item:hover { background: #1f2d50; }
+        .alert-item.critical { border-left-color: #ef4444; }
+        .alert-item.warning { border-left-color: #f59e0b; }
+        .alert-item.info { border-left-color: #3b82f6; }
+        .alert-title { font-weight: 500; font-size: 0.9rem; }
+        .alert-meta { font-size: 0.75rem; color: #8892b0; margin-top: 4px; }
+        #trend-chart { width: 100%; height: 300px; }
+        .status-pill {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            background: #1e2a45;
+            color: #64ffda;
+        }
+        .empty { text-align: center; color: #4a5570; padding: 2rem; }
+        #alert-detail { display: none; }
+        #alert-detail.active { display: block; }
+    </style>
+</head>
+<body>
+    <header>
+        <div>
+            <h1>Capital Observatory</h1>
+            <div class="subtitle">Anomaly Detection for Capital Markets</div>
+        </div>
+        <span class="status-pill" id="status-pill">connecting...</span>
+    </header>
+    <main>
+        <div id="alerts-view">
+            <div class="grid">
+                <div class="card">
+                    <h2>Active Alerts</h2>
+                    <div id="alerts-list">
+                        <div class="empty">Loading...</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h2>Alert Detail & Trend</h2>
+                    <div id="alert-detail">
+                        <p id="detail-title" style="font-weight:600; margin-bottom:0.5rem;"></p>
+                        <p id="detail-summary" style="font-size:0.85rem; color:#8892b0; margin-bottom:1rem;"></p>
+                        <div id="trend-chart"></div>
+                        <div id="relations-section" style="margin-top:1rem;">
+                            <h3 style="font-size:0.85rem; color:#64ffda;">Related Entities</h3>
+                            <ul id="relations-list" style="font-size:0.8rem; margin-top:0.5rem;"></ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let trendChart = null;
+
+        async function loadAlerts() {
+            try {
+                const resp = await fetch(`${API_BASE}/api/alerts`);
+                const alerts = await resp.json();
+                renderAlerts(alerts);
+                document.getElementById('status-pill').textContent = 'online';
+            } catch (err) {
+                document.getElementById('status-pill').textContent = 'offline';
+                document.getElementById('alerts-list').innerHTML =
+                    '<div class="empty">Cannot reach API</div>';
+            }
+        }
+
+        function renderAlerts(alerts) {
+            const list = document.getElementById('alerts-list');
+            if (!alerts || alerts.length === 0) {
+                list.innerHTML = '<div class="empty">No active alerts</div>';
+                return;
+            }
+            list.innerHTML = alerts.map(a => `
+                <div class="alert-item ${a.severity}" onclick="showAlertDetail('${a.id}')">
+                    <div class="alert-title">${a.title}</div>
+                    <div class="alert-meta">${a.metric_id} &middot; ${a.severity} &middot; ${new Date(a.triggered_at).toLocaleString()}</div>
+                </div>
+            `).join('');
+        }
+
+        async function showAlertDetail(alertID) {
+            const detail = document.getElementById('alert-detail');
+            detail.classList.add('active');
+
+            try {
+                const resp = await fetch(`${API_BASE}/api/research/${alertID}`);
+                if (!resp.ok) {
+                    document.getElementById('detail-title').textContent = alertID;
+                    document.getElementById('detail-summary').textContent = 'Research context not yet available (snapshot is created when alert triggers)';
+                    return;
+                }
+                const rc = await resp.json();
+                document.getElementById('detail-title').textContent = rc.alert_id || alertID;
+                document.getElementById('detail-summary').textContent =
+                    `${rc.metric_name || rc.metric_id} &mdash; current: ${rc.current_value || 'N/A'}, threshold: ${rc.threshold || 'N/A'}`;
+
+                // Render trend chart.
+                if (rc.recent_trend && rc.recent_trend.length > 0) {
+                    renderTrend(rc.recent_trend);
+                } else {
+                    document.getElementById('trend-chart').innerHTML =
+                        '<div class="empty" style="height:150px;">No recent trend data</div>';
+                }
+
+                // Render relations.
+                const relList = document.getElementById('relations-list');
+                if (rc.relations && rc.relations.length > 0) {
+                    relList.innerHTML = rc.relations.map(r =>
+                        `<li>${r.source_id} &rarr; ${r.target_id} (${r.relation_type})</li>`
+                    ).join('');
+                } else {
+                    relList.innerHTML = '<li>None</li>';
+                }
+            } catch (err) {
+                document.getElementById('detail-title').textContent = alertID;
+                document.getElementById('detail-summary').textContent = 'Error loading detail';
+            }
+        }
+
+        function renderTrend(points) {
+            const el = document.getElementById('trend-chart');
+            el.innerHTML = '';
+            if (!trendChart) {
+                trendChart = echarts.init(el);
+            }
+            trendChart.setOption({
+                backgroundColor: 'transparent',
+                grid: { top: 20, right: 20, bottom: 30, left: 50 },
+                xAxis: {
+                    type: 'time',
+                    axisLine: { lineStyle: { color: '#2a3450' } },
+                    axisLabel: { color: '#8892b0', fontSize: 10 }
+                },
+                yAxis: {
+                    type: 'value',
+                    axisLine: { lineStyle: { color: '#2a3450' } },
+                    axisLabel: { color: '#8892b0', fontSize: 10 },
+                    splitLine: { lineStyle: { color: '#1a2340' } }
+                },
+                series: [{
+                    type: 'line',
+                    data: points.map(p => [new Date(p.time), p.value]),
+                    smooth: true,
+                    lineStyle: { color: '#64ffda', width: 2 },
+                    areaStyle: { color: 'rgba(100,255,218,0.1)' },
+                    symbol: 'none'
+                }]
+            });
+        }
+
+        // Initial load + refresh every 30s.
+        loadAlerts();
+        setInterval(loadAlerts, 30000);
+
+        // Responsive chart.
+        window.addEventListener('resize', () => {
+            if (trendChart) trendChart.resize();
+        });
+    </script>
+</body>
+</html>
