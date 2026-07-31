@@ -36,7 +36,7 @@ func main() {
 	}
 
 	store := ontology.NewStore(db)
-	mgr := pluginmgr.NewManager(store)
+	mgr := pluginmgr.NewManager(store, db)
 	handler := pluginmgr.NewHandler(mgr)
 
 	addr := os.Getenv("CORE_BIND")

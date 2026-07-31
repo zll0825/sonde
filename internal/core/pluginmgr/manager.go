@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"capital_observatory/internal/core/metric"
 	"capital_observatory/internal/core/ontology"
 	pb "capital_observatory/pkg/proto/plugin/v1"
 )
@@ -18,14 +19,20 @@ type Manager struct {
 	mu       sync.RWMutex
 	sessions map[string]*StreamSession // pluginID → session
 	store    *ontology.Store
+	ingester *metric.Ingester
+	db       metric.DB
 }
 
 // NewManager creates a plugin manager backed by the given store.
-func NewManager(store *ontology.Store) *Manager {
-	return &Manager{
+// db is kept locally so the ingester's resolver/pending tracker share the pool.
+func NewManager(store *ontology.Store, db metric.DB) *Manager {
+	m := &Manager{
 		sessions: make(map[string]*StreamSession),
 		store:    store,
+		db:       db,
 	}
+	m.ingester = metric.NewIngester(store, db)
+	return m
 }
 
 // RegisterSession holds a new stream session for a plugin.
@@ -91,11 +98,35 @@ func (m *Manager) HandlePluginMessage(msg *pb.PluginMessage) error {
 }
 
 func (m *Manager) handlePushSnapshots(ps *pb.PushSnapshotsRequest) error {
-	// M2 will implement quality scoring + observations insert.
-	log.Debug().
+	// Determine if plugin is currently healthy (M3+ tracks real status).
+	isHealthy := true
+	result, err := m.ingester.Ingest(context.Background(), ps, isHealthy)
+	if err != nil {
+		log.Error().Err(err).Str("plugin_id", ps.PluginId).Msg("ingestion failed")
+		return err
+	}
+
+	log.Info().
 		Str("plugin_id", ps.PluginId).
-		Int("count", len(ps.Snapshots)).
-		Msg("push received (no-op until M2)")
+		Int("inserted", result.Inserted).
+		Int("dedup", result.Duplicates).
+		Int("rejected", result.Rejected).
+		Int("pending", len(result.PendingSeen)).
+		Msg("push ingested")
+
+	// Send PushAck over the stream if the plugin has an active session.
+	if session := m.GetSession(ps.PluginId); session != nil {
+		_ = session.SendAsync(&pb.CoreMessage{
+			Payload: &pb.CoreMessage_PushAck{
+				PushAck: &pb.PushAck{
+					PluginId:     ps.PluginId,
+					Inserted:     int32(result.Inserted),
+					Deduplicated: int32(result.Duplicates),
+					Rejected:     int32(result.Rejected),
+				},
+			},
+		})
+	}
 	return nil
 }
 

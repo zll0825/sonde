@@ -5,10 +5,12 @@ package ontology
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"capital_observatory/pkg/model"
 	pb "capital_observatory/pkg/proto/plugin/v1"
@@ -376,6 +378,53 @@ func insertRuleSuggestion(ctx context.Context, tx pgx.Tx, pluginID string, rule 
 		return fmt.Errorf("insert rule suggestion: %w", err)
 	}
 	return nil
+}
+
+// InsertObservation writes a scored, source-resolved observation into the observations table.
+// The unique index idx_obs_idempotency enforces dedup: same (metric_uid, time, source, labels_hash)
+// returns a PG 23505 unique violation which callers should interpret as "duplicate".
+//
+// Quality values are passed directly (no dependency on metric.QualityResult avoids an import cycle).
+func (s *Store) InsertObservation(ctx context.Context, snap *pb.MetricSnapshot, grade string, confidence float64, systemScore float64, labelsHash, pluginID string) error {
+	_, err := s.db.Exec(ctx, `
+		INSERT INTO observations (
+			time, metric_id, metric_uid, value, labels, labels_hash,
+			source_plugin, source_plugin_version, source_provider, source_fetched_at,
+			quality_grade, quality_confidence, system_quality_score, ingested_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6,
+			$7, $8, $9, $10,
+			$11, $12, $13, NOW()
+		)
+	`, time.Unix(snap.Timestamp, 0), snap.MetricId, deriveMetricUID(snap.MetricId), snap.Value,
+		labelsToBytes(snap.Labels), labelsHash,
+		pluginID, snap.SourcePluginVersion, snap.SourceProvider,
+		time.Unix(snap.SourceFetchedAt, 0),
+		grade, confidence, systemScore)
+
+	if err != nil {
+		return fmt.Errorf("insert observation: %w", err)
+	}
+	return nil
+}
+
+// deriveMetricUID generates a deterministic UID from a metric_id for observations
+// that don't have a pre-registered UID. Real registrations use CreateMetricUID().
+func deriveMetricUID(metricID string) string {
+	h := sha256.Sum256([]byte(metricID))
+	return "mtr_" + hex.EncodeToString(h[:])[:12]
+}
+
+// labelsToBytes serializes a labels map for the JSONB column.
+func labelsToBytes(labels map[string]string) []byte {
+	if len(labels) == 0 {
+		return []byte("{}")
+	}
+	b, err := json.Marshal(labels)
+	if err != nil {
+		return []byte("{}")
+	}
+	return b
 }
 
 // entityTypeToString converts a proto EntityType enum to its lowercase DB label.
