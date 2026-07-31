@@ -73,3 +73,14 @@ v1.0 新增（PRD 没有）：`component_of`、`issued_by`、`belongs_to`（stru
 
 1. **PushSnapshots 的 ack 通路**：流式推送（`PluginMessage.push_snapshots`）没有对应的 ack 载荷——`PushSnapshotsResponse` 当前不可达（`CoreMessage` oneof 无该变体，也无 unary push RPC），插件拿不到 inserted / deduplicated / rejected 计数。候选：(a) `CoreMessage` 增加 `push_ack` 变体（推荐，保持单连接语义与背压路径）；(b) 增加 unary `PushSnapshots` RPC 作为并行路径。
 2. **ContextTemplates 是否入 v1 契约**：PRD §10.2 的 Context Builder 能力在 `RegisterPluginRequest` 中无字段。候选：(a) 推迟到 Phase 2（推荐，MVP Research 仅用 Ontology 展开，PRD 勘误已注明）；(b) M1 扩展 proto 增加 `ContextTemplate` 声明。
+
+---
+
+## 2026-07-31 (M0)
+
+### ADR-8: Database migration tool = golang-migrate
+**Decision:** Use [golang-migrate](https://github.com/golang-migrate/migrate) with raw SQL migration files under `migrations/`.
+**Rationale:** Schema is already frozen in `docs/database-schema.md` as raw SQL — no DSL or code-generation step needed. golang-migrate is file-based, supports `.up.sql` / `.down.sql` pairs, and works with any PostgreSQL driver.
+**Alternatives:** (a) Atlas — HCL DSL, generates diffs from live DB → unnecessary when schema is frozen; (b) goose — similar but less ecosystem traction.
+**Convention:** Migration files named `NNN_description.up.sql` / `NNN_description.down.sql`. Applied via `make migrate-up` (reads `$DB_URL`).
+**Baseline:** `001_baseline.up.sql` contains all 14 tables + indexes from `docs/database-schema.md`.

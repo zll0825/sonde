@@ -1,0 +1,83 @@
+# Capital Observatory — CI Pipeline
+# M0 deliverable: gofmt / go build / go vet / go test / buf lint
+
+name: CI
+
+on:
+  push:
+    branches: [main, longcat/**]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: gofmt
+        run: |
+          FILES=$(gofmt -l .)
+          if [ -n "$FILES" ]; then
+            echo "The following files need formatting:"
+            echo "$FILES"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: buf lint
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: "1.34.0"
+      - run: buf lint proto
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Build all packages
+        run: go build ./...
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: build
+    services:
+      timescaledb:
+        image: timescale/timescaledb:2.16.1-pg16
+        env:
+          POSTGRES_USER: capital
+          POSTGRES_PASSWORD: capital_test
+          POSTGRES_DB: capital_observatory_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://capital:capital_test@localhost:5432/capital_observatory_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Run tests
+        run: go test -v -race -count=1 ./...
