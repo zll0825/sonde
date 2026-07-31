@@ -1,0 +1,29 @@
+# OS junk
+.DS_Store
+
+# Go build artifacts
+/bin/
+tmp/
+*.test
+*.out
+*.exe
+*.coverprofile
+
+# Python bytecode (Trellis scripts)
+__pycache__/
+*.pyc
+
+# Node (web/, from M5 on)
+node_modules/
+.next/
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local per-machine agent settings
+.claude/settings.local.json
+
+# Logs
+*.log
