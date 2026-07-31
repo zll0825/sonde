@@ -1,0 +1,140 @@
+// Package detector evaluates rules against observations and produces trigger events.
+package detector
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"capital_observatory/pkg/model"
+)
+
+// Detector evaluates a single rule against observation data.
+// Each detector_type (threshold, percentile, trend) implements this interface.
+type Detector interface {
+	// Evaluate checks the rule against the provided observations.
+	// Returns a Trigger if the rule fires, or nil if it doesn't.
+	Evaluate(ctx context.Context, rule model.Rule, observations []model.Observation) (*Trigger, error)
+
+	// Name returns the detector type identifier.
+	Name() string
+}
+
+// Trigger represents a fired rule evaluation.
+type Trigger struct {
+	RuleID        int
+	RuleName      string
+	MetricID      string
+	DetectorName  string
+	Severity      model.Severity
+	WindowStart   time.Time
+	WindowEnd     time.Time
+	Evidence      map[string]interface{}
+	DedupKey      string // hash(metric_id + rule_id + window_end)
+	RuleVersion   int
+	RuleEffective time.Time
+	PluginID      string
+}
+
+// Engine orchestrates rule evaluation across all detectors.
+// It is observation-driven: the caller pushes a batch of new observations,
+// and the engine evaluates every rule whose metric_id matches.
+type Engine struct {
+	detectors map[string]Detector // detector_name → detector
+}
+
+// NewEngine creates a detector engine with the given detectors registered.
+func NewEngine(detectors ...Detector) *Engine {
+	d := make(map[string]Detector, len(detectors))
+	for _, det := range detectors {
+		d[det.Name()] = det
+	}
+	return &Engine{detectors: d}
+}
+
+// EvaluateBatch evaluates all matching rules for each observation group.
+// Observations MUST be pre-grouped by MetricID. The engine looks up active
+// rules for each metric_id and runs the configured detector.
+func (e *Engine) EvaluateBatch(ctx context.Context, groups map[string][]model.Observation, rules []model.Rule) []*Trigger {
+	var triggers []*Trigger
+
+	obsByMetric := make(map[string][]model.Observation)
+	for _, rule := range rules {
+		if !rule.Enabled {
+			continue
+		}
+		obs, ok := groups[rule.MetricID]
+		if !ok || len(obs) == 0 {
+			continue
+		}
+		obsByMetric[rule.MetricID] = mergeObservations(obsByMetric[rule.MetricID], obs)
+	}
+
+	for _, rule := range rules {
+		if !rule.Enabled {
+			continue
+		}
+		det, ok := e.detectors[rule.DetectorName]
+		if !ok {
+			continue // unknown detector type
+		}
+
+		obs := obsByMetric[rule.MetricID]
+		if len(obs) == 0 {
+			continue
+		}
+
+		trigger, err := det.Evaluate(ctx, rule, obs)
+		if err != nil {
+			// log and continue — don't let one detector failure stop others
+			continue
+		}
+		if trigger != nil {
+			triggers = append(triggers, trigger)
+		}
+	}
+
+	return triggers
+}
+
+// Register adds or replaces a detector implementation.
+func (e *Engine) Register(d Detector) {
+	e.detectors[d.Name()] = d
+}
+
+// HasDetector returns true if the named detector is registered.
+func (e *Engine) HasDetector(name string) bool {
+	_, ok := e.detectors[name]
+	return ok
+}
+
+// mergeObservations appends and deduplicates by (metric_uid, time).
+func mergeObservations(existing, incoming []model.Observation) []model.Observation {
+	seen := make(map[string]struct{}, len(existing))
+	for _, o := range existing {
+		key := fmt.Sprintf("%s|%d", o.MetricUID, o.Time.UnixNano())
+		seen[key] = struct{}{}
+	}
+	result := append([]model.Observation{}, existing...)
+	for _, o := range incoming {
+		key := fmt.Sprintf("%s|%d", o.MetricUID, o.Time.UnixNano())
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, o)
+	}
+	return result
+}
+
+// ComputeDedupKey creates a stable dedup key for an alert.
+func ComputeDedupKey(metricID string, ruleID int, windowEnd time.Time) string {
+	return fmt.Sprintf("%s|%d|%d", metricID, ruleID, windowEnd.Unix())
+}
+
+// EvidenceJSON serializes trigger evidence to JSON bytes for storage.
+func EvidenceJSON(ev map[string]interface{}) []byte {
+	b, _ := json.Marshal(ev)
+	return b
+}
