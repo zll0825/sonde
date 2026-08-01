@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"capital_observatory/internal/core/alert"
 	"capital_observatory/internal/core/store"
 	"capital_observatory/pkg/model"
 	pb "capital_observatory/pkg/proto/plugin/v1"
@@ -450,12 +451,12 @@ func TestIntegration_RuleReview_HumanOverrideWins(t *testing.T) {
 		t.Fatalf("first CreateAlertWithEvent: %v", err)
 	}
 
-	// Second insert with same dedup_key must return ErrDuplicateAlert.
+	// Second insert with same dedup_key must return alert.ErrDuplicateAlert.
 	err := alertStore.CreateAlertWithEvent(context.Background(), makeAlert("alert_002"), "alert.raised", []byte(`{"id":"alert_002"}`))
 	if err == nil {
 		t.Fatal("expected ErrDuplicateAlert on second insert with same dedup_key (both active), got nil")
 	}
-	if !errors.Is(err, store.ErrDuplicateAlert) {
-		t.Fatalf("expected errors.Is(err, ErrDuplicateAlert); got %v (type %T)", err, err)
+	if !errors.Is(err, alert.ErrDuplicateAlert) {
+		t.Fatalf("expected errors.Is(err, alert.ErrDuplicateAlert); got %v (type %T)", err, err)
 	}
 }

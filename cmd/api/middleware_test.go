@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// headerToken returns the bearer <_REDACTED> to set on a test request.
+// headerToken returns the bearer token to set on a test request.
 // We read the token from the env at test execution time so that the
 // literal string is never passed through fmt print/verb expansion.
 func headerToken(token string) string {
@@ -72,7 +72,7 @@ func TestAuthMiddleware_POST_CorrectToken(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if !called {
-		t.Error("handler should be called with correct bearer <_REDACTED>")
+		t.Error("handler should be called with correct bearer token")
 	}
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", rec.Code)

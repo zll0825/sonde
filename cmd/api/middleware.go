@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -41,7 +42,7 @@ func authMiddleware(next http.Handler) http.Handler {
 		const prefix = "Bearer "
 		if !strings.HasPrefix(auth, prefix) || strings.TrimPrefix(auth, prefix) != expected {
 			writeJSON(w, http.StatusForbidden, map[string]string{
-				"error": "missing or invalid bearer <_REDACTED>",
+				"error": "missing or invalid bearer token",
 			})
 			return
 		}
@@ -49,9 +50,19 @@ func authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// Rate-limit tuning. Buckets refill at rateLimitPerSecond, burst up to
+// rateLimitBurstCap. Idle buckets are swept so the per-IP map cannot grow
+// without bound under address churn.
+const (
+	rateLimitPerSecond = 10
+	rateLimitBurstCap  = 100
+	bucketIdleTTL      = 10 * time.Minute
+	bucketSweepEvery   = time.Minute
+)
+
 // rateLimitMiddleware is a fixed-window token bucket per client IP.
-// Capacity 10 per second, refilled at 10/sec. Control endpoints are bursty
-// (rare) so this is intentionally lenient; research / alerts can serve 10/s.
+// Control endpoints are bursty (rare) so this is intentionally lenient;
+// research / alerts can serve rateLimitPerSecond sustained.
 func rateLimitMiddleware(next http.Handler) http.Handler {
 	type bucket struct {
 		tokens int
@@ -59,24 +70,37 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 	}
 
 	var (
-		mu      sync.Mutex
-		buckets = make(map[string]*bucket)
+		mu        sync.Mutex
+		buckets   = make(map[string]*bucket)
+		lastSweep = time.Now()
 	)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip, _, _ := strings.Cut(r.RemoteAddr, ":")
+		key := clientKey(r.RemoteAddr)
+		now := time.Now()
+
 		mu.Lock()
-		b, ok := buckets[ip]
+		// Opportunistic sweep: drop buckets idle past the TTL.
+		if now.Sub(lastSweep) > bucketSweepEvery {
+			for ip, b := range buckets {
+				if now.Sub(b.last) > bucketIdleTTL {
+					delete(buckets, ip)
+				}
+			}
+			lastSweep = now
+		}
+
+		b, ok := buckets[key]
 		if !ok {
-			b = &bucket{tokens: 10, last: time.Now()}
-			buckets[ip] = b
+			b = &bucket{tokens: rateLimitPerSecond, last: now}
+			buckets[key] = b
 		}
 		// Refill.
-		elapsed := time.Since(b.last)
-		refill := int(elapsed.Seconds() * 10)
+		elapsed := now.Sub(b.last)
+		refill := int(elapsed.Seconds() * rateLimitPerSecond)
 		if refill > 0 {
-			b.tokens = min(100, b.tokens+refill) // cap at 100
-			b.last = time.Now()
+			b.tokens = min(rateLimitBurstCap, b.tokens+refill)
+			b.last = now
 		}
 		if b.tokens <= 0 {
 			mu.Unlock()
@@ -92,9 +116,13 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
+// clientKey extracts the client IP from RemoteAddr. net.SplitHostPort handles
+// IPv6 literals ("[::1]:8080") correctly — a naive cut at the first colon
+// would collapse every IPv6 client into one shared bucket.
+func clientKey(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return remoteAddr
 	}
-	return b
+	return host
 }

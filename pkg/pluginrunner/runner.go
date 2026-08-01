@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -66,12 +67,18 @@ func (r *Runner) Register(ctx context.Context, req *pb.RegisterPluginRequest) (s
 }
 
 // Run opens the bidirectional stream and starts the read loop.
-// pluginID is sent via metadata so Core can identify the caller.
+// pluginID is sent via metadata so Core can identify the caller. When
+// $CORE_STREAM_TOKEN is set (shared secret with Core), it is attached as
+// x-plugin-token — Core rejects token-less streams when it has one configured.
 func (r *Runner) Run(ctx context.Context, pluginID string) error {
 	r.ctx, r.cancel = context.WithCancel(ctx)
 
-	// Attach plugin ID metadata for stream identification.
-	md := metadata.New(map[string]string{"x-plugin-id": pluginID})
+	// Attach plugin ID (+ optional stream token) metadata for identification.
+	mdPairs := map[string]string{"x-plugin-id": pluginID}
+	if token := os.Getenv("CORE_STREAM_TOKEN"); token != "" {
+		mdPairs["x-plugin-token"] = token
+	}
+	md := metadata.New(mdPairs)
 	ctx = metadata.NewOutgoingContext(r.ctx, md)
 
 	var err error
@@ -125,7 +132,13 @@ func (r *Runner) Run(ctx context.Context, pluginID string) error {
 
 // SubmitSnapshots enqueues a PushSnapshots message to the send channel.
 // Callers use this instead of calling stream.Send directly.
+// Safe to call before Run: the batch is dropped with a warning rather than
+// dereferencing the not-yet-initialized session context.
 func (r *Runner) SubmitSnapshots(pluginID string, snapshots []*pb.MetricSnapshot) {
+	if r.ctx == nil {
+		log.Warn().Str("plugin", r.pluginName).Msg("runner not started, dropping push")
+		return
+	}
 	select {
 	case r.sendCh <- &pb.PluginMessage{
 		Payload: &pb.PluginMessage_PushSnapshots{

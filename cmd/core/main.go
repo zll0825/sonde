@@ -51,15 +51,23 @@ func main() {
 	outboxStore := store.NewPostgresOutboxStore(db)
 	outboxWorker := alert.NewOutboxWorker(outboxStore, 5*time.Second)
 
+	// Notification-hook stub: without a registered handler every alert.triggered
+	// event would exhaust its retries and land in status='failed'. Phase 2
+	// replaces this with a real notifier (webhook / email / slack).
+	outboxWorker.RegisterHandler(alert.EventTypeAlertTriggered, func(_ context.Context, ev alert.OutboxEvent) error {
+		log.Info().
+			Int("event_id", ev.ID).
+			RawJSON("payload", ev.Payload).
+			Msg("alert event dispatched (notification stub)")
+		return nil
+	})
+
 	// ── M4: research assembly ──────────────────────────────────────────────────
 	researchStore := store.NewPostgresResearchStore(db)
 	researchAsm := research.NewAssembler(researchStore)
 
-	// ── Observation querier (shared by pipeline + outbox) ──────────────────────
-	obsQuerier := store.NewPostgresResearchStore(db)
-
-	// ── Manager (wires M1–M4) ──────────────────────────────────────────────────
-	mgr := pluginmgr.NewManager(repo, db, detEngine, alertEng, researchAsm, obsQuerier)
+	// ── Manager (wires M1–M4; researchStore doubles as the observation querier) ─
+	mgr := pluginmgr.NewManager(repo, db, detEngine, alertEng, researchAsm, researchStore)
 	handler := pluginmgr.NewHandler(mgr)
 
 	// ── gRPC server ────────────────────────────────────────────────────────────

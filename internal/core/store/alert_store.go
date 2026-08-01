@@ -13,13 +13,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 
+	"capital_observatory/internal/core/alert"
 	"capital_observatory/pkg/model"
 )
-
-// ErrDuplicateAlert is returned when a concurrent insert already created an
-// active alert for the same dedup_key (PG unique violation 23505 on the
-// partial index idx_alerts_active_dedup).
-var ErrDuplicateAlert = errors.New("duplicate alert")
 
 // PostgresAlertStore implements alert.AlertStore against a PostgreSQL pool.
 type PostgresAlertStore struct {
@@ -36,7 +32,7 @@ func NewPostgresAlertStore(db *pgxpool.Pool) *PostgresAlertStore {
 // idx_alerts_active_dedup (WHERE status='active') guarantees dedup at the DB
 // level: a concurrent insert that already created an active alert for the same
 // dedup_key raises PG 23505, which we translate to ErrDuplicateAlert.
-func (s *PostgresAlertStore) CreateAlertWithEvent(ctx context.Context, alert model.Alert, eventType string, payload []byte) error {
+func (s *PostgresAlertStore) CreateAlertWithEvent(ctx context.Context, a model.Alert, eventType string, payload []byte) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
@@ -55,15 +51,15 @@ func (s *PostgresAlertStore) CreateAlertWithEvent(ctx context.Context, alert mod
 			$9, $10, $11, $12,
 			$13, $14, $15
 		)
-	`, alert.ID, alert.Title, alert.Summary, string(alert.Severity),
-		alert.MetricID, alert.RuleID, alert.RuleVersion, alert.RuleEffectiveFrom,
-		alert.DetectorName, alert.DedupKey, alert.WindowStart, alert.WindowEnd,
-		alert.Evidence, alert.PluginID, alert.TriggeredAt)
+	`, a.ID, a.Title, a.Summary, string(a.Severity),
+		a.MetricID, a.RuleID, a.RuleVersion, a.RuleEffectiveFrom,
+		a.DetectorName, a.DedupKey, a.WindowStart, a.WindowEnd,
+		a.Evidence, a.PluginID, a.TriggeredAt)
 
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return ErrDuplicateAlert
+			return alert.ErrDuplicateAlert
 		}
 		return fmt.Errorf("insert alert: %w", err)
 	}

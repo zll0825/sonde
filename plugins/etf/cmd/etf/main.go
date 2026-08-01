@@ -14,8 +14,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	pb "capital_observatory/pkg/proto/plugin/v1"
 	"capital_observatory/pkg/pluginrunner"
+	pb "capital_observatory/pkg/proto/plugin/v1"
 	"capital_observatory/plugins/etf/internal/collector"
 )
 
@@ -138,8 +138,7 @@ func runSession(ctx context.Context, coreAddr string, interval time.Duration) er
 	}()
 
 	// Block on the stream.
-	runner.Run(ctx, pluginID)
-	return nil
+	return runner.Run(ctx, pluginID)
 }
 
 func buildRegistration() *pb.RegisterPluginRequest {
@@ -173,7 +172,7 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				EntityId:    "GLD",
 			},
 			{
-				Id:          "eth_beat",
+				Id:          "eth_daily_flow",
 				Name:        "ETH-P Daily Flow (USD)",
 				Description: "Daily inflow/outflow for ETH-P in USD",
 				Unit:        "USD",

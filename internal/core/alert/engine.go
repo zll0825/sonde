@@ -4,6 +4,7 @@ package alert
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -14,6 +15,11 @@ import (
 
 // EventTypeAlertTriggered is the outbox event_type written when a new alert fires.
 const EventTypeAlertTriggered = "alert.triggered"
+
+// ErrDuplicateAlert is returned by AlertStore implementations when the DB-level
+// dedup guard (partial unique index on dedup_key WHERE status='active') rejects
+// a concurrent insert. The engine treats it as a benign lost race, not a failure.
+var ErrDuplicateAlert = errors.New("duplicate alert")
 
 // Engine evaluates triggers and upserts alerts with deduplication.
 type Engine struct {
@@ -69,7 +75,15 @@ func (e *Engine) HandleTrigger(ctx context.Context, alert model.Alert) error {
 		Str("metric", alert.MetricID).
 		Str("severity", string(alert.Severity)).
 		Msg("alert triggered")
-	return e.store.CreateAlertWithEvent(ctx, alert, EventTypeAlertTriggered, payload)
+	if err := e.store.CreateAlertWithEvent(ctx, alert, EventTypeAlertTriggered, payload); err != nil {
+		if errors.Is(err, ErrDuplicateAlert) {
+			// Lost the insert race to a concurrent trigger — same outcome as dedup.
+			log.Debug().Str("dedup_key", alert.DedupKey).Msg("alert deduplicated by DB index")
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // Resolve closes an active alert by its dedup key.

@@ -1,10 +1,14 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 )
@@ -31,13 +35,15 @@ func alertsHandler(db *pgxpool.Pool) http.HandlerFunc {
 		}
 		defer rows.Close()
 
-		var alerts []map[string]interface{}
+		// Initialize non-nil so an empty result serializes as [], not null.
+		alerts := []map[string]interface{}{}
 		for rows.Next() {
 			var (
 				id, title, summary, severity, metricID, status string
-				triggeredAt                                   time.Time
+				triggeredAt                                    time.Time
 			)
 			if err := rows.Scan(&id, &title, &summary, &severity, &metricID, &triggeredAt, &status); err != nil {
+				log.Error().Err(err).Msg("scan alert row failed")
 				continue
 			}
 			alerts = append(alerts, map[string]interface{}{
@@ -49,6 +55,11 @@ func alertsHandler(db *pgxpool.Pool) http.HandlerFunc {
 				"triggered_at": triggeredAt,
 				"status":       status,
 			})
+		}
+		if err := rows.Err(); err != nil {
+			log.Error().Err(err).Msg("iterate alert rows failed")
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
+			return
 		}
 		writeJSON(w, http.StatusOK, alerts)
 	}
@@ -69,8 +80,13 @@ func researchHandler(db *pgxpool.Pool) http.HandlerFunc {
 		err := db.QueryRow(r.Context(), `
 			SELECT context, ontology_frozen_at FROM research_snapshots WHERE alert_id = $1
 		`, alertID).Scan(&ctxData, &frozenAt)
-		if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "research context not found"})
+			return
+		}
+		if err != nil {
+			log.Error().Err(err).Str("alert_id", alertID).Msg("query research snapshot failed")
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
 			return
 		}
 
@@ -100,11 +116,17 @@ func syncHandler(db *pgxpool.Pool) http.HandlerFunc {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 			return
 		}
+		if req.PluginID == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "plugin_id required"})
+			return
+		}
 
+		// M5: insert into command_log; core will pick it up via outbox/polling.
+		// No ON CONFLICT clause: command IDs are random, so a conflict would be a
+		// real bug — swallowing it would ack a command that was never queued.
 		_, err := db.Exec(r.Context(), `
 			INSERT INTO command_log (command_id, command_type, target_plugin, requested_by, status, metric_ids)
 			VALUES ($1, 'sync', $2, 'api', 'pending', $3)
-			ON CONFLICT (command_id) DO NOTHING
 		`, generateCommandID(), req.PluginID, metricIDsToBytes(req.MetricIDs))
 		if err != nil {
 			log.Error().Err(err).Msg("insert sync command failed")
@@ -137,13 +159,20 @@ func backfillHandler(db *pgxpool.Pool) http.HandlerFunc {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 			return
 		}
+		if req.PluginID == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "plugin_id required"})
+			return
+		}
+		if req.WindowStart <= 0 || req.WindowEnd <= 0 || req.WindowStart >= req.WindowEnd {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "window_start and window_end must be positive unix seconds with window_start < window_end"})
+			return
+		}
 
 		_, err := db.Exec(r.Context(), `
 			INSERT INTO command_log
 			(command_id, command_type, target_plugin, requested_by, status,
 			 metric_ids, window_start, window_end)
 			VALUES ($1, 'backfill', $2, 'api', 'pending', $3, to_timestamp($4), to_timestamp($5))
-			ON CONFLICT (command_id) DO NOTHING
 		`, generateCommandID(), req.PluginID, metricIDsToBytes(req.MetricIDs), req.WindowStart, req.WindowEnd)
 		if err != nil {
 			log.Error().Err(err).Msg("insert backfill command failed")
@@ -158,9 +187,16 @@ func backfillHandler(db *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
-// generateCommandID creates a short unique command identifier.
+// generateCommandID creates a unique command identifier. command_id is the
+// command_log primary key, so a timestamp alone is not enough — two commands
+// in the same second must not collide. 6 random bytes ≈ 2^48 keyspace.
 func generateCommandID() string {
-	return "cmd_" + time.Now().Format("20060102T150405")
+	b := make([]byte, 6)
+	if _, err := rand.Read(b); err != nil {
+		// Extremely unlikely; nanosecond timestamp as last resort.
+		return "cmd_" + time.Now().Format("20060102T150405.000000000")
+	}
+	return "cmd_" + hex.EncodeToString(b)
 }
 
 // metricIDsToBytes serializes a slice of metric IDs to JSON bytes.

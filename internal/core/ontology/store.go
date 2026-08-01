@@ -23,6 +23,7 @@ import (
 // Implemented by *pgxpool.Pool (github.com/jackc/pgx/v5/pgxpool) and pgx.Tx.
 type DB interface {
 	Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
 	Exec(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error)
 	Begin(ctx context.Context) (pgx.Tx, error)
 }
@@ -43,15 +44,15 @@ func NewStore(db DB) *Store {
 // RegisterPlugin persists a plugin registration in a single transaction.
 //
 // Pipeline (M1 registration with review integration):
-//  1. Diff-skip: compute hashes of incoming entities/metrics; skip version bump
-//     for any entity/metric whose content is byte-identical to the current row.
-//  2. Upsert plugins row — only bump registration_version when at least one
-//     entity, metric, relation, or rule actually changed (diff-skip, no spam).
-//     3,4. Upsert entities/metrics as new versions only for changed rows.
-//  5. reviewAndAcceptRelations → writes to relations_v2 (if accepted) or
-//     relation_suggestions (if pending).
-//  6. reviewAndAcceptRules → writes to rules_v2 (if accepted) or
-//     rule_suggestions (if pending).
+//  1. Ensure the plugins row exists (no version bump yet — entities/metrics
+//     and suggestions carry FKs to plugins.id).
+//  2. Diff-skip: compute once which entities/metrics differ from their current
+//     effective rows; insert new versions only for those.
+//  3. reviewAndAcceptRelations → relations_v2 (accepted) / relation_suggestions
+//     (pending or rejected-for-audit). Identical re-registrations write nothing.
+//  4. reviewAndAcceptRules → rules_v2 (accepted) / rule_suggestions (conflict).
+//  5. Bump registration_version only when something was actually written
+//     (or on first registration), so reconnect spam never inflates versions.
 //
 // Returns the assigned plugin_id and the new (or unchanged) registration_version.
 func (s *Store) RegisterPlugin(ctx context.Context, req *pb.RegisterPluginRequest) (pluginID string, version int, err error) {
@@ -68,52 +69,26 @@ func (s *Store) RegisterPlugin(ctx context.Context, req *pb.RegisterPluginReques
 	}
 	defer tx.Rollback(ctx)
 
-	// Determine whether anything actually changed (diff-skip).
-	entitiesChanged := 0
-	for _, ent := range req.GetEntities() {
-		if s.entityChanged(ctx, tx, pluginID, ent) {
-			entitiesChanged++
-		}
-	}
-
-	metricsChanged := 0
-	for _, met := range req.GetMetrics() {
-		if s.metricChanged(ctx, tx, pluginID, met) {
-			metricsChanged++
-		}
-	}
-
-	relationChanged := len(req.GetRelations()) > 0
-	ruleChanged := len(req.GetRules()) > 0
-
-	anyChange := entitiesChanged > 0 || metricsChanged > 0 || relationChanged || ruleChanged
-
-	// 1. Upsert plugins: bump version only if something changed.
+	// 1. Ensure the plugins row (registration_version starts at 0 and is bumped
+	// below once we know whether this registration changed anything).
 	var regVersion int
-	if anyChange {
-		err = tx.QueryRow(ctx, `
-			INSERT INTO plugins (id, name, version, description, registration_version, updated_at)
-			VALUES ($1, $2, $3, $4, 1, NOW())
-			ON CONFLICT (id) DO UPDATE SET
-				name = EXCLUDED.name,
-				version = EXCLUDED.version,
-				description = EXCLUDED.description,
-				registration_version = plugins.registration_version + 1,
-				updated_at = NOW()
-			RETURNING registration_version
-		`, pluginID, info.GetName(), info.GetVersion(), info.GetDescription()).Scan(&regVersion)
-	} else {
-		// No change — keep the existing version.
-		err = tx.QueryRow(ctx, `SELECT registration_version FROM plugins WHERE id = $1`, pluginID).Scan(&regVersion)
-		if err != nil {
-			return "", 0, fmt.Errorf("query plugin version: %w", err)
-		}
-	}
+	err = tx.QueryRow(ctx, `
+		INSERT INTO plugins (id, name, version, description, registration_version, updated_at)
+		VALUES ($1, $2, $3, $4, 0, NOW())
+		ON CONFLICT (id) DO UPDATE SET
+			name = EXCLUDED.name,
+			version = EXCLUDED.version,
+			description = EXCLUDED.description,
+			updated_at = NOW()
+		RETURNING registration_version
+	`, pluginID, info.GetName(), info.GetVersion(), info.GetDescription()).Scan(&regVersion)
 	if err != nil {
 		return "", 0, fmt.Errorf("upsert plugin: %w", err)
 	}
+	isFirstRegistration := regVersion == 0
 
-	// 2. Insert only changed entities.
+	// 2. Diff once, then insert only changed entities/metrics.
+	entitiesChanged := 0
 	for _, ent := range req.GetEntities() {
 		if !s.entityChanged(ctx, tx, pluginID, ent) {
 			continue
@@ -121,9 +96,10 @@ func (s *Store) RegisterPlugin(ctx context.Context, req *pb.RegisterPluginReques
 		if err := upsertEntity(ctx, tx, pluginID, ent, req.GetChangeLog()); err != nil {
 			return "", 0, fmt.Errorf("entity %q: %w", ent.GetId(), err)
 		}
+		entitiesChanged++
 	}
 
-	// 3. Insert only changed metrics.
+	metricsChanged := 0
 	for _, met := range req.GetMetrics() {
 		if !s.metricChanged(ctx, tx, pluginID, met) {
 			continue
@@ -131,16 +107,32 @@ func (s *Store) RegisterPlugin(ctx context.Context, req *pb.RegisterPluginReques
 		if err := upsertMetric(ctx, tx, pluginID, met, req.GetChangeLog()); err != nil {
 			return "", 0, fmt.Errorf("metric %q: %w", met.GetId(), err)
 		}
+		metricsChanged++
 	}
 
-	// 4. Review + accept relations.
-	if _, _, _, rerr := reviewAndAcceptRelations(ctx, tx, pluginID, req.GetRelations()); rerr != nil {
+	// 3. Review + accept relations (accepted counts real writes only).
+	relationsAccepted, _, _, rerr := reviewAndAcceptRelations(ctx, tx, pluginID, req.GetRelations())
+	if rerr != nil {
 		return "", 0, fmt.Errorf("review relations: %w", rerr)
 	}
 
-	// 5. Review + accept rules.
-	if _, _, _, rerr := reviewAndAcceptRules(ctx, tx, pluginID, req.GetRules()); rerr != nil {
+	// 4. Review + accept rules.
+	rulesAccepted, _, _, rerr := reviewAndAcceptRules(ctx, tx, pluginID, req.GetRules())
+	if rerr != nil {
 		return "", 0, fmt.Errorf("review rules: %w", rerr)
+	}
+
+	// 5. Bump only when the registration materialized a change.
+	changed := entitiesChanged > 0 || metricsChanged > 0 ||
+		relationsAccepted > 0 || rulesAccepted > 0 || isFirstRegistration
+	if changed {
+		if err := tx.QueryRow(ctx, `
+			UPDATE plugins SET registration_version = registration_version + 1, updated_at = NOW()
+			WHERE id = $1
+			RETURNING registration_version
+		`, pluginID).Scan(&regVersion); err != nil {
+			return "", 0, fmt.Errorf("bump registration version: %w", err)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

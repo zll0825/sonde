@@ -93,13 +93,13 @@ func (h *Handler) MaintainSession(stream pb.PluginHost_MaintainSessionServer) er
 
 	session := NewStreamSession(pluginID, 0, stream)
 	h.manager.RegisterSession(session)
-	defer h.manager.UnregisterSession(pluginID)
+	defer h.manager.UnregisterSession(pluginID, session)
 
 	log.Info().Str("plugin_id", pluginID).Msg("session established")
 
 	// Run read loop — dispatches incoming messages until stream closes.
 	session.ReadLoop(func(msg *pb.PluginMessage) {
-		if err := h.manager.HandlePluginMessage(msg); err != nil {
+		if err := h.manager.HandlePluginMessage(stream.Context(), msg); err != nil {
 			log.Error().Err(err).Str("plugin_id", pluginID).Msg("handle message failed")
 		}
 	})

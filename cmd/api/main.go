@@ -1,5 +1,5 @@
 // Command api runs the HTTP API server for the capital-observatory frontend.
-// Includes auth middleware (Bearer <_REDACTED>) and per-IP rate limiting.
+// Includes auth middleware (Bearer token from $API_TOKEN) and per-IP rate limiting.
 package main
 
 import (

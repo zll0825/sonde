@@ -2,6 +2,8 @@ package pluginmgr
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -83,7 +85,7 @@ func (p *Pipeline) EvaluateAndAlert(ctx context.Context, metricID, pluginID stri
 	}
 
 	// Resolve metric_id → metric_uid (observations are keyed by UID).
-	uid, err := p.resolveMetricUID(ctx, metricID)
+	uid, err := p.rules.GetMetricUID(ctx, metricID)
 	if err != nil {
 		return fmt.Errorf("resolve metric uid: %w", err)
 	}
@@ -142,27 +144,21 @@ func (p *Pipeline) EvaluateAndAlert(ctx context.Context, metricID, pluginID stri
 	return nil
 }
 
-// resolveMetricUID returns the registered uid for a metric_id, or "" if not found.
-func (p *Pipeline) resolveMetricUID(ctx context.Context, metricID string) (string, error) {
-	metrics, err := p.rules.GetCurrentMetrics(ctx, "")
-	if err != nil {
-		return "", err
-	}
-	for _, m := range metrics {
-		if m.ID == metricID {
-			return m.UID, nil
-		}
-	}
-	// Not found — possibly pending_metrics. Return empty so caller skips.
-	return "", nil
-}
+// resolveMetricUID was replaced by ontology.Store.GetMetricUID — the previous
+// implementation scanned GetCurrentMetrics(ctx, "") which always returned an
+// empty set (no plugin has an empty id), silently disabling the pipeline.
 
 // triggerToAlert converts a detector Trigger to a persisted model.Alert.
-// The alert ID is derived from the dedup_key so retries are idempotent.
+//
+// The alert ID must be unique per alert row (alerts.id is the primary key), so
+// it carries a random suffix. Idempotency across retries is NOT the ID's job:
+// dedup is enforced by GetActiveAlert + the partial unique index on dedup_key —
+// reusing "alt_"+dedup_key as the ID would collide the moment a resolved alert
+// re-fires (same key, new row).
 func triggerToAlert(t *detector.Trigger, pluginID string) model.Alert {
 	now := time.Now()
 	return model.Alert{
-		ID:                "alt_" + t.DedupKey,
+		ID:                newAlertID(),
 		Title:             t.RuleName,
 		Severity:          t.Severity,
 		Status:            "active",
@@ -178,4 +174,14 @@ func triggerToAlert(t *detector.Trigger, pluginID string) model.Alert {
 		PluginID:          pluginID,
 		TriggeredAt:       now,
 	}
+}
+
+// newAlertID generates "alt_" + 12 hex chars from crypto/rand entropy.
+func newAlertID() string {
+	b := make([]byte, 6)
+	if _, err := rand.Read(b); err != nil {
+		// Extremely unlikely; nanosecond timestamp as last resort.
+		return "alt_" + time.Now().Format("20060102T150405.000000000")
+	}
+	return "alt_" + hex.EncodeToString(b)
 }

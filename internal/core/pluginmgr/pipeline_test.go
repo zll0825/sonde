@@ -16,23 +16,27 @@ import (
 func TestTriggerToAlert_BuildsPureAlert(t *testing.T) {
 	now := time.Now()
 	trigger := &detector.Trigger{
-		RuleID:         42,
-		RuleName:       "gld_flow_spike",
-		MetricID:       "gld_flow",
-		RuleEffective:  now,
-		WindowStart:    now.Add(-1 * time.Minute),
-		WindowEnd:      now,
-		Severity:       model.SeverityWarning,
-		DetectorName:   "threshold",
-		DedupKey:       "rule_42:gld_flow:5m",
-		Evidence:       map[string]interface{}{"value": 722.0},
+		RuleID:        42,
+		RuleName:      "gld_flow_spike",
+		MetricID:      "gld_flow",
+		RuleEffective: now,
+		WindowStart:   now.Add(-1 * time.Minute),
+		WindowEnd:     now,
+		Severity:      model.SeverityWarning,
+		DetectorName:  "threshold",
+		DedupKey:      "rule_42:gld_flow:5m",
+		Evidence:      map[string]interface{}{"value": 722.0},
 	}
 
 	a := triggerToAlert(trigger, "plg_etf")
 
-	// ID is derived from dedup_key → idempotent across retries.
-	if a.ID != "alt_rule_42:gld_flow:5m" {
-		t.Errorf("alert.ID = %q, want alt_<dedup_key>", a.ID)
+	// ID is unique per alert row (alerts.id is the PK); dedup is the job of
+	// dedup_key + the partial unique index, never the ID.
+	if !strings.HasPrefix(a.ID, "alt_") {
+		t.Errorf("alert.ID = %q, want alt_ prefix", a.ID)
+	}
+	if second := triggerToAlert(trigger, "plg_etf"); second.ID == a.ID {
+		t.Errorf("two alerts share ID %q; a resolved-then-refired alert would collide on the PK", a.ID)
 	}
 	if a.RuleID != 42 {
 		t.Errorf("alert.RuleID = %d, want 42", a.RuleID)
@@ -61,9 +65,9 @@ func TestTriggerToAlert_BuildsPureAlert(t *testing.T) {
 // mapped through to model.Severity.
 func TestTriggerToAlert_SeverityMapping(t *testing.T) {
 	cases := []struct {
-		name     string
-		sev      model.Severity
-		wantSev  model.Severity
+		name    string
+		sev     model.Severity
+		wantSev model.Severity
 	}{
 		{"warning", model.SeverityWarning, model.SeverityWarning},
 		{"critical", model.SeverityCritical, model.SeverityCritical},
@@ -72,10 +76,10 @@ func TestTriggerToAlert_SeverityMapping(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			trigger := &detector.Trigger{
-				RuleName:  "x",
-				MetricID:  "m",
-				DedupKey:  "k",
-				Severity:  tc.sev,
+				RuleName: "x",
+				MetricID: "m",
+				DedupKey: "k",
+				Severity: tc.sev,
 			}
 			a := triggerToAlert(trigger, "p1")
 			if a.Severity != tc.wantSev {

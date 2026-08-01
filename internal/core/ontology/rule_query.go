@@ -2,11 +2,31 @@ package ontology
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"capital_observatory/pkg/model"
 )
+
+// GetMetricUID returns the registered uid for a metric_id's current version
+// (effective_to IS NULL), or "" when the metric is not registered.
+func (s *Store) GetMetricUID(ctx context.Context, metricID string) (string, error) {
+	var uid string
+	err := s.db.QueryRow(ctx, `
+		SELECT uid FROM metric_definitions_v2
+		WHERE id = $1 AND effective_to IS NULL LIMIT 1
+	`, metricID).Scan(&uid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("query metric uid: %w", err)
+	}
+	return uid, nil
+}
 
 // GetActiveRules returns all currently-effective, enabled rules (versioned
 // tables:WHERE effective_to IS NULL AND enabled = TRUE).
