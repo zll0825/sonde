@@ -40,14 +40,20 @@ func NewStore(db DB) *Store {
 	return &Store{db: db}
 }
 
-// RegisterPlugin persists a plugin registration in a single transaction:
-//  1. Upsert plugins table (ON CONFLICT UPDATE, increment registration_version)
-//  2. Insert entities into entities_v2 (composite PK: id + version)
-//  3. Insert metrics into metric_definitions_v2 (with generated uid)
-//  4. Insert relation_suggestions
-//  5. Insert rule_suggestions
+// RegisterPlugin persists a plugin registration in a single transaction.
 //
-// Returns the assigned plugin_id and registration_version.
+// Pipeline (M1 registration with review integration):
+//  1. Diff-skip: compute hashes of incoming entities/metrics; skip version bump
+//     for any entity/metric whose content is byte-identical to the current row.
+//  2. Upsert plugins row — only bump registration_version when at least one
+//     entity, metric, relation, or rule actually changed (diff-skip, no spam).
+//     3,4. Upsert entities/metrics as new versions only for changed rows.
+//  5. reviewAndAcceptRelations → writes to relations_v2 (if accepted) or
+//     relation_suggestions (if pending).
+//  6. reviewAndAcceptRules → writes to rules_v2 (if accepted) or
+//     rule_suggestions (if pending).
+//
+// Returns the assigned plugin_id and the new (or unchanged) registration_version.
 func (s *Store) RegisterPlugin(ctx context.Context, req *pb.RegisterPluginRequest) (pluginID string, version int, err error) {
 	info := req.GetInfo()
 	if info == nil {
@@ -62,49 +68,79 @@ func (s *Store) RegisterPlugin(ctx context.Context, req *pb.RegisterPluginReques
 	}
 	defer tx.Rollback(ctx)
 
-	// 1. Upsert plugins atomically; RETURNING gives the new registration_version.
+	// Determine whether anything actually changed (diff-skip).
+	entitiesChanged := 0
+	for _, ent := range req.GetEntities() {
+		if s.entityChanged(ctx, tx, pluginID, ent) {
+			entitiesChanged++
+		}
+	}
+
+	metricsChanged := 0
+	for _, met := range req.GetMetrics() {
+		if s.metricChanged(ctx, tx, pluginID, met) {
+			metricsChanged++
+		}
+	}
+
+	relationChanged := len(req.GetRelations()) > 0
+	ruleChanged := len(req.GetRules()) > 0
+
+	anyChange := entitiesChanged > 0 || metricsChanged > 0 || relationChanged || ruleChanged
+
+	// 1. Upsert plugins: bump version only if something changed.
 	var regVersion int
-	err = tx.QueryRow(ctx, `
-		INSERT INTO plugins (id, name, version, description, registration_version, updated_at)
-		VALUES ($1, $2, $3, $4, 1, NOW())
-		ON CONFLICT (id) DO UPDATE SET
-			name = EXCLUDED.name,
-			version = EXCLUDED.version,
-			description = EXCLUDED.description,
-			registration_version = plugins.registration_version + 1,
-			updated_at = NOW()
-		RETURNING registration_version
-	`, pluginID, info.GetName(), info.GetVersion(), info.GetDescription()).Scan(&regVersion)
+	if anyChange {
+		err = tx.QueryRow(ctx, `
+			INSERT INTO plugins (id, name, version, description, registration_version, updated_at)
+			VALUES ($1, $2, $3, $4, 1, NOW())
+			ON CONFLICT (id) DO UPDATE SET
+				name = EXCLUDED.name,
+				version = EXCLUDED.version,
+				description = EXCLUDED.description,
+				registration_version = plugins.registration_version + 1,
+				updated_at = NOW()
+			RETURNING registration_version
+		`, pluginID, info.GetName(), info.GetVersion(), info.GetDescription()).Scan(&regVersion)
+	} else {
+		// No change — keep the existing version.
+		err = tx.QueryRow(ctx, `SELECT registration_version FROM plugins WHERE id = $1`, pluginID).Scan(&regVersion)
+		if err != nil {
+			return "", 0, fmt.Errorf("query plugin version: %w", err)
+		}
+	}
 	if err != nil {
 		return "", 0, fmt.Errorf("upsert plugin: %w", err)
 	}
 
-	// 2. Insert entities.
+	// 2. Insert only changed entities.
 	for _, ent := range req.GetEntities() {
+		if !s.entityChanged(ctx, tx, pluginID, ent) {
+			continue
+		}
 		if err := upsertEntity(ctx, tx, pluginID, ent, req.GetChangeLog()); err != nil {
 			return "", 0, fmt.Errorf("entity %q: %w", ent.GetId(), err)
 		}
 	}
 
-	// 3. Insert metrics.
+	// 3. Insert only changed metrics.
 	for _, met := range req.GetMetrics() {
+		if !s.metricChanged(ctx, tx, pluginID, met) {
+			continue
+		}
 		if err := upsertMetric(ctx, tx, pluginID, met, req.GetChangeLog()); err != nil {
 			return "", 0, fmt.Errorf("metric %q: %w", met.GetId(), err)
 		}
 	}
 
-	// 4. Insert relation suggestions.
-	for _, rel := range req.GetRelations() {
-		if err := insertRelationSuggestion(ctx, tx, pluginID, rel); err != nil {
-			return "", 0, fmt.Errorf("relation %q->%q: %w", rel.GetSourceId(), rel.GetTargetId(), err)
-		}
+	// 4. Review + accept relations.
+	if _, _, _, rerr := reviewAndAcceptRelations(ctx, tx, pluginID, req.GetRelations()); rerr != nil {
+		return "", 0, fmt.Errorf("review relations: %w", rerr)
 	}
 
-	// 5. Insert rule suggestions.
-	for _, rule := range req.GetRules() {
-		if err := insertRuleSuggestion(ctx, tx, pluginID, rule); err != nil {
-			return "", 0, fmt.Errorf("rule %q/%q: %w", rule.GetName(), rule.GetMetricId(), err)
-		}
+	// 5. Review + accept rules.
+	if _, _, _, rerr := reviewAndAcceptRules(ctx, tx, pluginID, req.GetRules()); rerr != nil {
+		return "", 0, fmt.Errorf("review rules: %w", rerr)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -112,6 +148,46 @@ func (s *Store) RegisterPlugin(ctx context.Context, req *pb.RegisterPluginReques
 	}
 
 	return pluginID, regVersion, nil
+}
+
+// entityChanged returns true if the entity's content differs from the current
+// effective row (effective_to IS NULL) for the same (id, plugin_id).
+func (s *Store) entityChanged(ctx context.Context, tx pgx.Tx, pluginID string, ent *pb.EntityDeclaration) bool {
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(
+		SELECT 1 FROM entities_v2 WHERE id = $1 AND plugin_id = $2 AND effective_to IS NULL
+	)`, ent.GetId(), pluginID).Scan(&exists); err != nil || !exists {
+		return true // not present → changed
+	}
+	// Compare content fields (name, namespace, type) for a lightweight diff.
+	var curName, curNS, curType string
+	if err := tx.QueryRow(ctx, `
+		SELECT name, namespace, entity_type FROM entities_v2
+		WHERE id = $1 AND plugin_id = $2 AND effective_to IS NULL LIMIT 1
+	`, ent.GetId(), pluginID).Scan(&curName, &curNS, &curType); err != nil {
+		return true
+	}
+	return curName != ent.GetName() || curNS != ent.GetNamespace() ||
+		curType != entityTypeToString(ent.GetEntityType())
+}
+
+// metricChanged returns true if the metric's content differs from the current row.
+func (s *Store) metricChanged(ctx context.Context, tx pgx.Tx, pluginID string, met *pb.MetricDeclaration) bool {
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(
+		SELECT 1 FROM metric_definitions_v2 WHERE id = $1 AND plugin_id = $2 AND effective_to IS NULL
+	)`, met.GetId(), pluginID).Scan(&exists); err != nil || !exists {
+		return true
+	}
+	var curName, curUnit, curFreq, curEntity string
+	if err := tx.QueryRow(ctx, `
+		SELECT name, unit, frequency, entity_id FROM metric_definitions_v2
+		WHERE id = $1 AND plugin_id = $2 AND effective_to IS NULL LIMIT 1
+	`, met.GetId(), pluginID).Scan(&curName, &curUnit, &curFreq, &curEntity); err != nil {
+		return true
+	}
+	return curName != met.GetName() || curUnit != met.GetUnit() ||
+		curFreq != met.GetFrequency() || curEntity != met.GetEntityId()
 }
 
 // GetCurrentEntities returns all currently-effective entities (effective_to IS NULL)

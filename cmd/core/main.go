@@ -1,4 +1,5 @@
-// Command core runs the core gRPC server for plugin connections.
+// Command core runs the core gRPC server for plugin connections,
+// wiring the full M0–M5 pipeline: registration → ingestion → detection → alert → research.
 package main
 
 import (
@@ -7,13 +8,18 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 
+	"capital_observatory/internal/core/alert"
+	"capital_observatory/internal/core/detector"
 	"capital_observatory/internal/core/ontology"
 	"capital_observatory/internal/core/pluginmgr"
+	"capital_observatory/internal/core/research"
+	"capital_observatory/internal/core/store"
 	pb "capital_observatory/pkg/proto/plugin/v1"
 )
 
@@ -35,10 +41,28 @@ func main() {
 		log.Fatal().Err(err).Msg("database ping failed")
 	}
 
-	store := ontology.NewStore(db)
-	mgr := pluginmgr.NewManager(store, db)
+	// ── Persistence layer (M0/M1) ──────────────────────────────────────────────
+	repo := ontology.NewStore(db)
+
+	// ── M3: detectors + alert engine + outbox ──────────────────────────────────
+	detEngine := detector.NewEngine(detector.ThresholdDetector{})
+	alertStore := store.NewPostgresAlertStore(db)
+	alertEng := alert.NewEngine(alertStore)
+	outboxStore := store.NewPostgresOutboxStore(db)
+	outboxWorker := alert.NewOutboxWorker(outboxStore, 5*time.Second)
+
+	// ── M4: research assembly ──────────────────────────────────────────────────
+	researchStore := store.NewPostgresResearchStore(db)
+	researchAsm := research.NewAssembler(researchStore)
+
+	// ── Observation querier (shared by pipeline + outbox) ──────────────────────
+	obsQuerier := store.NewPostgresResearchStore(db)
+
+	// ── Manager (wires M1–M4) ──────────────────────────────────────────────────
+	mgr := pluginmgr.NewManager(repo, db, detEngine, alertEng, researchAsm, obsQuerier)
 	handler := pluginmgr.NewHandler(mgr)
 
+	// ── gRPC server ────────────────────────────────────────────────────────────
 	addr := os.Getenv("CORE_BIND")
 	if addr == "" {
 		addr = ":50051"
@@ -59,6 +83,9 @@ func main() {
 			log.Fatal().Err(err).Msg("grpc serve failed")
 		}
 	}()
+
+	// ── Outbox worker: dispatch Tier-1 events ──────────────────────────────────
+	go outboxWorker.Run(ctx, 10)
 
 	<-ctx.Done()
 	log.Info().Msg("shutting down...")
