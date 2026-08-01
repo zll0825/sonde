@@ -68,7 +68,7 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 		mu.Lock()
 		b, ok := buckets[ip]
 		if !ok {
-			b = &bucket{tokens: 10}
+			b = &bucket{tokens: 10, last: time.Now()}
 			buckets[ip] = b
 		}
 		// Refill.
