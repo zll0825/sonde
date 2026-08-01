@@ -47,6 +47,16 @@ func (f *fakeAlertStore) GetActiveAlert(_ context.Context, dedupKey string) (*mo
 	return f.active[dedupKey], nil
 }
 
+func (f *fakeAlertStore) GetActiveAlertsByMetric(_ context.Context, metricID string) ([]model.Alert, error) {
+	var result []model.Alert
+	for _, a := range f.active {
+		if a != nil && a.MetricID == metricID && a.Status == "active" {
+			result = append(result, *a)
+		}
+	}
+	return result, nil
+}
+
 func sampleAlert(dedupKey string) model.Alert {
 	return model.Alert{
 		ID:          "alt_001",
@@ -126,5 +136,77 @@ func TestResolve_DelegatesToStore(t *testing.T) {
 	}
 	if len(store.resolvedKeys) != 1 || store.resolvedKeys[0] != "m1|42" {
 		t.Errorf("resolved keys = %v, want [m1|42]", store.resolvedKeys)
+	}
+}
+
+func TestAutoResolveStaleAlerts_ResolvesStaleFiresKept(t *testing.T) {
+	store := newFakeAlertStore()
+	engine := NewEngine(store)
+
+	// Two active alerts on the same metric for different rules.
+	rule42 := sampleAlert("m1|42")
+	rule42.RuleID = 42
+	rule42.Status = "active"
+	store.active["m1|42"] = &rule42
+
+	rule99 := sampleAlert("m1|99")
+	rule99.RuleID = 99
+	rule99.Status = "active"
+	store.active["m1|99"] = &rule99
+
+	// This evaluation: only rule 42 fired. rule 99 is stale → resolve it.
+	firedRuleIDs := map[int]struct{}{42: {}}
+
+	err := engine.AutoResolveStaleAlerts(context.Background(), "m1", firedRuleIDs)
+	if err != nil {
+		t.Fatalf("AutoResolveStaleAlerts returned error: %v", err)
+	}
+
+	// Only rule 99's dedup_key should have been resolved.
+	if len(store.resolvedKeys) != 1 {
+		t.Fatalf("resolvedKeys = %v, want exactly 1 entry", store.resolvedKeys)
+	}
+	if store.resolvedKeys[0] != "m1|99" {
+		t.Errorf("resolvedKeys = %v, want [m1|99] (rule 42 should stay active)", store.resolvedKeys)
+	}
+}
+
+func TestAutoResolveStaleAlerts_NoActiveAlertsNoop(t *testing.T) {
+	store := newFakeAlertStore()
+	engine := NewEngine(store)
+
+	// No active alerts — auto-resolve is a no-op.
+	err := engine.AutoResolveStaleAlerts(context.Background(), "m1", map[int]struct{}{42: {}})
+	if err != nil {
+		t.Fatalf("AutoResolveStaleAlerts returned error: %v", err)
+	}
+	if len(store.resolvedKeys) != 0 {
+		t.Errorf("resolvedKeys = %v, want empty (nothing to resolve)", store.resolvedKeys)
+	}
+}
+
+func TestAutoResolveStaleAlerts_AllFiredNothingResolved(t *testing.T) {
+	store := newFakeAlertStore()
+	engine := NewEngine(store)
+
+	rule42 := sampleAlert("m1|42")
+	rule42.RuleID = 42
+	rule42.Status = "active"
+	store.active["m1|42"] = &rule42
+
+	rule99 := sampleAlert("m1|99")
+	rule99.RuleID = 99
+	rule99.Status = "active"
+	store.active["m1|99"] = &rule99
+
+	// Both rules fired → neither should be resolved.
+	firedRuleIDs := map[int]struct{}{42: {}, 99: {}}
+
+	err := engine.AutoResolveStaleAlerts(context.Background(), "m1", firedRuleIDs)
+	if err != nil {
+		t.Fatalf("AutoResolveStaleAlerts returned error: %v", err)
+	}
+	if len(store.resolvedKeys) != 0 {
+		t.Errorf("resolvedKeys = %v, want empty (all rules still firing)", store.resolvedKeys)
 	}
 }

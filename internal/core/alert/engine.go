@@ -34,6 +34,11 @@ type AlertStore interface {
 	CreateAlertWithEvent(ctx context.Context, alert model.Alert, eventType string, payload []byte) error
 	ResolveAlert(ctx context.Context, dedupKey string, resolvedAt time.Time) error
 	GetActiveAlert(ctx context.Context, dedupKey string) (*model.Alert, error)
+
+	// GetActiveAlertsByMetric returns all currently-active alerts for a given
+	// metric_id, keyed by dedup_key. Used by the auto-resolve sweeper to find
+	// "stale" alerts whose rule condition no longer holds.
+	GetActiveAlertsByMetric(ctx context.Context, metricID string) ([]model.Alert, error)
 }
 
 // NewEngine creates a new alert engine with the given store.
@@ -87,6 +92,51 @@ func (e *Engine) HandleTrigger(ctx context.Context, alert model.Alert) error {
 }
 
 // Resolve closes an active alert by its dedup key.
+// No-op if the alert is already resolved or never existed.
 func (e *Engine) Resolve(ctx context.Context, dedupKey string) error {
 	return e.store.ResolveAlert(ctx, dedupKey, time.Now())
+}
+
+// AutoResolveStaleAlerts finds active alerts for a metric_id whose rule
+// condition did not fire in this evaluation batch, and resolves them.
+//
+// Loop:
+//  1. Fetch active alerts for this metric (the "previously fired" set).
+//  2. activeByRule maps rule_id → active alert (resolved-at-is-null).
+//  3. fireSet = rules that DID trigger in this batch.
+//  4. For each rule with an active alert but NOT in fireSet, resolve it.
+//
+// This implements PRD §5.4: "when a rule's condition is no longer true,
+// the AlertEngine auto-marks the alert as resolved." A rule that fires every
+// cycle keeps its alert alive; a rule that stops firing loses its alert on
+// the next evaluation.
+func (e *Engine) AutoResolveStaleAlerts(
+	ctx context.Context,
+	metricID string,
+	firedRuleIDs map[int]struct{},
+) error {
+	activeAlerts, err := e.store.GetActiveAlertsByMetric(ctx, metricID)
+	if err != nil {
+		return fmt.Errorf("get active alerts by metric: %w", err)
+	}
+
+	for _, a := range activeAlerts {
+		// This rule fired in the current batch → keep alive.
+		if _, fired := firedRuleIDs[a.RuleID]; fired {
+			continue
+		}
+		log.Info().
+			Str("dedup_key", a.DedupKey).
+			Str("metric_id", metricID).
+			Int("rule_id", a.RuleID).
+			Msg("auto-resolving stale alert (condition no longer triggered)")
+		if rerr := e.store.ResolveAlert(ctx, a.DedupKey, time.Now()); rerr != nil {
+			// Log + continue: one resolve failure must not abort the batch.
+			log.Error().Err(rerr).
+				Str("dedup_key", a.DedupKey).
+				Msg("auto-resolve failed")
+			continue
+		}
+	}
+	return nil
 }

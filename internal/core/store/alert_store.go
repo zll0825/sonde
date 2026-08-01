@@ -120,3 +120,39 @@ func (s *PostgresAlertStore) ResolveAlert(ctx context.Context, dedupKey string, 
 	}
 	return nil
 }
+
+// GetActiveAlertsByMetric returns all active alerts for a given metric_id.
+// Used by AutoResolveStaleAlerts to detect alerts whose condition no longer holds.
+func (s *PostgresAlertStore) GetActiveAlertsByMetric(ctx context.Context, metricID string) ([]model.Alert, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT id, title, summary, severity, status,
+		       metric_id, rule_id, rule_version, rule_effective_from,
+		       detector_name, dedup_key, window_start, window_end,
+		       evidence, plugin_id, triggered_at, resolved_at
+		FROM alerts
+		WHERE metric_id = $1 AND status = 'active'
+		ORDER BY triggered_at DESC
+	`, metricID)
+	if err != nil {
+		return nil, fmt.Errorf("query active alerts by metric: %w", err)
+	}
+	defer rows.Close()
+
+	var alerts []model.Alert
+	for rows.Next() {
+		var a model.Alert
+		if err := rows.Scan(
+			&a.ID, &a.Title, &a.Summary, &a.Severity, &a.Status,
+			&a.MetricID, &a.RuleID, &a.RuleVersion, &a.RuleEffectiveFrom,
+			&a.DetectorName, &a.DedupKey, &a.WindowStart, &a.WindowEnd,
+			&a.Evidence, &a.PluginID, &a.TriggeredAt, &a.ResolvedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan active alert: %w", err)
+		}
+		alerts = append(alerts, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate active alert rows: %w", err)
+	}
+	return alerts, nil
+}

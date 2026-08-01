@@ -54,6 +54,16 @@ func main() {
 	mux.HandleFunc("/api/control/sync", syncHandler(db))
 	mux.HandleFunc("/api/control/backfill", backfillHandler(db))
 
+	// Static frontend: mounts web/ at "/" so the frontend can be served by the
+	// API server (fixes the file:// → fetch failure — M5 acceptance #5).
+	// WEB_DIR env var allows overriding; defaults to ./web (project root when
+	// CWD is repo root) or ../../web (when binary lives in cmd/api/).
+	webDir := os.Getenv("WEB_DIR")
+	if webDir == "" {
+		webDir = "./web"
+	}
+	mux.Handle("/", http.FileServer(http.Dir(webDir)))
+
 	// Wrap with middleware: rate-limit → auth → handler.
 	var handler http.Handler = mux
 	handler = authMiddleware(handler)

@@ -109,8 +109,10 @@ func (h *Handler) MaintainSession(stream pb.PluginHost_MaintainSessionServer) er
 }
 
 // Heartbeat handles unary heartbeat requests from plugins.
+// Records the plugin's last-seen timestamp so isPluginHealthy can compute
+// real health status (used downstream for quality-score reputation).
 func (h *Handler) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
-	// M1: accept all heartbeats; plugin status tracking comes in M2.
+	h.manager.markHealthActivity(req.PluginId)
 	log.Debug().
 		Str("plugin_id", req.PluginId).
 		Str("state", req.Status.GetState()).

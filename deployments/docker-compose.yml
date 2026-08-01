@@ -1,10 +1,23 @@
-# Capital Observatory — Local Development Stack
-# M0 deliverable: PostgreSQL 16 + TimescaleDB 2.16
+# Capital Observatory — Full-Stack Dev Environment
+# M0–M6 deliverable: PostgreSQL + TimescaleDB + Core (gRPC) + API + ETF Plugin
 #
 # Usage:
-#   docker compose up -d        # start database
-#   make migrate-up             # apply baseline migration
-#   make dev                    # start core hot-reload (after M1)
+#   make dev-up     # start database (compose) + migrate + core + api + etf plugin
+#   make dev-logs   # tail service logs
+#   make dev-down   # stop everything
+#
+# After startup:
+#   - Database available at postgres://capital:capital_dev@localhost:5432/capital_observatory
+#   - Core gRPC server at     :50051
+#   - API + Frontend          http://localhost:8080/
+#
+# The ETF plugin connects automatically and begins pushing snapshots (real GLD
+# price from Yahoo Finance + synthetic flow data) every ~24h. Use
+#   SELECT * FROM observations ORDER BY ingested_at DESC;
+#   SELECT * FROM alerts;
+#   SELECT * FROM research_snapshots;
+#   SELECT * FROM command_log;
+# to inspect the pipeline.
 
 services:
   timescaledb:
@@ -24,6 +37,55 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Core gRPC server: accepts plugin connections, runs M1–M6 pipeline.
+  core:
+    build:
+      context: ../
+      dockerfile: deployments/Dockerfile.core
+    container_name: capital-observatory-core
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      DB_URL: postgres://capital:capital_dev@timescaledb:5432/capital_observatory?sslmode=disable
+      CORE_BIND: ":50051"
+    ports:
+      - "50051:50051"
+
+  # API server: REST endpoints + static frontend
+  api:
+    build:
+      context: ../
+      dockerfile: deployments/Dockerfile.api
+    container_name: capital-observatory-api
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      DB_URL: postgres://capital:capital_dev@timescaledb:5432/capital_observatory?sslmode=disable
+      API_BIND: ":8080"
+      WEB_DIR: "/app/web"
+    ports:
+      - "8080:8080"
+
+  # ETF Plugin: connects to core, streams metrics (GLD real price via Yahoo Finance).
+  etf-plugin:
+    build:
+      context: ../plugins/etf
+      dockerfile: ../../deployments/Dockerfile.plugin
+    container_name: capital-observatory-etf
+    restart: unless-stopped
+    depends_on:
+      - core
+      - api
+    environment:
+      CORE_ADDR: "core:50051"
+      PLUGIN_ID: "etf"
+      COLLECTION_INTERVAL: "24h"          # daily interval (ETF flow cadence)
+      PROVIDER: "yahoo"                    # "yahoo" = real GLD price; "mock" = synthetic
 
 volumes:
   tsdb_data:

@@ -1,0 +1,30 @@
+# Dockerfile.plugin — generic plugin builder, parameterized by build arg PLUGIN_DIR.
+#
+# Build stage
+FROM golang:1.22-alpine AS builder
+
+WORKDIR /workspace
+
+RUN apk add --no-cache git ca-certificates
+
+ARG PLUGIN_DIR=etf
+
+# Copy workspace manifests.
+COPY go.mod go.mod
+COPY go.work go.work.sum ./
+
+# Copy the specific plugin + its shared dependencies.
+# The plugin lives in plugins/<name>/ (separate go.mod uses go.work).
+COPY plugins/${PLUGIN_DIR}/ ./plugins/${PLUGIN_DIR}/
+
+# Build the plugin binary (path: plugins/<name>/cmd/<name>/main.go)
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" \
+    -o /bin/plugin ./plugins/${PLUGIN_DIR}/cmd/${PLUGIN_DIR}
+
+# Runtime stage
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata
+COPY --from=builder /bin/plugin /bin/plugin
+
+ENTRYPOINT ["/bin/plugin"]

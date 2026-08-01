@@ -1,0 +1,18 @@
+# Air (hot-reload) config for Capital Observatory core service.
+#   make dev  →  air -c .air.toml  (rebuilds on .go changes, restarts core)
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/core ./cmd/core"
+bin = "./tmp/core"
+full_bin = "./tmp/core"
+include_ext = ["go", "tmpl", "html"]
+exclude_dir = ["tmp", "vendor", "web", "_archive"]
+delay = 1000
+stop_on_error = true
+log = "build-errors.log"
+
+[misc]
+clean_on_exit = true

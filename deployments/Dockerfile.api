@@ -1,0 +1,33 @@
+# Dockerfile.api — builds and runs the Capital Observatory API (REST + static frontend).
+#
+# Build stage
+FROM golang:1.22-alpine AS builder
+
+WORKDIR /workspace
+
+RUN apk add --no-cache git ca-certificates
+
+# Copy workspace + module manifests
+COPY go.mod go.mod
+COPY go.work go.work.sum ./
+COPY pkg/ ./pkg/
+COPY internal/ ./internal/
+COPY cmd/api/ ./cmd/api/
+COPY migrations/ ./migrations/
+
+# Build the API binary
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/api ./cmd/api
+
+# Runtime stage
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata
+
+# Frontend static assets (served at "/" by the API binary).
+COPY web/ /app/web
+
+COPY --from=builder /bin/api /bin/api
+
+EXPOSE 8080
+
+ENTRYPOINT ["/bin/api"]

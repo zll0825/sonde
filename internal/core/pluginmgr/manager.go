@@ -2,6 +2,7 @@ package pluginmgr
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"capital_observatory/internal/core/metric"
 	"capital_observatory/internal/core/ontology"
 	"capital_observatory/internal/core/research"
+	"capital_observatory/internal/core/store"
 	pb "capital_observatory/pkg/proto/plugin/v1"
 )
 
@@ -22,9 +24,14 @@ import (
 type Manager struct {
 	mu       sync.RWMutex
 	sessions map[string]*StreamSession // pluginID → session
+	health   map[string]*PluginHealth  // pluginID → health state
 	store    *ontology.Store
 	ingester *metric.Ingester
 	pipeline *Pipeline
+
+	// commandStore is the control-plane store. The CommandDispatcher polls it
+	// and dispatches pending Sync/Backfill commands to connected plugins.
+	commandStore store.CommandStore
 
 	// detectorEngine is here so dynamic registration of new Detector types
 	// (e.g. percentile, trend) can be added after construction.
@@ -33,6 +40,31 @@ type Manager struct {
 	researchAsm    *research.Assembler
 
 	db metric.DB
+
+	healthTimeout time.Duration // max time since last heartbeat before "unhealthy"
+}
+
+// PluginHealth tracks the last-seen timestamp for a plugin.
+// A plugin is healthy if it has an active session AND its last activity
+// (stream heartbeat or data push) was within Manager.healthTimeout.
+type PluginHealth struct {
+	lastActivity time.Time // last heartbeat or push
+	mu           sync.Mutex
+}
+
+// markHealthActivity updates the last-seen timestamp for a plugin.
+// The health map itself is guarded by m.mu (Register/Unregister add and
+// remove keys concurrently); the per-plugin timestamp by its own mutex.
+func (m *Manager) markHealthActivity(pluginID string) {
+	m.mu.RLock()
+	h, ok := m.health[pluginID]
+	m.mu.RUnlock()
+	if !ok {
+		return
+	}
+	h.mu.Lock()
+	h.lastActivity = time.Now()
+	h.mu.Unlock()
 }
 
 // NewManager creates a plugin manager backed by the given store and the
@@ -45,14 +77,18 @@ func NewManager(
 	alertEng *alert.Engine,
 	researchAsmer *research.Assembler,
 	obsQuerier ObservationQuerier,
+	cmdStore store.CommandStore,
 ) *Manager {
 	m := &Manager{
 		sessions:       make(map[string]*StreamSession),
+		health:         make(map[string]*PluginHealth),
 		store:          store,
+		commandStore:   cmdStore,
 		db:             db,
 		detectorEngine: detEngine,
 		alertEngine:    alertEng,
 		researchAsm:    researchAsmer,
+		healthTimeout:  60 * time.Second,
 	}
 	m.ingester = metric.NewIngester(store, db)
 	m.pipeline = NewPipeline(store, obsQuerier, researchAsmer, detEngine, alertEng)
@@ -70,6 +106,7 @@ func (m *Manager) RegisterSession(session *StreamSession) {
 		old.Close()
 	}
 	m.sessions[session.pluginID] = session
+	m.health[session.pluginID] = &PluginHealth{lastActivity: time.Now()}
 	go session.StartWriter()
 }
 
@@ -82,6 +119,7 @@ func (m *Manager) UnregisterSession(pluginID string, session *StreamSession) {
 	defer m.mu.Unlock()
 	if m.sessions[pluginID] == session {
 		delete(m.sessions, pluginID)
+		delete(m.health, pluginID)
 	}
 }
 
@@ -90,6 +128,172 @@ func (m *Manager) GetSession(pluginID string) *StreamSession {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.sessions[pluginID]
+}
+
+// handleCommandAck updates command_log based on a plugin's CommandAck.
+// Success → MarkCompleted, failure → MarkFailed. Used by HandlePluginMessage
+// to close the control-plane loop started by CommandDispatcher.dispatch.
+func (m *Manager) handleCommandAck(ctx context.Context, ack *pb.CommandAck) error {
+	if ack == nil {
+		return nil
+	}
+	log.Info().
+		Str("command_id", ack.CommandId).
+		Str("status", ack.Status).
+		Int32("collected", ack.CollectedCount).
+		Msg("command ack received")
+
+	// Success requires no error AND a non-failure status. Judging by
+	// `status=="success" || error==""` would mark a failed ack with an empty
+	// error message as completed.
+	isSuccess := ack.Error == "" && (ack.Status == "" || ack.Status == "success")
+	if isSuccess {
+		return m.commandStore.MarkCompleted(ctx, ack.CommandId, int(ack.CollectedCount))
+	}
+	errMsg := ack.Error
+	if errMsg == "" {
+		errMsg = "plugin reported status " + ack.Status
+	}
+	return m.commandStore.MarkFailed(ctx, ack.CommandId, errMsg)
+}
+
+// StartCommandDispatcher begins a background goroutine that polls the
+// command_log for pending commands and routes each to the target plugin's
+// stream via SendAsync.
+//
+// Loop:
+//  1. Poll commandStore.GetPendingCommands (blocked by 1s tick).
+//  2. For each command, find the active session for target_plugin.
+//  3. Send the corresponding CoreMessage (SyncCommand / BackfillCommand).
+//  4. Mark the row 'dispatched' so the next poll won't re-emit it.
+//
+// When the plugin responds with CommandAck, handleCommandAck transitions
+// the row to 'completed' or 'failed' — closing the control-plane loop.
+func (m *Manager) StartCommandDispatcher(ctx context.Context, tickInterval time.Duration) {
+	ticker := time.NewTicker(tickInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info().Msg("CommandDispatcher shutting down")
+			return
+		case <-ticker.C:
+			if err := m.dispatchOnce(ctx); err != nil {
+				log.Error().Err(err).Msg("CommandDispatcher dispatch error")
+			}
+		}
+	}
+}
+
+// dispatchOnce sends one round of pending commands to their target plugins.
+func (m *Manager) dispatchOnce(ctx context.Context) error {
+	pending, err := m.commandStore.GetPendingCommands(ctx)
+	if err != nil {
+		return fmt.Errorf("get pending commands: %w", err)
+	}
+
+	for _, cmd := range pending {
+		m.mu.RLock()
+		session := m.sessions[cmd.TargetPlugin]
+		m.mu.RUnlock()
+
+		if session == nil {
+			// Debug, not warn: an offline target plugin is a normal transient
+			// state and this fires on every poll tick until it reconnects.
+			log.Debug().
+				Str("command_id", cmd.CommandID).
+				Str("plugin", cmd.TargetPlugin).
+				Msg("no connected session for pending command — will retry on next tick")
+			continue
+		}
+
+		coreMsg := commandToCoreMessage(cmd)
+		if coreMsg == nil {
+			// Unknown command type can never dispatch — fail it instead of
+			// retrying forever (and never hand a nil message to the stream).
+			log.Error().
+				Str("command_id", cmd.CommandID).
+				Str("type", string(cmd.CommandType)).
+				Msg("unknown command type, marking failed")
+			if ferr := m.commandStore.MarkFailed(ctx, cmd.CommandID, "unknown command type: "+string(cmd.CommandType)); ferr != nil {
+				log.Error().Err(ferr).Str("command_id", cmd.CommandID).Msg("failed to mark unknown command failed")
+			}
+			continue
+		}
+		if serr := session.SendAsync(coreMsg); serr != nil {
+			log.Error().Err(serr).
+				Str("command_id", cmd.CommandID).
+				Str("plugin", cmd.TargetPlugin).
+				Msg("failed to send command to plugin")
+			continue
+		}
+
+		// Mark dispatched so the next poll skips this command.
+		if derr := m.commandStore.MarkDispatched(ctx, cmd.CommandID); derr != nil {
+			log.Error().Err(derr).
+				Str("command_id", cmd.CommandID).
+				Msg("failed to mark command dispatched")
+		}
+
+		log.Info().
+			Str("command_id", cmd.CommandID).
+			Str("type", string(cmd.CommandType)).
+			Str("plugin", cmd.TargetPlugin).
+			Str("endpoint", cmdToStreamEndpoint(coreMsg)).
+			Msg("command dispatched to plugin")
+	}
+
+	return nil
+}
+
+// commandToCoreMessage converts a store.Command to a CoreMessage for the stream.
+func commandToCoreMessage(cmd store.Command) *pb.CoreMessage {
+	switch cmd.CommandType {
+	case store.CmdSync:
+		return &pb.CoreMessage{
+			Payload: &pb.CoreMessage_Sync{
+				Sync: &pb.SyncCommand{
+					CommandId: cmd.CommandID,
+					Reason:    cmd.Reason,
+					MetricIds: cmd.MetricIDs,
+				},
+			},
+		}
+	case store.CmdBackfill:
+		var ws, we int64
+		if cmd.WindowStart != nil {
+			ws = cmd.WindowStart.Unix()
+		}
+		if cmd.WindowEnd != nil {
+			we = cmd.WindowEnd.Unix()
+		}
+		return &pb.CoreMessage{
+			Payload: &pb.CoreMessage_Backfill{
+				Backfill: &pb.BackfillCommand{
+					CommandId:   cmd.CommandID,
+					Reason:      cmd.Reason,
+					MetricIds:   cmd.MetricIDs,
+					WindowStart: ws,
+					WindowEnd:   we,
+				},
+			},
+		}
+	default:
+		return nil
+	}
+}
+
+// cmdToStreamEndpoint is a tiny helper for structured logging.
+func cmdToStreamEndpoint(msg *pb.CoreMessage) string {
+	switch msg.Payload.(type) {
+	case *pb.CoreMessage_Sync:
+		return "Sync"
+	case *pb.CoreMessage_Backfill:
+		return "Backfill"
+	default:
+		return "(unknown)"
+	}
 }
 
 // GetActiveSessions returns a snapshot of all connected plugin sessions.
@@ -117,11 +321,11 @@ func (m *Manager) HandlePluginMessage(ctx context.Context, msg *pb.PluginMessage
 	case *pb.PluginMessage_PushSnapshots:
 		return m.handlePushSnapshots(ctx, msg.GetPushSnapshots())
 	case *pb.PluginMessage_Heartbeat:
+		m.markHealthActivity(msg.GetHeartbeat().GetPluginId())
 		log.Debug().Msg("stream heartbeat received")
 		return nil
 	case *pb.PluginMessage_CommandAck:
-		log.Debug().Msg("command ack received")
-		return nil
+		return m.handleCommandAck(ctx, msg.GetCommandAck())
 	default:
 		return nil
 	}
@@ -134,6 +338,7 @@ func (m *Manager) HandlePluginMessage(ctx context.Context, msg *pb.PluginMessage
 //     and run the M3/M4 evaluation pipeline against each of them.
 //  3. Send PushAck back over the stream.
 func (m *Manager) handlePushSnapshots(ctx context.Context, ps *pb.PushSnapshotsRequest) error {
+	m.markHealthActivity(ps.PluginId)
 	isHealthy := m.isPluginHealthy(ps.PluginId)
 	result, err := m.ingester.Ingest(ctx, ps, isHealthy)
 	if err != nil {
@@ -183,9 +388,28 @@ func (m *Manager) handlePushSnapshots(ctx context.Context, ps *pb.PushSnapshotsR
 	return nil
 }
 
-func (m *Manager) isPluginHealthy(_ string) bool {
-	// M2/M3 placeholder: real plugin status comes from heartbeat polling.
-	return true
+// isPluginHealthy determines whether a plugin is currently healthy.
+// Healthy = active session AND last activity (stream heartbeat or push)
+// within Manager.healthTimeout. Missing or stale health entries are
+// treated as unhealthy (fail-closed: quality scores penalized).
+func (m *Manager) isPluginHealthy(pluginID string) bool {
+	m.mu.RLock()
+	session, hasSession := m.sessions[pluginID]
+	health, hasHealth := m.health[pluginID]
+	timeout := m.healthTimeout
+	m.mu.RUnlock()
+
+	if !hasSession || session == nil {
+		return false
+	}
+	if !hasHealth {
+		return false
+	}
+
+	health.mu.Lock()
+	last := health.lastActivity
+	health.mu.Unlock()
+	return time.Since(last) <= timeout
 }
 
 // ErrPluginNotConnected is returned when a SyncCommand targets a disconnected plugin.

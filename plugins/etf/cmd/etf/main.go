@@ -96,13 +96,51 @@ func runSession(ctx context.Context, coreAddr string, interval time.Duration) er
 	}
 	log.Info().Str("plugin_id", pluginID).Msg("plugin registered successfully")
 
+	// Collector: default to Yahoo Finance (real data); set PROVIDER=mock for synthetic.
+	// Declared before collectOnce, which closes over it.
+	var collectorInstance collector.Provider = collector.NewYahooCollector()
+	if envOrDefault("PROVIDER", "yahoo") == "mock" {
+		collectorInstance = collector.Mock{}
+	}
+
+	// collectOnce runs one collection cycle: fetch snapshots from the collector,
+	// push them to Core, and report collected_count in a CommandAck. Shared by
+	// the periodic tick loop AND the OnCoreMessage command handler so that
+	// Sync/Backfill commands cause an immediate real collection.
+	//
+	// The commandID may be "" for the periodic tick loop (no ack needed).
+	// For command-triggered runs, a CommandAck is sent back to Core once the
+	// snapshots are successfully submitted — Core's dispatching loop is now
+	// complete: API → command_log → dispatch → plugin collect → CommandAck.
+	collectOnce := func(commandID string) {
+		snaps, cerr := collectorInstance.GetSnapshots(ctx)
+		if cerr != nil {
+			log.Error().Err(cerr).Msg("collector failed to get snapshots")
+			if commandID != "" {
+				runner.SubmitCommandAck(commandID, "failed", cerr.Error(), 0, cerr.Error())
+			}
+			return
+		}
+		msgs := snapshotsToProto(snaps, pluginVersion)
+		runner.SubmitSnapshots(pluginID, msgs)
+		log.Info().
+			Str("command_id", commandID).
+			Int("count", len(msgs)).
+			Msg("snapshots submitted")
+		if commandID != "" {
+			runner.SubmitCommandAck(commandID, "success", fmt.Sprintf("%d snapshots collected", len(msgs)), int32(len(msgs)), "")
+		}
+	}
+
 	// Register a handler for Core messages (e.g., sync/backfill commands).
 	runner.OnCoreMessage(func(msg *pb.CoreMessage) {
 		switch p := msg.Payload.(type) {
 		case *pb.CoreMessage_Sync:
 			log.Info().Str("command_id", p.Sync.CommandId).Str("reason", p.Sync.Reason).Msg("received sync command")
+			collectOnce(p.Sync.CommandId)
 		case *pb.CoreMessage_Backfill:
 			log.Info().Str("command_id", p.Backfill.CommandId).Str("reason", p.Backfill.Reason).Msg("received backfill command")
+			collectOnce(p.Backfill.CommandId)
 		case *pb.CoreMessage_PushAck:
 			log.Info().
 				Int32("inserted", p.PushAck.Inserted).
@@ -115,8 +153,7 @@ func runSession(ctx context.Context, coreAddr string, interval time.Duration) er
 		}
 	})
 
-	// Collector submits snapshots on every tick.
-	collectorInstance := collector.Mock{}
+	// Periodic collection loop.
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -125,14 +162,7 @@ func runSession(ctx context.Context, coreAddr string, interval time.Duration) er
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				snapshots, cerr := collectorInstance.GetSnapshots(ctx)
-				if cerr != nil {
-					log.Error().Err(cerr).Msg("collector failed to get snapshots")
-					continue
-				}
-				msgs := snapshotsToProto(snapshots, pluginVersion)
-				runner.SubmitSnapshots(pluginID, msgs)
-				log.Info().Int("count", len(msgs)).Msg("snapshots submitted")
+				collectOnce("")
 			}
 		}
 	}()
@@ -221,10 +251,29 @@ func snapshotsToProto(snapshots []collector.Snapshot, version string) []*pb.Metr
 			SourcePluginVersion: version,
 			SourceProvider:      s.Provider,
 			SourceFetchedAt:     s.Timestamp.Unix(),
-			QualityGrade:        pb.QualityGrade_QUALITY_GRADE_ESTIMATED,
+			QualityGrade:        gradeToProto(s.Grade),
 		})
 	}
 	return result
+}
+
+// gradeToProto converts a collector grade string to its proto enum value.
+// Falls back to ESTIMATED for unknown/unset grades.
+func gradeToProto(grade string) pb.QualityGrade {
+	switch grade {
+	case "realtime":
+		return pb.QualityGrade_QUALITY_GRADE_REALTIME
+	case "delayed":
+		return pb.QualityGrade_QUALITY_GRADE_DELAYED
+	case "estimated":
+		return pb.QualityGrade_QUALITY_GRADE_ESTIMATED
+	case "preliminary":
+		return pb.QualityGrade_QUALITY_GRADE_PRELIMINARY
+	case "revised":
+		return pb.QualityGrade_QUALITY_GRADE_REVISED
+	default:
+		return pb.QualityGrade_QUALITY_GRADE_ESTIMATED
+	}
 }
 
 func envOrDefault(key, def string) string {

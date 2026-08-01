@@ -216,10 +216,12 @@ func TestIntegration_RegisterPlugin_VersionBumpOnContentChange(t *testing.T) {
 }
 
 // =============================================================================
-// Test 3 — InsertObservation dedup: same dedup_key twice → second is rejected
+// Test 3 — InsertObservation coverage matrix:
+//   same (metric_uid,time,source,labels_hash) + equal grade → NOOP dedup (no error, rows unchanged)
+//   same key + higher-grade incoming → UPDATE (the revised correction path)
 // =============================================================================
 
-func TestIntegration_InsertObservation_Dedup(t *testing.T) {
+func TestIntegration_InsertObservation_CoverageMatrix(t *testing.T) {
 	db := dbConn(t)
 	truncateAll(t, db)
 
@@ -239,28 +241,66 @@ func TestIntegration_InsertObservation_Dedup(t *testing.T) {
 		Labels:              map[string]string{"symbol": "AAPL"},
 	}
 
-	// First insert — must succeed.
-	err := s.InsertObservation(context.Background(), snap, "mtr_dedup", "realtime", 0.9, 1.0, dedupKey, "plg_dedup")
+	// 3a — First insert at grade "delayed" → succeeds.
+	action, err := s.InsertObservation(context.Background(), snap, "mtr_dedup", "delayed", 0.9, 0.7, dedupKey, "plg_dedup")
 	if err != nil {
-		t.Fatalf("first InsertObservation: %v", err)
+		t.Fatalf("first InsertObservation (delayed): %v", err)
+	}
+	if action != ActionInserted {
+		t.Fatalf("expected ActionInserted, got %q", action)
 	}
 
-	// Second insert with identical (metric_uid,time,source,labels_hash) —
-	// unique index must reject it.
-	err = s.InsertObservation(context.Background(), snap, "mtr_dedup", "realtime", 0.9, 1.0, dedupKey, "plg_dedup")
-	if err == nil {
-		t.Fatal("expected duplicate-violation (unique index) on second InsertObservation, got nil")
+	// 3b — Second insert same key, same grade "delayed" → NOOP dedup, no error.
+	action, err = s.InsertObservation(context.Background(), snap, "mtr_dedup", "delayed", 0.9, 0.7, dedupKey, "plg_dedup")
+	if err != nil {
+		t.Fatalf("second InsertObservation (same grade delayed): unexpected error: %v", err)
+	}
+	if action != ActionNoopDedup {
+		t.Fatalf("expected ActionNoopDedup on same-grade replay, got %q", action)
 	}
 
-	// Confirm exactly one row.
+	// 3c — Third insert same key but grade "revised" (higher rank) → UPDATE overwrites.
+	revisedSnap := &pb.MetricSnapshot{
+		MetricId:            "dedup_met",
+		Value:               43.0, // corrected value
+		Timestamp:           now.Unix(),
+		SourcePlugin:        "dedup-plugin",
+		SourcePluginVersion: "1.0.0",
+		SourceProvider:      "test",
+		SourceFetchedAt:     now.Unix(),
+		Labels:              map[string]string{"symbol": "AAPL"},
+	}
+	action, err = s.InsertObservation(context.Background(), revisedSnap, "mtr_dedup", "revised", 0.8, 0.8, dedupKey, "plg_dedup")
+	if err != nil {
+		t.Fatalf("third InsertObservation (revised upsert): unexpected error: %v", err)
+	}
+	if action != ActionInserted {
+		// revised overwrites count as ActionInserted (data was persisted).
+		t.Fatalf("expected ActionInserted on revised overwrite, got %q", action)
+	}
+
+	// Verify: exactly one observation row still, with the revised value.
 	var count int
+	var finalValue float64
 	if err := db.QueryRow(context.Background(), `
-		SELECT COUNT(*) FROM observations WHERE metric_uid = $1 AND labels_hash = $2
-	`, "mtr_dedup", dedupKey).Scan(&count); err != nil {
+		SELECT COUNT(*), MAX(value) FROM observations WHERE metric_uid = $1 AND labels_hash = $2
+	`, "mtr_dedup", dedupKey).Scan(&count, &finalValue); err != nil {
 		t.Fatalf("count observations: %v", err)
 	}
 	if count != 1 {
-		t.Fatalf("expected exactly 1 observation row after dedup, got %d", count)
+		t.Fatalf("expected exactly 1 observation row after revised upsert, got %d", count)
+	}
+	if finalValue != 43.0 {
+		t.Fatalf("expected value=43.0 (revised) after upsert, got %f", finalValue)
+	}
+
+	// 3d — Fourth insert same key, LOWER grade "estimated" → NOOP (don't downgrade).
+	action, err = s.InsertObservation(context.Background(), snap, "mtr_dedup", "estimated", 0.5, 0.5, dedupKey, "plg_dedup")
+	if err != nil {
+		t.Fatalf("fourth InsertObservation (lower grade): unexpected error: %v", err)
+	}
+	if action != ActionNoopDedup {
+		t.Fatalf("expected ActionNoopDedup when incoming grade is lower, got %q", action)
 	}
 }
 
@@ -290,7 +330,7 @@ func TestIntegration_InsertObservation_IdempotentReplay(t *testing.T) {
 		SourceFetchedAt:     now.Unix(),
 		Labels:              map[string]string{"symbol": "AAPL"},
 	}
-	if err := s.InsertObservation(context.Background(), snapA, metricUID, "realtime", 0.9, 1.0, labelsHashA, "plg_replay"); err != nil {
+	if _, err := s.InsertObservation(context.Background(), snapA, metricUID, "realtime", 0.9, 1.0, labelsHashA, "plg_replay"); err != nil {
 		t.Fatalf("first InsertObservation (hash A): %v", err)
 	}
 
@@ -306,7 +346,7 @@ func TestIntegration_InsertObservation_IdempotentReplay(t *testing.T) {
 		SourceFetchedAt:     now.Unix(),
 		Labels:              map[string]string{"symbol": "AAPL"},
 	}
-	if err := s.InsertObservation(context.Background(), snapB, metricUID, "realtime", 0.9, 1.0, labelsHashB, "plg_replay"); err != nil {
+	if _, err := s.InsertObservation(context.Background(), snapB, metricUID, "realtime", 0.9, 1.0, labelsHashB, "plg_replay"); err != nil {
 		t.Fatalf("second InsertObservation (hash B): %v", err)
 	}
 

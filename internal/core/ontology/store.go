@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -455,15 +456,53 @@ func insertRuleSuggestion(ctx context.Context, tx pgx.Tx, pluginID string, rule 
 	return nil
 }
 
+// ObserveAction reports what happened to an observation in the DB.
+type ObserveAction string
+
+const (
+	ActionInserted       ObserveAction = "inserted"        // new observation written
+	ActionUpdatedRevised ObserveAction = "updated_revised" // revised/correction data overwrote existing
+	ActionNoopDedup      ObserveAction = "noop_dedup"      // existing data is same-or-better grade; skipped
+)
+
+// gradeRank maps a quality_grade string to a numeric rank.
+// Higher = more authoritative. Used by the coverage matrix in InsertObservation.
+// Priority: realtime > revised > delayed > estimated > preliminary
+func gradeRank(grade string) int {
+	switch grade {
+	case "realtime":
+		return 5
+	case "revised":
+		return 4
+	case "delayed":
+		return 3
+	case "estimated":
+		return 2
+	case "preliminary":
+		return 1
+	default:
+		return 0
+	}
+}
+
 // InsertObservation writes a scored, source-resolved observation into the observations table.
 // metricUID is the registered uid from metric_definitions_v2 (resolved by the caller);
 // it is what research-time joins use, so it must never be re-derived here.
-// The unique index idx_obs_idempotency enforces dedup: same (metric_uid, time, source, labels_hash)
-// returns a PG 23505 unique violation which callers should interpret as "duplicate".
+//
+// Coverage matrix (PRD §三.4, architecture §三):
+//   - Same (metric_uid, time, source, labels_hash) → compare grade rank:
+//   - Incoming rank > existing rank → UPDATE with new value/grade (the "revised" correction path)
+//   - Incoming rank ≤ existing rank → NOOP (idempotent dedup)
+//   - No existing row → INSERT new observation
 //
 // Quality values are passed directly (no dependency on metric.QualityResult avoids an import cycle).
-func (s *Store) InsertObservation(ctx context.Context, snap *pb.MetricSnapshot, metricUID, grade string, confidence float64, systemScore float64, labelsHash, pluginID string) error {
-	_, err := s.db.Exec(ctx, `
+func (s *Store) InsertObservation(ctx context.Context, snap *pb.MetricSnapshot, metricUID, grade string, confidence float64, systemScore float64, labelsHash, pluginID string) (ObserveAction, error) {
+	// RETURNING (xmax = 0) distinguishes a fresh INSERT (xmax=0) from an
+	// ON CONFLICT UPDATE (xmax≠0) — that's what makes the revised-correction
+	// path observable. ErrNoRows means the conflict WHERE clause filtered the
+	// update out: incoming grade did not outrank the existing row (dedup).
+	var freshInsert bool
+	err := s.db.QueryRow(ctx, `
 		INSERT INTO observations (
 			time, metric_id, metric_uid, value, labels, labels_hash,
 			source_plugin, source_plugin_version, source_provider, source_fetched_at,
@@ -473,16 +512,49 @@ func (s *Store) InsertObservation(ctx context.Context, snap *pb.MetricSnapshot, 
 			$7, $8, $9, $10,
 			$11, $12, $13, NOW()
 		)
+		ON CONFLICT (metric_uid, time, source_plugin, source_provider, labels_hash) DO UPDATE SET
+			value = EXCLUDED.value,
+			quality_grade = EXCLUDED.quality_grade,
+			quality_confidence = EXCLUDED.quality_confidence,
+			source_fetched_at = EXCLUDED.source_fetched_at,
+			system_quality_score = EXCLUDED.system_quality_score,
+			ingested_at = NOW()
+		WHERE
+			CASE EXCLUDED.quality_grade
+				WHEN 'realtime' THEN 5
+				WHEN 'revised' THEN 4
+				WHEN 'delayed' THEN 3
+				WHEN 'estimated' THEN 2
+				WHEN 'preliminary' THEN 1
+				ELSE 0
+			END
+			>
+			CASE observations.quality_grade
+				WHEN 'realtime' THEN 5
+				WHEN 'revised' THEN 4
+				WHEN 'delayed' THEN 3
+				WHEN 'estimated' THEN 2
+				WHEN 'preliminary' THEN 1
+				ELSE 0
+			END
+		RETURNING (xmax = 0)
 	`, time.Unix(snap.Timestamp, 0), snap.MetricId, metricUID, snap.Value,
 		labelsToBytes(snap.Labels), labelsHash,
 		pluginID, snap.SourcePluginVersion, snap.SourceProvider,
 		time.Unix(snap.SourceFetchedAt, 0),
-		grade, confidence, systemScore)
+		grade, confidence, systemScore).Scan(&freshInsert)
 
-	if err != nil {
-		return fmt.Errorf("insert observation: %w", err)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// ON CONFLICT match but WHERE excluded rank ≤ existing rank → dedup skip.
+		return ActionNoopDedup, nil
 	}
-	return nil
+	if err != nil {
+		return "", fmt.Errorf("insert observation: %w", err)
+	}
+	if freshInsert {
+		return ActionInserted, nil
+	}
+	return ActionUpdatedRevised, nil
 }
 
 // labelsToBytes serializes a labels map for the JSONB column.

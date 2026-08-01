@@ -1,0 +1,30 @@
+# Dockerfile.core — builds and runs the Capital Observatory core gRPC server.
+#
+# Build stage
+FROM golang:1.22-alpine AS builder
+
+WORKDIR /workspace
+
+# Install git + ca-certs (needed for go.sum download of module graphs)
+RUN apk add --no-cache git ca-certificates
+
+# Copy workspace + module manifests
+COPY go.mod go.mod
+COPY go.work go.work.sum ./
+COPY pkg/ ./pkg/
+COPY internal/ ./internal/
+COPY cmd/core/ ./cmd/core/
+COPY proto/ ./proto/
+
+# Build the core binary
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/core ./cmd/core
+
+# Runtime stage
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata
+COPY --from=builder /bin/core /bin/core
+
+EXPOSE 50051
+
+ENTRYPOINT ["/bin/core"]

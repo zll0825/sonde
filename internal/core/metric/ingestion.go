@@ -4,11 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"sort"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/rs/zerolog/log"
 
 	"capital_observatory/internal/core/ontology"
@@ -84,25 +82,46 @@ func (i *Ingester) Ingest(ctx context.Context, ps *pb.PushSnapshotsRequest, isPl
 			continue
 		}
 
-		// 3. Insert observation (dedup handled by unique index on DB).
-		if err := i.store.InsertObservation(ctx, snap, decision.MetricUID, qr.Grade, qr.Confidence, qr.SystemScore, labelsHash, pluginID); err != nil {
-			if isUniqueViolation(err) {
-				log.Debug().
-					Str("metric_id", snap.MetricId).
-					Str("plugin", pluginID).
-					Msg("observation deduplicated")
-				result.Duplicates++
-			} else {
-				log.Error().Err(err).
-					Str("metric_id", snap.MetricId).
-					Str("plugin", pluginID).
-					Msg("observation insert failed")
-				result.Rejected++
-			}
+		// 3. Insert observation with quality-grade coverage matrix:
+		//    - Unique conflict + incoming grade outranks existing → UPDATE (revised correction)
+		//    - Unique conflict + grade equal/lower → NOOP (idempotent dedup)
+		//    - No conflict → INSERT new observation
+		action, err := i.store.InsertObservation(ctx, snap, decision.MetricUID, qr.Grade, qr.Confidence, qr.SystemScore, labelsHash, pluginID)
+		if err != nil {
+			log.Error().Err(err).
+				Str("metric_id", snap.MetricId).
+				Str("plugin", pluginID).
+				Msg("observation insert failed")
+			result.Rejected++
 			continue
 		}
 
-		result.Inserted++
+		switch action {
+		case ontology.ActionInserted:
+			result.Inserted++
+			log.Debug().
+				Str("metric_id", snap.MetricId).
+				Str("plugin", pluginID).
+				Str("grade", qr.Grade).
+				Msg("observation inserted")
+		case ontology.ActionUpdatedRevised:
+			// Correction path: incoming grade outranked the stored row
+			// (e.g. revised overwrote preliminary). Counted as inserted in the
+			// PushAck (data was persisted), logged distinctly for auditability.
+			result.Inserted++
+			log.Info().
+				Str("metric_id", snap.MetricId).
+				Str("plugin", pluginID).
+				Str("grade", qr.Grade).
+				Msg("observation corrected by higher-grade data")
+		case ontology.ActionNoopDedup:
+			result.Duplicates++
+			log.Debug().
+				Str("metric_id", snap.MetricId).
+				Str("plugin", pluginID).
+				Str("grade", qr.Grade).
+				Msg("observation deduplicated (grade not authoritative enough)")
+		}
 	}
 
 	return result, nil
@@ -124,13 +143,4 @@ func hashLabels(labels map[string]string) string {
 		h.Write([]byte(";"))
 	}
 	return hex.EncodeToString(h.Sum(nil))[:16]
-}
-
-// isUniqueViolation returns true if the error is a PG unique violation (23505).
-func isUniqueViolation(err error) bool {
-	var pgerr *pgconn.PgError
-	if errors.As(err, &pgerr) {
-		return pgerr.Code == "23505"
-	}
-	return false
 }

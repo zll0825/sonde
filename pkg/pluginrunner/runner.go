@@ -160,6 +160,34 @@ func (r *Runner) OnCoreMessage(fn func(*pb.CoreMessage)) {
 	r.onCoreFuncs = append(r.onCoreFuncs, fn)
 }
 
+// SubmitCommandAck sends a CommandAck back to Core in response to a
+// SyncCommand or BackfillCommand. The count of newly-observed samples
+// should match what Core's ingester reports via PushAck.
+func (r *Runner) SubmitCommandAck(commandID, status, message string, collectedCount int32, errMsg string) {
+	if r.ctx == nil {
+		log.Warn().Str("command_id", commandID).Msg("runner not started, dropping command ack")
+		return
+	}
+	select {
+	case r.sendCh <- &pb.PluginMessage{
+		Payload: &pb.PluginMessage_CommandAck{
+			CommandAck: &pb.CommandAck{
+				CommandId:      commandID,
+				Status:         status,
+				Message:        message,
+				Timestamp:      time.Now().Unix(),
+				CollectedCount: collectedCount,
+				Error:          errMsg,
+			},
+		},
+	}:
+	case <-r.ctx.Done():
+		log.Warn().Str("command_id", commandID).Msg("runner closed, dropping command ack")
+	default:
+		log.Warn().Str("command_id", commandID).Msg("sendCh full, dropping command ack")
+	}
+}
+
 // Close cancels the session context, terminating the stream.
 func (r *Runner) Close() {
 	if r.cancel != nil {

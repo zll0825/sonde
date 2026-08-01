@@ -111,8 +111,11 @@ func (p *Pipeline) EvaluateAndAlert(ctx context.Context, metricID, pluginID stri
 
 	// Run detectors.
 	triggers := p.detectors.EvaluateBatch(ctx, groups, rulesForMetric)
-	if len(triggers) == 0 {
-		return nil
+
+	// Track which rule IDs fired this round (dedup by rule ID).
+	firedRuleIDs := make(map[int]struct{}, len(triggers))
+	for _, t := range triggers {
+		firedRuleIDs[t.RuleID] = struct{}{}
 	}
 
 	// Convert triggers → alerts and dispatch.
@@ -138,6 +141,18 @@ func (p *Pipeline) EvaluateAndAlert(ctx context.Context, metricID, pluginID stri
 			log.Error().Err(snapErr).
 				Str("alert_id", modelAlert.ID).
 				Msg("research snapshot save failed")
+		}
+	}
+
+	// Auto-resolve: active alerts for this metric whose rule did NOT fire.
+	// PRD §5.4 — when a rule's condition is no longer true, the alert is
+	// automatically marked resolved. Evaluate-and-resolve is atomic per-push,
+	// so every push tick sweeps stale alerts.
+	if len(rulesForMetric) > 0 {
+		if err := p.alerts.AutoResolveStaleAlerts(ctx, metricID, firedRuleIDs); err != nil {
+			log.Error().Err(err).
+				Str("metric_id", metricID).
+				Msg("auto-resolve stale alerts failed")
 		}
 	}
 

@@ -66,9 +66,15 @@ func main() {
 	researchStore := store.NewPostgresResearchStore(db)
 	researchAsm := research.NewAssembler(researchStore)
 
-	// ── Manager (wires M1–M4; researchStore doubles as the observation querier) ─
-	mgr := pluginmgr.NewManager(repo, db, detEngine, alertEng, researchAsm, researchStore)
+	// ── C7: command_log control-plane ──────────────────────────────────────────
+	cmdStore := store.NewPostgresCommandStore(db)
+
+	// ── Manager (wires M1–M5; researchStore doubles as the observation querier) ─
+	mgr := pluginmgr.NewManager(repo, db, detEngine, alertEng, researchAsm, researchStore, cmdStore)
 	handler := pluginmgr.NewHandler(mgr)
+
+	// ── CommandDispatcher: poll command_log → dispatch → wait for CommandAck ────
+	go mgr.StartCommandDispatcher(ctx, 2*time.Second)
 
 	// ── gRPC server ────────────────────────────────────────────────────────────
 	addr := os.Getenv("CORE_BIND")
