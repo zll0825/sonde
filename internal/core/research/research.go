@@ -31,11 +31,11 @@ type ResearchContext struct {
 
 // EntityRef is a lightweight entity reference in research context.
 type EntityRef struct {
-	ID         string            `json:"id"`
-	Name       string            `json:"name"`
-	Namespace  string            `json:"namespace"`
-	EntityType string            `json:"entity_type"`
-	Tags       map[string]string `json:"tags,omitempty"`
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	Namespace  string   `json:"namespace"`
+	EntityType string   `json:"entity_type"`
+	Tags       []string `json:"tags,omitempty"`
 }
 
 // RelationRef is a lightweight relation in research context.
@@ -119,7 +119,7 @@ func (a *Assembler) Assemble(ctx context.Context, alert model.Alert) (*ResearchC
 				Name:       entity.Name,
 				Namespace:  entity.Namespace,
 				EntityType: string(entity.EntityType),
-				Tags:       entity.Metadata,
+				Tags:       entity.Tags,
 			})
 		}
 

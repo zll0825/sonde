@@ -85,9 +85,20 @@ func (i *Ingester) Ingest(ctx context.Context, ps *pb.PushSnapshotsRequest, isPl
 		}
 
 		// 3. Insert observation (dedup handled by unique index on DB).
-		if err := i.store.InsertObservation(ctx, snap, qr.Grade, qr.Confidence, qr.SystemScore, labelsHash, pluginID); err != nil {
-			elogInsertError(err, snap.MetricId, pluginID)
-			result.Rejected++
+		if err := i.store.InsertObservation(ctx, snap, decision.MetricUID, qr.Grade, qr.Confidence, qr.SystemScore, labelsHash, pluginID); err != nil {
+			if isUniqueViolation(err) {
+				log.Debug().
+					Str("metric_id", snap.MetricId).
+					Str("plugin", pluginID).
+					Msg("observation deduplicated")
+				result.Duplicates++
+			} else {
+				log.Error().Err(err).
+					Str("metric_id", snap.MetricId).
+					Str("plugin", pluginID).
+					Msg("observation insert failed")
+				result.Rejected++
+			}
 			continue
 		}
 
@@ -113,21 +124,6 @@ func hashLabels(labels map[string]string) string {
 		h.Write([]byte(";"))
 	}
 	return hex.EncodeToString(h.Sum(nil))[:16]
-}
-
-// elogInsertError handles unique-constraint dedup as "duplicate" rather than error.
-func elogInsertError(err error, metricID, pluginID string) {
-	if isUniqueViolation(err) {
-		log.Debug().
-			Str("metric_id", metricID).
-			Str("plugin", pluginID).
-			Msg("observation deduplicated")
-	} else {
-		log.Error().Err(err).
-			Str("metric_id", metricID).
-			Str("plugin", pluginID).
-			Msg("observation insert failed")
-	}
 }
 
 // isUniqueViolation returns true if the error is a PG unique violation (23505).

@@ -3,6 +3,7 @@ package alert
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -11,6 +12,9 @@ import (
 	"capital_observatory/pkg/model"
 )
 
+// EventTypeAlertTriggered is the outbox event_type written when a new alert fires.
+const EventTypeAlertTriggered = "alert.triggered"
+
 // Engine evaluates triggers and upserts alerts with deduplication.
 type Engine struct {
 	store AlertStore
@@ -18,10 +22,12 @@ type Engine struct {
 
 // AlertStore is the persistence interface for alerts.
 type AlertStore interface {
-	UpsertAlert(ctx context.Context, alert model.Alert) error
+	// CreateAlertWithEvent inserts the alert row AND its outbox event in one
+	// database transaction. Tier-1 events must never be emitted outside the
+	// transaction that produced them (ADR-5: no silent data loss).
+	CreateAlertWithEvent(ctx context.Context, alert model.Alert, eventType string, payload []byte) error
 	ResolveAlert(ctx context.Context, dedupKey string, resolvedAt time.Time) error
 	GetActiveAlert(ctx context.Context, dedupKey string) (*model.Alert, error)
-	InsertOutboxEvent(ctx context.Context, eventType string, payload []byte) error
 }
 
 // NewEngine creates a new alert engine with the given store.
@@ -31,7 +37,7 @@ func NewEngine(store AlertStore) *Engine {
 
 // HandleTrigger processes a rule trigger:
 // 1. Look up active alert by dedup_key → if found, skip (dedup).
-// 2. Otherwise insert new alert + outbox event.
+// 2. Otherwise insert new alert + outbox event in one transaction (ADR-5).
 func (e *Engine) HandleTrigger(ctx context.Context, alert model.Alert) error {
 	// Dedup: an active alert with the same dedup_key means we already fired.
 	existing, err := e.store.GetActiveAlert(ctx, alert.DedupKey)
@@ -46,22 +52,27 @@ func (e *Engine) HandleTrigger(ctx context.Context, alert model.Alert) error {
 		return nil
 	}
 
+	payload, err := json.Marshal(map[string]interface{}{
+		"alert_id":     alert.ID,
+		"title":        alert.Title,
+		"severity":     string(alert.Severity),
+		"metric_id":    alert.MetricID,
+		"rule_id":      alert.RuleID,
+		"triggered_at": alert.TriggeredAt,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal alert event payload: %w", err)
+	}
+
 	log.Info().
 		Str("title", alert.Title).
 		Str("metric", alert.MetricID).
 		Str("severity", string(alert.Severity)).
 		Msg("alert triggered")
-	return e.store.UpsertAlert(ctx, alert)
+	return e.store.CreateAlertWithEvent(ctx, alert, EventTypeAlertTriggered, payload)
 }
 
 // Resolve closes an active alert by its dedup key.
 func (e *Engine) Resolve(ctx context.Context, dedupKey string) error {
 	return e.store.ResolveAlert(ctx, dedupKey, time.Now())
 }
-
-// AdapterTrigger wraps a model.Alert as a trigger-to-alert adapter.
-type AdapterTrigger struct {
-	model.Alert
-}
-
-func (a AdapterTrigger) ToAlert() model.Alert { return a.Alert }

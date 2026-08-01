@@ -96,7 +96,16 @@
 
     <script>
         const API_BASE = window.location.origin;
+        const SEVERITIES = ['critical', 'warning', 'info'];
         let trendChart = null;
+
+        // Escape untrusted API data before inserting into innerHTML.
+        // Alert titles/ids originate from plugin-suggested rules — treat as hostile.
+        function esc(value) {
+            return String(value).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[c]);
+        }
 
         async function loadAlerts() {
             try {
@@ -118,11 +127,13 @@
                 return;
             }
             list.innerHTML = alerts.map(a => `
-                <div class="alert-item ${a.severity}" onclick="showAlertDetail('${a.id}')">
-                    <div class="alert-title">${a.title}</div>
-                    <div class="alert-meta">${a.metric_id} &middot; ${a.severity} &middot; ${new Date(a.triggered_at).toLocaleString()}</div>
+                <div class="alert-item ${SEVERITIES.includes(a.severity) ? a.severity : 'info'}" data-alert-id="${esc(a.id)}">
+                    <div class="alert-title">${esc(a.title)}</div>
+                    <div class="alert-meta">${esc(a.metric_id)} &middot; ${esc(a.severity)} &middot; ${new Date(a.triggered_at).toLocaleString()}</div>
                 </div>
             `).join('');
+            list.querySelectorAll('.alert-item').forEach(el =>
+                el.addEventListener('click', () => showAlertDetail(el.dataset.alertId)));
         }
 
         async function showAlertDetail(alertID) {
@@ -130,7 +141,7 @@
             detail.classList.add('active');
 
             try {
-                const resp = await fetch(`${API_BASE}/api/research/${alertID}`);
+                const resp = await fetch(`${API_BASE}/api/research/${encodeURIComponent(alertID)}`);
                 if (!resp.ok) {
                     document.getElementById('detail-title').textContent = alertID;
                     document.getElementById('detail-summary').textContent = 'Research context not yet available (snapshot is created when alert triggers)';
@@ -139,7 +150,7 @@
                 const rc = await resp.json();
                 document.getElementById('detail-title').textContent = rc.alert_id || alertID;
                 document.getElementById('detail-summary').textContent =
-                    `${rc.metric_name || rc.metric_id} &mdash; current: ${rc.current_value || 'N/A'}, threshold: ${rc.threshold || 'N/A'}`;
+                    `${rc.metric_name || rc.metric_id} — current: ${rc.current_value ?? 'N/A'}, threshold: ${rc.threshold ?? 'N/A'}`;
 
                 // Render trend chart.
                 if (rc.recent_trend && rc.recent_trend.length > 0) {
@@ -153,7 +164,7 @@
                 const relList = document.getElementById('relations-list');
                 if (rc.relations && rc.relations.length > 0) {
                     relList.innerHTML = rc.relations.map(r =>
-                        `<li>${r.source_id} &rarr; ${r.target_id} (${r.relation_type})</li>`
+                        `<li>${esc(r.source_id)} &rarr; ${esc(r.target_id)} (${esc(r.relation_type)})</li>`
                     ).join('');
                 } else {
                     relList.innerHTML = '<li>None</li>';

@@ -8,6 +8,8 @@ import (
 	"io"
 	"sync"
 
+	"github.com/rs/zerolog/log"
+
 	pb "capital_observatory/pkg/proto/plugin/v1"
 )
 
@@ -100,7 +102,7 @@ func (s *StreamSession) ReadLoop(onMessage func(*pb.PluginMessage)) {
 		msg, err := s.stream.Recv()
 		if err != nil {
 			if err != io.EOF && !errors.Is(err, context.Canceled) {
-				// unexpected stream error — caller cleans up
+				log.Warn().Err(err).Str("plugin_id", s.pluginID).Msg("stream read error")
 			}
 			s.Close()
 			return

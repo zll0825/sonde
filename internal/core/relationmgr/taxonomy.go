@@ -48,7 +48,7 @@ type ReviewDecision struct {
 // Review applies the layer-based review strategy per ADR-2 and
 // docs/domain-model.md §3.3.
 //
-//	strstructural → auto-accept
+//	structural   → auto-accept
 //	semantic     → auto-accept with source=plugin_declared
 //	statistical  → require evidence (p_value <= 0.05, sample_size >= 30)
 //	causal       → always pending (needs human review)

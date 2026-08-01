@@ -13,6 +13,8 @@ package pluginrunner
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -188,19 +190,7 @@ func (r *Runner) CollectLoop(ctx context.Context, interval time.Duration, plugin
 
 func errRegistrationFailed(msg string) error {
 	if msg == "" {
-		return _errRegistrationFailed
+		return errors.New("registration failed")
 	}
-	return registrationError{msg: msg}
+	return fmt.Errorf("registration failed: %s", msg)
 }
-
-var _errRegistrationFailed = fmtError("registration failed")
-
-type registrationError struct{ msg string }
-
-func (e registrationError) Error() string { return "registration failed: " + e.msg }
-
-func fmtError(s string) error { return &simpleError{s} }
-
-type simpleError struct{ s string }
-
-func (e *simpleError) Error() string { return e.s }

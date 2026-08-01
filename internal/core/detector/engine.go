@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rs/zerolog/log"
+
 	"capital_observatory/pkg/model"
 )
 
@@ -31,7 +33,7 @@ type Trigger struct {
 	WindowStart   time.Time
 	WindowEnd     time.Time
 	Evidence      map[string]interface{}
-	DedupKey      string // hash(metric_id + rule_id + window_end)
+	DedupKey      string // stable per (metric_id, rule_id); see ComputeDedupKey
 	RuleVersion   int
 	RuleEffective time.Time
 	PluginID      string
@@ -87,7 +89,12 @@ func (e *Engine) EvaluateBatch(ctx context.Context, groups map[string][]model.Ob
 
 		trigger, err := det.Evaluate(ctx, rule, obs)
 		if err != nil {
-			// log and continue — don't let one detector failure stop others
+			// One detector failure must not stop the others.
+			log.Error().Err(err).
+				Int("rule_id", rule.ID).
+				Str("metric_id", rule.MetricID).
+				Str("detector", rule.DetectorName).
+				Msg("detector evaluation failed")
 			continue
 		}
 		if trigger != nil {
@@ -129,8 +136,15 @@ func mergeObservations(existing, incoming []model.Observation) []model.Observati
 }
 
 // ComputeDedupKey creates a stable dedup key for an alert.
-func ComputeDedupKey(metricID string, ruleID int, windowEnd time.Time) string {
-	return fmt.Sprintf("%s|%d|%d", metricID, ruleID, windowEnd.Unix())
+//
+// The key intentionally excludes the evaluation window: dedup means "while an
+// alert for this (metric, rule) condition is ACTIVE, later triggers are folded
+// into it" (docs/domain-model.md §5, partial unique index WHERE status='active').
+// Including a sliding window timestamp would give every batch a fresh key and
+// disable dedup entirely. After the alert resolves, the same key may be reused
+// by a new alert — the partial index only constrains ACTIVE rows.
+func ComputeDedupKey(metricID string, ruleID int) string {
+	return fmt.Sprintf("%s|%d", metricID, ruleID)
 }
 
 // EvidenceJSON serializes trigger evidence to JSON bytes for storage.

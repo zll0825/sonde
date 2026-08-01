@@ -3,7 +3,6 @@ package alert
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -51,7 +50,23 @@ func (w *OutboxWorker) RegisterHandler(eventType string, h EventHandler) {
 	w.handlers[eventType] = h
 }
 
+// Run polls the outbox at the configured interval until ctx is canceled.
+func (w *OutboxWorker) Run(ctx context.Context, batchSize int) {
+	ticker := time.NewTicker(w.pollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			w.Tick(ctx, batchSize)
+		}
+	}
+}
+
 // Tick processes one batch of pending events. Dispatches them in insertion order.
+// An event with no registered handler is marked failed, never dispatched:
+// silently dropping a Tier-1 event would violate the no-silent-loss constraint.
 func (w *OutboxWorker) Tick(ctx context.Context, batchSize int) (dispatched, failed int) {
 	events, err := w.store.PickPending(ctx, batchSize)
 	if err != nil {
@@ -61,13 +76,17 @@ func (w *OutboxWorker) Tick(ctx context.Context, batchSize int) (dispatched, fai
 
 	for _, ev := range events {
 		handler, ok := w.handlers[ev.EventType]
-		if ok {
-			if err := handler(ctx, ev); err != nil {
-				log.Error().Err(err).Int("event_id", ev.ID).Str("type", ev.EventType).Msg("outbox handler failed")
-				_ = w.store.MarkFailed(ctx, ev.ID, err.Error())
-				failed++
-				continue
-			}
+		if !ok {
+			log.Warn().Int("event_id", ev.ID).Str("type", ev.EventType).Msg("no handler registered for outbox event")
+			_ = w.store.MarkFailed(ctx, ev.ID, "no handler registered for event type "+ev.EventType)
+			failed++
+			continue
+		}
+		if err := handler(ctx, ev); err != nil {
+			log.Error().Err(err).Int("event_id", ev.ID).Str("type", ev.EventType).Msg("outbox handler failed")
+			_ = w.store.MarkFailed(ctx, ev.ID, err.Error())
+			failed++
+			continue
 		}
 		if err := w.store.MarkDispatched(ctx, ev.ID); err != nil {
 			log.Error().Err(err).Int("event_id", ev.ID).Msg("mark dispatched failed")
@@ -78,33 +97,3 @@ func (w *OutboxWorker) Tick(ctx context.Context, batchSize int) (dispatched, fai
 	}
 	return dispatched, failed
 }
-
-// MakeAlertEvent creates a JSON payload for an alert-triggered outbox event.
-func MakeAlertEvent(alert interface{ AlertPayload() map[string]interface{} }) ([]byte, error) {
-	payload := alert.AlertPayload()
-	return json.Marshal(payload)
-}
-
-// AlertPayloadEvent is a helper struct for constructing outbox events.
-type AlertPayloadEvent struct {
-	AlertID   string `json:"alert_id"`
-	Title     string `json:"title"`
-	Severity  string `json:"severity"`
-	MetricID  string `json:"metric_id"`
-	RuleID    int    `json:"rule_id"`
-	Triggered string `json:"triggered_at"`
-}
-
-func (e AlertPayloadEvent) AlertPayload() map[string]interface{} {
-	return map[string]interface{}{
-		"alert_id":  e.AlertID,
-		"title":     e.Title,
-		"severity":  e.Severity,
-		"metric_id": e.MetricID,
-		"rule_id":   e.RuleID,
-		"triggered": e.Triggered,
-	}
-}
-
-// _ ensure time is used
-var _ = time.Now

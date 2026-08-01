@@ -3,13 +3,17 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 )
@@ -109,13 +113,15 @@ func alertsHandler(db *pgxpool.Pool) http.HandlerFunc {
 		}
 		defer rows.Close()
 
-		var alerts []map[string]interface{}
+		// Initialize non-nil so an empty result serializes as [], not null.
+		alerts := []map[string]interface{}{}
 		for rows.Next() {
 			var (
 				id, title, summary, severity, metricID, status string
 				triggeredAt                                    time.Time
 			)
 			if err := rows.Scan(&id, &title, &summary, &severity, &metricID, &triggeredAt, &status); err != nil {
+				log.Error().Err(err).Msg("scan alert row failed")
 				continue
 			}
 			alerts = append(alerts, map[string]interface{}{
@@ -127,6 +133,11 @@ func alertsHandler(db *pgxpool.Pool) http.HandlerFunc {
 				"triggered_at": triggeredAt,
 				"status":       status,
 			})
+		}
+		if err := rows.Err(); err != nil {
+			log.Error().Err(err).Msg("iterate alert rows failed")
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
+			return
 		}
 		writeJSON(w, http.StatusOK, alerts)
 	}
@@ -147,8 +158,13 @@ func researchHandler(db *pgxpool.Pool) http.HandlerFunc {
 		err := db.QueryRow(r.Context(), `
 			SELECT context, ontology_frozen_at FROM research_snapshots WHERE alert_id = $1
 		`, alertID).Scan(&ctxData, &frozenAt)
-		if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "research context not found"})
+			return
+		}
+		if err != nil {
+			log.Error().Err(err).Str("alert_id", alertID).Msg("query research snapshot failed")
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
 			return
 		}
 
@@ -176,6 +192,10 @@ func syncHandler(db *pgxpool.Pool) http.HandlerFunc {
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+			return
+		}
+		if req.PluginID == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "plugin_id required"})
 			return
 		}
 
@@ -215,6 +235,14 @@ func backfillHandler(db *pgxpool.Pool) http.HandlerFunc {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 			return
 		}
+		if req.PluginID == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "plugin_id required"})
+			return
+		}
+		if req.WindowStart <= 0 || req.WindowEnd <= 0 || req.WindowStart >= req.WindowEnd {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "window_start and window_end must be positive unix seconds with window_start < window_end"})
+			return
+		}
 
 		_, err := db.Exec(r.Context(), `
 			INSERT INTO command_log
@@ -235,9 +263,16 @@ func backfillHandler(db *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
-// generateCommandID creates a short unique command identifier.
+// generateCommandID creates a unique command identifier. command_id is the
+// command_log primary key, so a timestamp alone is not enough — two commands
+// in the same second must not collide. 6 random bytes ≈ 2^48 keyspace.
 func generateCommandID() string {
-	return "cmd_" + time.Now().Format("20060102T150405")
+	b := make([]byte, 6)
+	if _, err := rand.Read(b); err != nil {
+		// Extremely unlikely; nanosecond timestamp as last resort.
+		return "cmd_" + time.Now().Format("20060102T150405.000000000")
+	}
+	return "cmd_" + hex.EncodeToString(b)
 }
 
 // metricIDsToBytes serializes a slice of metric IDs to JSON bytes.

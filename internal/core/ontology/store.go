@@ -5,7 +5,6 @@ package ontology
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -284,13 +283,18 @@ func upsertEntity(ctx context.Context, tx pgx.Tx, pluginID string, ent *pb.Entit
 	return nil
 }
 
-// upsertMetric inserts a new versioned row into metric_definitions_v2 with a
-// freshly generated UID, superseding any prior version.
+// upsertMetric inserts a new versioned row into metric_definitions_v2,
+// superseding any prior version. The uid is the metric's stable system-wide
+// identity: generated once at version 1 and inherited by every later version,
+// so observations keyed by metric_uid stay joinable across redefinitions.
 func upsertMetric(ctx context.Context, tx pgx.Tx, pluginID string, met *pb.MetricDeclaration, changeLog string) error {
 	var maxVersion int
+	var priorUID *string
 	if err := tx.QueryRow(ctx, `
-		SELECT COALESCE(MAX(version), 0) FROM metric_definitions_v2 WHERE id = $1
-	`, met.GetId()).Scan(&maxVersion); err != nil {
+		SELECT COALESCE(MAX(version), 0),
+		       (SELECT uid FROM metric_definitions_v2 WHERE id = $1 AND effective_to IS NULL LIMIT 1)
+		FROM metric_definitions_v2 WHERE id = $1
+	`, met.GetId()).Scan(&maxVersion, &priorUID); err != nil {
 		return fmt.Errorf("query max metric version: %w", err)
 	}
 
@@ -316,6 +320,9 @@ func upsertMetric(ctx context.Context, tx pgx.Tx, pluginID string, met *pb.Metri
 	}
 
 	uid := CreateMetricUID()
+	if priorUID != nil && *priorUID != "" {
+		uid = *priorUID
+	}
 
 	var supersedesVal *int
 	if supersedes {
@@ -381,11 +388,13 @@ func insertRuleSuggestion(ctx context.Context, tx pgx.Tx, pluginID string, rule 
 }
 
 // InsertObservation writes a scored, source-resolved observation into the observations table.
+// metricUID is the registered uid from metric_definitions_v2 (resolved by the caller);
+// it is what research-time joins use, so it must never be re-derived here.
 // The unique index idx_obs_idempotency enforces dedup: same (metric_uid, time, source, labels_hash)
 // returns a PG 23505 unique violation which callers should interpret as "duplicate".
 //
 // Quality values are passed directly (no dependency on metric.QualityResult avoids an import cycle).
-func (s *Store) InsertObservation(ctx context.Context, snap *pb.MetricSnapshot, grade string, confidence float64, systemScore float64, labelsHash, pluginID string) error {
+func (s *Store) InsertObservation(ctx context.Context, snap *pb.MetricSnapshot, metricUID, grade string, confidence float64, systemScore float64, labelsHash, pluginID string) error {
 	_, err := s.db.Exec(ctx, `
 		INSERT INTO observations (
 			time, metric_id, metric_uid, value, labels, labels_hash,
@@ -396,7 +405,7 @@ func (s *Store) InsertObservation(ctx context.Context, snap *pb.MetricSnapshot, 
 			$7, $8, $9, $10,
 			$11, $12, $13, NOW()
 		)
-	`, time.Unix(snap.Timestamp, 0), snap.MetricId, deriveMetricUID(snap.MetricId), snap.Value,
+	`, time.Unix(snap.Timestamp, 0), snap.MetricId, metricUID, snap.Value,
 		labelsToBytes(snap.Labels), labelsHash,
 		pluginID, snap.SourcePluginVersion, snap.SourceProvider,
 		time.Unix(snap.SourceFetchedAt, 0),
@@ -406,13 +415,6 @@ func (s *Store) InsertObservation(ctx context.Context, snap *pb.MetricSnapshot, 
 		return fmt.Errorf("insert observation: %w", err)
 	}
 	return nil
-}
-
-// deriveMetricUID generates a deterministic UID from a metric_id for observations
-// that don't have a pre-registered UID. Real registrations use CreateMetricUID().
-func deriveMetricUID(metricID string) string {
-	h := sha256.Sum256([]byte(metricID))
-	return "mtr_" + hex.EncodeToString(h[:])[:12]
 }
 
 // labelsToBytes serializes a labels map for the JSONB column.

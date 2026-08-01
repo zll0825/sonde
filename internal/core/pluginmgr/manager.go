@@ -49,11 +49,16 @@ func (m *Manager) RegisterSession(session *StreamSession) {
 	go session.StartWriter()
 }
 
-// UnregisterSession removes a plugin session from the registry.
-func (m *Manager) UnregisterSession(pluginID string) {
+// UnregisterSession removes a plugin session from the registry, but only if
+// the registered session is still the given one. Without this guard, a stale
+// stream handler returning after a reconnect would delete the replacement
+// session that RegisterSession just installed.
+func (m *Manager) UnregisterSession(pluginID string, session *StreamSession) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.sessions, pluginID)
+	if m.sessions[pluginID] == session {
+		delete(m.sessions, pluginID)
+	}
 }
 
 // GetSession returns the active session for a plugin, or nil if not connected.
@@ -82,10 +87,11 @@ func (m *Manager) HandleRegistration(ctx context.Context, req *pb.RegisterPlugin
 
 // HandlePluginMessage dispatches an inbound PluginMessage.
 // Called by the gRPC server's MaintainSession handler when a message arrives.
-func (m *Manager) HandlePluginMessage(msg *pb.PluginMessage) error {
+// ctx should be the stream context so in-flight work stops when the session dies.
+func (m *Manager) HandlePluginMessage(ctx context.Context, msg *pb.PluginMessage) error {
 	switch msg.Payload.(type) {
 	case *pb.PluginMessage_PushSnapshots:
-		return m.handlePushSnapshots(msg.GetPushSnapshots())
+		return m.handlePushSnapshots(ctx, msg.GetPushSnapshots())
 	case *pb.PluginMessage_Heartbeat:
 		log.Debug().Msg("stream heartbeat received")
 		return nil
@@ -97,10 +103,10 @@ func (m *Manager) HandlePluginMessage(msg *pb.PluginMessage) error {
 	}
 }
 
-func (m *Manager) handlePushSnapshots(ps *pb.PushSnapshotsRequest) error {
+func (m *Manager) handlePushSnapshots(ctx context.Context, ps *pb.PushSnapshotsRequest) error {
 	// Determine if plugin is currently healthy (M3+ tracks real status).
 	isHealthy := true
-	result, err := m.ingester.Ingest(context.Background(), ps, isHealthy)
+	result, err := m.ingester.Ingest(ctx, ps, isHealthy)
 	if err != nil {
 		log.Error().Err(err).Str("plugin_id", ps.PluginId).Msg("ingestion failed")
 		return err

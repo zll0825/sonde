@@ -4,20 +4,21 @@ package rulemgr
 
 import (
 	"bytes"
+
+	"capital_observatory/pkg/model"
 )
 
-// Source represents the origin of a rule. It aliases model.RuleSource so
-// that rulemgr consumers need not import pkg/model for this single concept,
-// while staying byte-identical to the canonical enum.
-type Source = string
+// Source aliases model.RuleSource — the canonical typed enum — so review
+// decisions can't drift from the domain model's source vocabulary.
+type Source = model.RuleSource
 
-// Source constants mirror model.RuleSource. Priority (high → low):
+// Source constants re-exported for rulemgr callers. Priority (high → low):
 //
 //	user_override > system_default > plugin_suggested
 const (
-	SourcePluginSuggested Source = "plugin_suggested"
-	SourceUserOverride    Source = "user_override"
-	SourceSystemDefault   Source = "system_default"
+	SourcePluginSuggested = model.RuleSourcePluginSuggested
+	SourceUserOverride    = model.RuleSourceUserOverride
+	SourceSystemDefault   = model.RuleSourceSystemDefault
 )
 
 // ReviewOutcome represents the decision when a plugin suggests a new rule version.
@@ -37,7 +38,7 @@ type ReviewOutcome struct {
 //	current=user_override,    same config        → skip (silent)
 //	current=user_override,    different config   → pending_conflict
 //	current=system_default,   any                → accept (auto)
-func Review(current Source, isOverride bool, currentConfig, suggestedConfig []byte) ReviewOutcome {
+func Review(current Source, currentConfig, suggestedConfig []byte) ReviewOutcome {
 	sameConfig := bytes.Equal(currentConfig, suggestedConfig)
 
 	switch current {

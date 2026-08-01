@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"capital_observatory/pkg/model"
@@ -28,30 +29,24 @@ func (ThresholdDetector) Evaluate(ctx context.Context, rule model.Rule, observat
 		cfg.Operator = "gt"
 	}
 
-	// Sort observations by time ascending (assumes caller may pass unsorted).
+	// Sort observations by time ascending (caller may pass unsorted).
 	sorted := make([]model.Observation, len(observations))
 	copy(sorted, observations)
-	// Simple bubble for small N; in production use sort.Slice.
-	for i := 0; i < len(sorted); i++ {
-		for j := i + 1; j < len(sorted); j++ {
-			if sorted[j].Time.Before(sorted[i].Time) {
-				sorted[i], sorted[j] = sorted[j], sorted[i]
-			}
-		}
-	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Time.Before(sorted[j].Time) })
 
-	// Walk from newest backward looking for N consecutive breaches.
+	// Count the consecutive breach run ending at the NEWEST observation.
+	// A recovered point terminates the scan: firing on a historical run that
+	// has since recovered would re-trigger stale alerts on every re-evaluation.
 	consecutive := 0
 	var breachStart time.Time
 	for i := len(sorted) - 1; i >= 0; i-- {
-		if compare(sorted[i].Value, cfg.Value, cfg.Operator) {
-			consecutive++
-			breachStart = sorted[i].Time
-			if consecutive >= cfg.Consecutive {
-				return buildTrigger(rule, sorted, breachStart, cfg), nil
-			}
-		} else {
-			consecutive = 0
+		if !compare(sorted[i].Value, cfg.Value, cfg.Operator) {
+			break
+		}
+		consecutive++
+		breachStart = sorted[i].Time
+		if consecutive >= cfg.Consecutive {
+			return buildTrigger(rule, sorted, breachStart, cfg), nil
 		}
 	}
 
@@ -80,7 +75,8 @@ func compare(value, threshold float64, op string) bool {
 }
 
 func buildTrigger(rule model.Rule, sorted []model.Observation, windowStart time.Time, cfg thresholdConfig) *Trigger {
-	windowEnd := sorted[len(sorted)-1].Time
+	newest := sorted[len(sorted)-1]
+	windowEnd := newest.Time
 	return &Trigger{
 		RuleID:        rule.ID,
 		RuleName:      rule.Name,
@@ -92,14 +88,12 @@ func buildTrigger(rule model.Rule, sorted []model.Observation, windowStart time.
 		RuleVersion:   rule.Version,
 		RuleEffective: rule.EffectiveFrom,
 		Evidence: map[string]interface{}{
-			"operator":    cfg.Operator,
-			"threshold":   cfg.Value,
-			"consecutive": cfg.Consecutive,
-			"breaches":    cfg.Consecutive,
+			"operator":      cfg.Operator,
+			"threshold":     cfg.Value,
+			"consecutive":   cfg.Consecutive,
+			"current_value": newest.Value,
+			"metric_uid":    newest.MetricUID,
 		},
-		DedupKey: ComputeDedupKey(rule.MetricID, rule.ID, windowEnd),
+		DedupKey: ComputeDedupKey(rule.MetricID, rule.ID),
 	}
 }
-
-// _ keep time used
-var _ = time.Now
