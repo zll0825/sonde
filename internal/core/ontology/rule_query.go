@@ -28,6 +28,24 @@ func (s *Store) GetMetricUID(ctx context.Context, metricID string) (string, erro
 	return uid, nil
 }
 
+// GetMetricFrequency returns the declared frequency of a metric's current
+// version (effective_to IS NULL), or "" when the metric is not registered.
+// Frequency values: "realtime", "hourly", "daily", "weekly", "monthly", "quarterly".
+func (s *Store) GetMetricFrequency(ctx context.Context, metricID string) (string, error) {
+	var freq string
+	err := s.db.QueryRow(ctx, `
+		SELECT frequency FROM metric_definitions_v2
+		WHERE id = $1 AND effective_to IS NULL LIMIT 1
+	`, metricID).Scan(&freq)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("query metric frequency: %w", err)
+	}
+	return freq, nil
+}
+
 // GetActiveRules returns all currently-effective, enabled rules (versioned
 // tables:WHERE effective_to IS NULL AND enabled = TRUE).
 func (s *Store) GetActiveRules(ctx context.Context) ([]model.Rule, error) {

@@ -60,7 +60,7 @@ type Assembler struct {
 
 // ResearchStore is the persistence interface for research assembly.
 type ResearchStore interface {
-	GetObservations(ctx context.Context, metricUID string, since, until time.Time) ([]model.Observation, error)
+	GetObservations(ctx context.Context, metricUID string, since, until time.Time, limit int) ([]model.Observation, error)
 	GetEntityByID(ctx context.Context, entityID string) (*model.Entity, error)
 	GetRelatedEntities(ctx context.Context, entityID string) ([]model.Relation, error)
 	SaveSnapshot(ctx context.Context, snapshot model.ResearchSnapshot) error
@@ -94,9 +94,20 @@ func (a *Assembler) Assemble(ctx context.Context, alert model.Alert) (*ResearchC
 		}
 	}
 
-	// Fetch recent trend (7-day lookback from WindowEnd).
+	// Fetch recent trend (7-day lookback from WindowEnd). Research context uses
+	// a fixed, narrow window — a single page of trend points is ample.
+	//
+	// Observations are keyed by metric_uid, NOT metric_id — every detector
+	// records the uid in its trigger evidence, so resolve it from there.
+	// Querying with the metric_id would silently return an empty trend
+	// (same failure class as the GetCurrentMetrics("") incident).
+	metricUID := alert.MetricID // fallback for alerts predating uid evidence
+	if v, ok := evidence["metric_uid"].(string); ok && v != "" {
+		metricUID = v
+	}
 	lookbackStart := out.WindowEnd.Add(-7 * 24 * time.Hour)
-	observations, err := a.store.GetObservations(ctx, alert.MetricID, lookbackStart, out.WindowEnd)
+	const researchTrendLimit = 60
+	observations, err := a.store.GetObservations(ctx, metricUID, lookbackStart, out.WindowEnd, researchTrendLimit)
 	if err != nil {
 		log.Error().Err(err).Str("metric_id", alert.MetricID).Msg("fetch observations failed")
 	} else {

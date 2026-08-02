@@ -106,3 +106,88 @@ func TestTriggerToAlert_EvidenceContainsTriggerFields(t *testing.T) {
 		t.Errorf("Evidence = %s, want to contain 'current_value'", string(a.Evidence))
 	}
 }
+
+func TestFrequencyAwareLookback(t *testing.T) {
+	mkRule := func(config string) model.Rule {
+		return model.Rule{Config: []byte(config), Enabled: true}
+	}
+	day := 24 * time.Hour
+
+	cases := []struct {
+		name  string
+		freq  string
+		rules []model.Rule
+		want  time.Duration
+	}{
+		{
+			name:  "weekly trend consecutive 4 needs 5 periods plus headroom",
+			freq:  "weekly",
+			rules: []model.Rule{mkRule(`{"direction":"down","consecutive":4}`)},
+			want:  time.Duration(5 * 1.5 * float64(7*day)),
+		},
+		{
+			name:  "percentile min_observations dominates consecutive",
+			freq:  "weekly",
+			rules: []model.Rule{mkRule(`{"percentile":95,"consecutive":1,"min_observations":8}`)},
+			want:  time.Duration(8 * 1.5 * float64(7*day)),
+		},
+		{
+			name:  "empty config floors at 5 periods for percentile default min_observations",
+			freq:  "weekly",
+			rules: []model.Rule{mkRule(`{}`)},
+			want:  time.Duration(5 * 1.5 * float64(7*day)),
+		},
+		{
+			name:  "unknown frequency falls back to 7d",
+			freq:  "fortnightly",
+			rules: []model.Rule{mkRule(`{"consecutive":10}`)},
+			want:  7 * day,
+		},
+		{
+			name:  "realtime small requirement floors at 7d",
+			freq:  "realtime",
+			rules: []model.Rule{mkRule(`{"consecutive":2}`)},
+			want:  7 * day,
+		},
+		{
+			name:  "quarterly pathological config caps at 365d",
+			freq:  "quarterly",
+			rules: []model.Rule{mkRule(`{"consecutive":10}`)},
+			want:  365 * day,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := frequencyAwareLookback(tc.freq, tc.rules)
+			if got != tc.want {
+				t.Errorf("frequencyAwareLookback(%q) = %v, want %v", tc.freq, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestObservationsLimit(t *testing.T) {
+	day := 24 * time.Hour
+
+	cases := []struct {
+		name     string
+		lookback time.Duration
+		freq     string
+		want     int
+	}{
+		{"unknown frequency uses safe default", 7 * day, "fortnightly", 500},
+		{"realtime wide window caps at 500", 7 * day, "realtime", 500},
+		{"weekly window floors at 20", 53 * day, "weekly", 20},
+		{"daily window floors at 20", 8 * day, "daily", 20},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := observationsLimit(tc.lookback, tc.freq)
+			if got != tc.want {
+				t.Errorf("observationsLimit(%v, %q) = %d, want %d", tc.lookback, tc.freq, got, tc.want)
+			}
+		})
+	}
+}

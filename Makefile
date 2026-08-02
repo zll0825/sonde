@@ -8,7 +8,7 @@ API_PORT ?= 8080
 # Workspace modules with Go code. NOTE: `go build ./...` from the repo root
 # only matches the ROOT module — plugin modules are invisible to it. Add new
 # plugin modules here or they silently escape every gate.
-GO_MODULES ?= . ./plugins/etf
+GO_MODULES ?= . ./plugins/etf ./plugins/crypto ./plugins/macro
 
 # ---- Help ----
 help: ## Show this help
@@ -86,7 +86,13 @@ run-api: build-api ## Run the API binary directly
 	API_BIND=:8080 DB_URL="$(DB_URL)" WEB_DIR=./web ./bin/api
 
 run-etf: ## Run the ETF plugin directly (connects to core at localhost:50051)
-	cd plugins/etf && CORE_ADDR=localhost:50051 PLUGIN_ID=etf go run ./cmd/etf
+	cd plugins/etf && CORE_ADDR=localhost:50051 go run ./cmd/etf
+
+run-crypto: ## Run the Crypto plugin directly
+	cd plugins/crypto && CORE_ADDR=localhost:50051 go run ./cmd/crypto
+
+run-macro: ## Run the Macro plugin directly
+	cd plugins/macro && CORE_ADDR=localhost:50051 go run ./cmd/macro
 
 # ---- CI ----
 lint: ## Run gofmt + go vet + buf lint (all workspace modules)

@@ -1,14 +1,16 @@
 // Package pluginrunner provides the plugin-side stream session template.
-// Plugins embed Runner and override the collect hook to implement data fetching.
+//
+// High-level entry: a plugin's main.go constructs a Config and calls
+// NewLifecycle(cfg).Run(); that drives the full reconnect→register→collect→
+// stream cycle.  Lower-level Runner / Register / Run are exposed for tests and
+// for the rare plugin that needs to manage the session manually.
 //
 // Usage:
 //
-//	conn, _ := grpc.Dial("core:50051", grpc.WithInsecure())
-//	client := pb.NewPluginHostClient(conn)
-//	r := pluginrunner.New("crypto", client)
-//	reg := &pb.RegisterPluginRequest{Info: &pb.PluginInfo{Name: "crypto"}, ...}
-//	pluginID, _ := r.Register(ctx, reg)
-//	r.Run(ctx, pluginID)
+//	pluginrunner.NewLifecycle(pluginrunner.Config{
+//	    PluginName: "crypto", Version: "0.1.0", DefaultInterval: 10 * time.Second,
+//	    BuildRegistration: buildRegistration, SetupCollector: setupCollector,
+//	}).Run()
 package pluginrunner
 
 import (
@@ -35,6 +37,7 @@ import (
 //   - Core messages are dispatched via the onCoreMessage callback.
 type Runner struct {
 	pluginName string
+	version    string
 	client     pb.PluginHostClient
 
 	stream      pb.PluginHost_MaintainSessionClient
@@ -45,9 +48,10 @@ type Runner struct {
 }
 
 // New creates a new Runner that will use the given gRPC client to connect to Core.
-func New(pluginName string, client pb.PluginHostClient) *Runner {
+func New(pluginName, version string, client pb.PluginHostClient) *Runner {
 	return &Runner{
 		pluginName: pluginName,
+		version:    version,
 		client:     client,
 		sendCh:     make(chan *pb.PluginMessage, 64),
 	}
@@ -207,26 +211,6 @@ func WaitForReconnect(ctx context.Context, conn *grpc.ClientConn) bool {
 			return false
 		}
 	}
-}
-
-// CollectLoop is an example periodic collection that submits empty batches.
-// Real plugins override this.
-func (r *Runner) CollectLoop(ctx context.Context, interval time.Duration, pluginID string) chan struct{} {
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				r.SubmitSnapshots(pluginID, nil)
-			case <-ctx.Done():
-				close(done)
-				return
-			}
-		}
-	}()
-	return done
 }
 
 func errRegistrationFailed(msg string) error {

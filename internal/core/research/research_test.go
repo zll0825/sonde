@@ -16,9 +16,11 @@ type mockResearchStore struct {
 	relations    []model.Relation
 	saveCalled   int
 	savedSnap    *model.ResearchSnapshot
+	queriedUID   string
 }
 
-func (m *mockResearchStore) GetObservations(_ context.Context, _ string, _, _ time.Time) ([]model.Observation, error) {
+func (m *mockResearchStore) GetObservations(_ context.Context, metricUID string, _, _ time.Time, _ int) ([]model.Observation, error) {
+	m.queriedUID = metricUID
 	return m.observations, nil
 }
 
@@ -147,5 +149,37 @@ func TestAssembler_SaveSnapshot_PersistsContext(t *testing.T) {
 	}
 	if store.savedSnap == nil || store.savedSnap.AlertID != "alt_save_test" {
 		t.Error("saved snapshot missing correct AlertID")
+	}
+}
+
+func TestAssembler_Assemble_QueriesObservationsByEvidenceUID(t *testing.T) {
+	now := time.Now()
+	ws, we := now.Add(-time.Hour), now
+	store := &mockResearchStore{}
+
+	alert := model.Alert{
+		ID:          "alt_uid_test",
+		MetricID:    "gld.ass.price",
+		WindowStart: &ws,
+		WindowEnd:   &we,
+		Evidence:    []byte(`{"metric_uid":"mtr_abc123","current_value":42}`),
+	}
+	if _, err := NewAssembler(store).Assemble(context.Background(), alert); err != nil {
+		t.Fatalf("Assemble error: %v", err)
+	}
+	// Observations are keyed by metric_uid — querying with the metric_id
+	// silently returns an empty trend (regression test).
+	if store.queriedUID != "mtr_abc123" {
+		t.Errorf("queried uid = %q, want mtr_abc123 (from evidence)", store.queriedUID)
+	}
+
+	// Without uid evidence, fall back to MetricID rather than erroring.
+	store2 := &mockResearchStore{}
+	alert.Evidence = []byte(`{"current_value":42}`)
+	if _, err := NewAssembler(store2).Assemble(context.Background(), alert); err != nil {
+		t.Fatalf("Assemble error: %v", err)
+	}
+	if store2.queriedUID != "gld.ass.price" {
+		t.Errorf("fallback uid = %q, want gld.ass.price", store2.queriedUID)
 	}
 }

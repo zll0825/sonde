@@ -442,7 +442,7 @@ WHERE EXCLUDED.quality_grade = 'revised'
 | `revised` | `delayed` | 覆盖 |
 | `revised` | `revised` | 跳过（不重复覆盖） |
 | `delayed` | `realtime` | 跳过（realtime 优先于 delayed） |
-| `delayed` | `estimated` | 跳过（estimated 不覆盖 delayed，等 revised 来） |
+| `delayed` | `estimated` | **覆盖**（delayed 优先级 3 > estimated 优先级 2，incoming rank > existing rank → UPDATE） |
 | `preliminary` | 任意 | 跳过（preliminary 不覆盖任何已有数据） |
 | backfill 补充历史空白 | — | INSERT 新行 |
 

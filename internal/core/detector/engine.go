@@ -79,7 +79,15 @@ func (e *Engine) EvaluateBatch(ctx context.Context, groups map[string][]model.Ob
 		}
 		det, ok := e.detectors[rule.DetectorName]
 		if !ok {
-			continue // unknown detector type
+			// A rule pointing at an unregistered detector is silently inert —
+			// the same failure class as the GetCurrentMetrics("") incident.
+			// Warn every cycle so a wiring gap can't hide in the logs.
+			log.Warn().
+				Int("rule_id", rule.ID).
+				Str("rule", rule.Name).
+				Str("detector", rule.DetectorName).
+				Msg("rule references unregistered detector; rule is inert")
+			continue
 		}
 
 		obs := obsByMetric[rule.MetricID]

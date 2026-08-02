@@ -13,6 +13,12 @@ import (
 	"capital_observatory/pkg/model"
 )
 
+// defaultObservationsLimit bounds unbounded GetObservations queries when the
+// caller doesn't specify a limit. 500 rows covers ~1.5 years of daily or ~7
+// years of weekly data — enough context for any detector while protecting the
+// database from pathological scans.
+const defaultObservationsLimit = 500
+
 // PostgresResearchStore implements research.ResearchStore against a PostgreSQL pool.
 type PostgresResearchStore struct {
 	db *pgxpool.Pool
@@ -23,18 +29,29 @@ func NewPostgresResearchStore(db *pgxpool.Pool) *PostgresResearchStore {
 	return &PostgresResearchStore{db: db}
 }
 
-// GetObservations returns time-sorted observations for a metric UID in the
-// [since, until] window. The caller passes a UID (metric_uid column), not a
-// metric_id — the table's idx_obs_metric_uid_time index serves this filter.
-func (s *PostgresResearchStore) GetObservations(ctx context.Context, metricUID string, since, until time.Time) ([]model.Observation, error) {
+// GetObservations returns time-sorted (ascending) observations for a metric
+// UID in the [since, until] window, bounded to `limit` rows. The caller passes
+// a UID (metric_uid column), not a metric_id — the table's
+// idx_obs_metric_uid_time index serves this filter. Pass limit <= 0 to use the
+// default bound (defaultObservationsLimit).
+//
+// The query orders DESC so the LIMIT keeps the NEWEST rows — detectors walk
+// backwards from the newest observation, so truncating the tail (ASC + LIMIT)
+// would freeze evaluation on stale data the moment a window holds more rows
+// than the limit. Rows are reversed in memory to honor the ascending contract.
+func (s *PostgresResearchStore) GetObservations(ctx context.Context, metricUID string, since, until time.Time, limit int) ([]model.Observation, error) {
+	if limit <= 0 {
+		limit = defaultObservationsLimit
+	}
 	rows, err := s.db.Query(ctx, `
 		SELECT time, metric_id, metric_uid, value, labels, labels_hash,
 		       source_plugin, source_plugin_version, source_provider, source_fetched_at,
 		       quality_grade, quality_confidence, system_quality_score
 		FROM observations
 		WHERE metric_uid = $1 AND time >= $2 AND time <= $3
-		ORDER BY time ASC
-	`, metricUID, since, until)
+		ORDER BY time DESC
+		LIMIT $4
+	`, metricUID, since, until, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query observations: %w", err)
 	}
@@ -54,6 +71,10 @@ func (s *PostgresResearchStore) GetObservations(ctx context.Context, metricUID s
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate observation rows: %w", err)
+	}
+	// Rows arrived newest-first (DESC + LIMIT); restore the ascending contract.
+	for i, j := 0, len(observations)-1; i < j; i, j = i+1, j-1 {
+		observations[i], observations[j] = observations[j], observations[i]
 	}
 	return observations, nil
 }
