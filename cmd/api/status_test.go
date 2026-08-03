@@ -1,0 +1,339 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+)
+
+// ---- fake statusQuerier -----------------------------------------------------
+// A minimal in-memory stand-in for *pgxpool.Pool / pgxmock. The five status
+// queries run in a fixed order, so stubs are consumed FIFO and identified by
+// their position. Keeps cmd/api free of test-only module dependencies (the
+// project pins go 1.22 + pgx v5.6.0; pgxmock would force upgrades).
+
+type queryStub struct {
+	rows *fakeRows
+	err  error
+}
+
+type fakeDB struct {
+	stubs []queryStub
+}
+
+// stub appends a canned result; the i-th stub answers the i-th query call.
+func (f *fakeDB) stub(rows *fakeRows) *fakeDB {
+	f.stubs = append(f.stubs, queryStub{rows: rows})
+	return f
+}
+
+func (f *fakeDB) stubErr(err error) *fakeDB {
+	f.stubs = append(f.stubs, queryStub{err: err})
+	return f
+}
+
+// exhausted fails the test if any stub was left unconsumed.
+func (f *fakeDB) exhausted(t *testing.T) {
+	t.Helper()
+	if len(f.stubs) != 0 {
+		t.Errorf("%d query stub(s) left unconsumed", len(f.stubs))
+	}
+}
+
+func (f *fakeDB) Query(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
+	if len(f.stubs) == 0 {
+		return nil, fmt.Errorf("no stub for query: %s", sql)
+	}
+	s := f.stubs[0]
+	f.stubs = f.stubs[1:]
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.rows, nil
+}
+
+func (f *fakeDB) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	rows, err := f.Query(ctx, sql, args...)
+	if err != nil {
+		return errRow{err: err}
+	}
+	return fakeRow{r: rows.(*fakeRows)}
+}
+
+// fakeRow adapts *fakeRows to pgx.Row with pgx's QueryRow semantics: the
+// first row is consumed by Next() before Scan, and no rows yields ErrNoRows.
+type fakeRow struct{ r *fakeRows }
+
+func (fr fakeRow) Scan(dest ...any) error {
+	if !fr.r.Next() {
+		if err := fr.r.Err(); err != nil {
+			return err
+		}
+		return pgx.ErrNoRows
+	}
+	return fr.r.Scan(dest...)
+}
+
+// errRow adapts an error to pgx.Row for QueryRow callers.
+type errRow struct{ err error }
+
+func (r errRow) Scan(dest ...any) error { return r.err }
+
+// fakeRows implements pgx.Rows over a fixed [][]any. NULL is expressed as a
+// nil cell and leaves the destination at its zero value.
+type fakeRows struct {
+	rows [][]any
+	idx  int
+}
+
+func newFakeRows(rows ...[]any) *fakeRows { return &fakeRows{rows: rows} }
+
+func (r *fakeRows) Next() bool {
+	if r.idx >= len(r.rows) {
+		return false
+	}
+	r.idx++
+	return true
+}
+
+func (r *fakeRows) Scan(dest ...any) error {
+	if r.idx == 0 || r.idx > len(r.rows) {
+		return pgx.ErrNoRows
+	}
+	row := r.rows[r.idx-1]
+	if len(row) != len(dest) {
+		return fmt.Errorf("scan: %d columns for %d destinations", len(row), len(dest))
+	}
+	for i, d := range dest {
+		v := row[i]
+		if v == nil {
+			continue // leave the destination zero value (NULL semantics)
+		}
+		if err := assignScan(d, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *fakeRows) Values() ([]any, error)                       { return nil, errors.New("Values not implemented") }
+func (r *fakeRows) RawValues() [][]byte                          { return nil }
+func (r *fakeRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
+func (r *fakeRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
+func (r *fakeRows) Err() error                                   { return nil }
+func (r *fakeRows) Close()                                       {}
+func (r *fakeRows) Conn() *pgx.Conn                              { return nil }
+
+// assignScan mirrors pgx's minimal assignment rules: exact type match first,
+// then a Scan(any) receiver (pgtype.Timestamptz for nullable timestamps).
+func assignScan(dst, src any) error {
+	dv := reflect.ValueOf(dst)
+	if dv.Kind() != reflect.Ptr || dv.IsNil() {
+		return fmt.Errorf("scan destination must be a non-nil pointer, got %T", dst)
+	}
+	ev := dv.Elem()
+	if sv := reflect.ValueOf(src); sv.Type().AssignableTo(ev.Type()) {
+		ev.Set(sv)
+		return nil
+	}
+	if sc, ok := dst.(interface{ Scan(any) error }); ok {
+		return sc.Scan(src)
+	}
+	return fmt.Errorf("cannot scan %T into %T", src, dst)
+}
+
+// ---- tests ------------------------------------------------------------------
+
+func TestLoadStatus_EmptyDB(t *testing.T) {
+	db := &fakeDB{}
+	db.stub(newFakeRows())         // plugins
+	db.stub(newFakeRows())         // metric definitions
+	db.stub(newFakeRows())         // latest observations
+	db.stub(newFakeRows())         // series
+	db.stub(newFakeRows([]any{0})) // today's alert count
+	defer db.exhausted(t)
+
+	p, err := loadStatus(context.Background(), db, time.Now())
+	if err != nil {
+		t.Fatalf("loadStatus: %v", err)
+	}
+	if p.Plugins == nil || len(p.Plugins) != 0 {
+		t.Errorf("plugins = %#v, want empty non-nil slice", p.Plugins)
+	}
+	if p.Metrics == nil || len(p.Metrics) != 0 {
+		t.Errorf("metrics = %#v, want empty non-nil slice", p.Metrics)
+	}
+	if p.Budget.Today != 0 || p.Budget.Limit != 10 {
+		t.Errorf("budget = %+v, want today 0 limit 10", p.Budget)
+	}
+	if p.LatestDataAt != nil {
+		t.Errorf("latest_data_at = %v, want nil on empty db", p.LatestDataAt)
+	}
+}
+
+func TestLoadStatus_JoinAndFreshness(t *testing.T) {
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+
+	db := &fakeDB{}
+	db.stub(newFakeRows( // plugins
+		[]any{"plg_etf", "etf", true, "running", now.Add(-2 * time.Hour), 3},
+		[]any{"plg_crypto", "crypto", false, "starting", nil, 0},
+	))
+	db.stub(newFakeRows( // metric definitions
+		[]any{"gld.ass.price", "mtr_aaa", "GLD Price", "USD", "daily"},
+		[]any{"btc.usd.price", "mtr_bbb", "BTC Price", "USD", "hourly"},
+		[]any{"walcl", "mtr_ccc", "WALCL", "USD bn", "weekly"},
+	))
+	// mtr_ccc deliberately has no observation: the metric must still appear,
+	// red, with a null value — missing data is itself a state to surface.
+	db.stub(newFakeRows( // latest observations
+		[]any{"mtr_aaa", now.Add(-5 * 24 * time.Hour), 310.5, "yahoo", "delayed"},
+		[]any{"mtr_bbb", now.Add(-6 * time.Hour), 12345.6, "binance", "realtime"},
+	))
+	db.stub(newFakeRows( // series
+		[]any{"mtr_aaa", now.Add(-5 * 24 * time.Hour), 310.5},
+		[]any{"mtr_aaa", now.Add(-4 * 24 * time.Hour), 312.0},
+		[]any{"mtr_bbb", now.Add(-6 * time.Hour), 12300.0},
+	))
+	db.stub(newFakeRows([]any{2})) // today's alert count
+	defer db.exhausted(t)
+
+	p, err := loadStatus(context.Background(), db, now)
+	if err != nil {
+		t.Fatalf("loadStatus: %v", err)
+	}
+
+	if len(p.Plugins) != 2 {
+		t.Fatalf("plugins len = %d, want 2", len(p.Plugins))
+	}
+	if !p.Plugins[0].Healthy {
+		t.Errorf("plugins[0].Healthy = false, want true")
+	}
+	if p.Plugins[1].Healthy || p.Plugins[1].LastCollectAt != nil {
+		t.Errorf("plugins[1] = %+v, want unhealthy with nil last_collect_at", p.Plugins[1])
+	}
+	if p.Plugins[0].LastCollectAt == nil || !p.Plugins[0].LastCollectAt.Equal(now.Add(-2*time.Hour)) {
+		t.Errorf("plugins[0].LastCollectAt = %v, want 2h ago", p.Plugins[0].LastCollectAt)
+	}
+
+	if p.Budget.Today != 2 {
+		t.Errorf("budget today = %d, want 2", p.Budget.Today)
+	}
+
+	if len(p.Metrics) != 3 {
+		t.Fatalf("metrics len = %d, want 3", len(p.Metrics))
+	}
+
+	// daily metric 5d stale → yellow (green ≤ 4d, yellow ≤ 7d)
+	if p.Metrics[0].Freshness != freshnessYellow {
+		t.Errorf("metrics[0].Freshness = %q, want yellow", p.Metrics[0].Freshness)
+	}
+	if p.Metrics[0].LatestValue == nil || *p.Metrics[0].LatestValue != 310.5 {
+		t.Errorf("metrics[0].LatestValue = %v, want 310.5", p.Metrics[0].LatestValue)
+	}
+	if p.Metrics[0].Provider != "yahoo" || p.Metrics[0].Grade != "delayed" {
+		t.Errorf("metrics[0] provider/grade = %q/%q, want yahoo/delayed", p.Metrics[0].Provider, p.Metrics[0].Grade)
+	}
+	// series: newest 30, ascending by time
+	if len(p.Metrics[0].Series) != 2 || p.Metrics[0].Series[0].V != 310.5 || p.Metrics[0].Series[1].V != 312.0 {
+		t.Errorf("metrics[0].Series = %+v, want 2 ascending points 310.5, 312.0", p.Metrics[0].Series)
+	}
+
+	// hourly metric 6h stale → yellow (green ≤ 3h, yellow ≤ 12h)
+	if p.Metrics[1].Freshness != freshnessYellow {
+		t.Errorf("metrics[1].Freshness = %q, want yellow", p.Metrics[1].Freshness)
+	}
+
+	// no-data metric → red, null value, empty (non-nil) series
+	if p.Metrics[2].Freshness != freshnessRed {
+		t.Errorf("metrics[2].Freshness = %q, want red", p.Metrics[2].Freshness)
+	}
+	if p.Metrics[2].LatestValue != nil || p.Metrics[2].LatestAt != nil {
+		t.Errorf("metrics[2].LatestValue/LatestAt = %v/%v, want nil", p.Metrics[2].LatestValue, p.Metrics[2].LatestAt)
+	}
+	if p.Metrics[2].Series == nil || len(p.Metrics[2].Series) != 0 {
+		t.Errorf("metrics[2].Series = %#v, want empty non-nil slice", p.Metrics[2].Series)
+	}
+
+	// latest_data_at = max observation time across metrics (btc, 6h ago)
+	if p.LatestDataAt == nil || !p.LatestDataAt.Equal(now.Add(-6*time.Hour)) {
+		t.Errorf("latest_data_at = %v, want %v", p.LatestDataAt, now.Add(-6*time.Hour))
+	}
+}
+
+// TestStatusHandler_EmptyDB_JSONShape exercises the full HTTP path (httptest,
+// mirroring middleware_test.go) against an empty database: 200, all four
+// top-level keys, arrays serialize as [] rather than null.
+func TestStatusHandler_EmptyDB_JSONShape(t *testing.T) {
+	db := &fakeDB{}
+	db.stub(newFakeRows())         // plugins
+	db.stub(newFakeRows())         // metric definitions
+	db.stub(newFakeRows())         // latest observations
+	db.stub(newFakeRows())         // series
+	db.stub(newFakeRows([]any{0})) // today's alert count
+	defer db.exhausted(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	statusHandler(db).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("content-type = %q, want application/json", ct)
+	}
+
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+	for _, k := range []string{"plugins", "budget", "latest_data_at", "metrics"} {
+		if _, ok := body[k]; !ok {
+			t.Errorf("response missing key %q (body: %s)", k, rec.Body.String())
+		}
+	}
+	var plugins []any
+	if err := json.Unmarshal(body["plugins"], &plugins); err != nil || plugins == nil {
+		t.Errorf("plugins = %s, want []", body["plugins"])
+	}
+	var metrics []any
+	if err := json.Unmarshal(body["metrics"], &metrics); err != nil || metrics == nil {
+		t.Errorf("metrics = %s, want []", body["metrics"])
+	}
+	if string(body["latest_data_at"]) != "null" {
+		t.Errorf("latest_data_at = %s, want null on empty db", body["latest_data_at"])
+	}
+}
+
+// TestStatusHandler_DBError verifies the handler degrades to a 500 JSON error
+// (never a raw SQL error leaking to the client) when a query fails.
+func TestStatusHandler_DBError(t *testing.T) {
+	db := &fakeDB{}
+	db.stubErr(errors.New("connection reset"))
+	defer db.exhausted(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	statusHandler(db).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("error body is not valid JSON: %v", err)
+	}
+	if body["error"] == "" {
+		t.Errorf("error body missing message: %s", rec.Body.String())
+	}
+}

@@ -20,6 +20,28 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// statusHandler returns the aggregated pulse-dashboard state (design D1):
+// plugin health, today's alert-budget consumption, newest data timestamp, and
+// per-metric freshness + sparkline series — everything the frontend needs in
+// one fetch. Read-only GET, so authMiddleware lets it through; the rate
+// limiter covers it like the other read routes. Freshness is decided here
+// server-side (freshness()) — the frontend only maps the verdict to a color.
+//
+// db is declared as statusQuerier (a Query/QueryRow subset of *pgxpool.Pool)
+// so the handler is unit-testable with pgxmock; production passes the real
+// pool unchanged.
+func statusHandler(db statusQuerier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		status, err := loadStatus(r.Context(), db, time.Now())
+		if err != nil {
+			log.Error().Err(err).Msg("load status failed")
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
+			return
+		}
+		writeJSON(w, http.StatusOK, status)
+	}
+}
+
 // alertsHandler returns the list of active alerts.
 func alertsHandler(db *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

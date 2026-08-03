@@ -59,6 +59,90 @@
         .empty { text-align: center; color: #4a5570; padding: 2rem; }
         #alert-detail { display: none; }
         #alert-detail.active { display: block; }
+
+        /* ── Pulse dashboard: ambient status bar (R1) ── */
+        #status-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.25rem 1rem;
+            padding: 0.45rem 2rem;
+            font-size: 0.78rem;
+            color: #8892b0;
+            background: #0d1220;
+            border-bottom: 1px solid #1a2340;
+            opacity: 0.75; /* ambient light, not a focus target */
+        }
+        #status-bar .sep { color: #2a3450; }
+        #status-bar .warn { color: #e8c34a; font-weight: 600; }
+        #status-bar .danger { color: #e85a5a; font-weight: 600; }
+        #status-bar.offline { opacity: 1; color: #e85a5a; }
+        #sb-plugins { cursor: help; }
+        #sb-plugins .bad { color: #e85a5a; }
+
+        /* Per-plugin detail strip, toggled by clicking the plugin segment */
+        #plugin-detail {
+            padding: 0.4rem 2rem;
+            background: #0d1220;
+            border-bottom: 1px solid #1a2340;
+            font-size: 0.75rem;
+            color: #8892b0;
+        }
+        #plugin-detail.hidden { display: none; }
+        #plugin-detail ul { list-style: none; }
+        #plugin-detail li { padding: 2px 0; }
+        #plugin-detail li .offline { color: #e85a5a; }
+
+        /* ── Metric Pulse card grid (R2) ── */
+        #pulse-section { margin-top: 2rem; }
+        #pulse-section h2 { font-size: 1rem; color: #64ffda; margin-bottom: 1rem; }
+        #pulse-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 1rem;
+        }
+        .pulse-card {
+            background: #131a2e;
+            border: 1px solid #1e2a45;
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            min-width: 0;
+        }
+        .pulse-head { display: flex; align-items: center; gap: 0.5rem; }
+        .pulse-dot {
+            width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+        }
+        .pulse-dot.green { background: #2dd4a7; }
+        .pulse-dot.yellow { background: #e8c34a; }
+        .pulse-dot.red { background: #e85a5a; }
+        .pulse-name {
+            font-size: 0.85rem; font-weight: 600; color: #e0e6f0;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .pulse-id {
+            font-size: 0.68rem; color: #4a5570;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .pulse-value {
+            font-size: 1.15rem; font-weight: 600; color: #64ffda;
+            font-variant-numeric: tabular-nums;
+        }
+        .pulse-unit { font-size: 0.7rem; font-weight: 400; color: #8892b0; }
+        .pulse-meta { font-size: 0.68rem; color: #8892b0; }
+        .pulse-spark {
+            width: 100%; height: 44px; display: block; margin-top: 0.35rem;
+        }
+        .pulse-spark-line {
+            fill: none; stroke: #64ffda; stroke-width: 1.5;
+            vector-effect: non-scaling-stroke;
+        }
+        .pulse-spark-placeholder {
+            stroke: #2a3450; stroke-width: 1; stroke-dasharray: 4 3;
+            vector-effect: non-scaling-stroke;
+        }
     </style>
 </head>
 <body>
@@ -69,6 +153,17 @@
         </div>
         <span class="status-pill" id="status-pill">connecting...</span>
     </header>
+    <!-- R1: low-contrast ambient status bar; fetch failure flips it to 连接中断 -->
+    <div id="status-bar">
+        <span id="sb-plugins">连接中…</span>
+        <span class="sep">·</span>
+        <span id="sb-metrics">—</span>
+        <span class="sep">·</span>
+        <span id="sb-budget">—</span>
+        <span class="sep">·</span>
+        <span id="sb-latest">—</span>
+    </div>
+    <div id="plugin-detail" class="hidden"></div>
     <main>
         <div id="alerts-view">
             <div class="grid">
@@ -92,12 +187,45 @@
                 </div>
             </div>
         </div>
+        <!-- R2: Metric Pulse cards below the alerts block -->
+        <section id="pulse-section">
+            <h2>Metric Pulse</h2>
+            <div id="pulse-grid"></div>
+        </section>
     </main>
 
     <script>
         const API_BASE = window.location.origin;
         const SEVERITIES = ['critical', 'warning', 'info'];
         let trendChart = null;
+
+        // Pulse-dashboard state: latest /api/status payload (null until first
+        // successful fetch). Used by the alerts empty-state text too.
+        let statusData = null;
+        let alertsList = null; // last /api/alerts result (for empty-state refresh)
+        const FRESH_CLASSES = ['green', 'yellow', 'red'];
+
+        // Client-side relative time. latest_at arrives as ISO8601 UTC; the
+        // difference is computed from Date.now() so no server timezone leaks in.
+        function relativeTime(iso) {
+            if (!iso) return null;
+            const ms = Date.now() - Date.parse(iso);
+            if (!isFinite(ms) || ms < 0) return '刚刚';
+            const min = Math.floor(ms / 60000);
+            if (min < 1) return '1 分钟内';
+            if (min < 60) return `${min} 分钟前`;
+            const hr = Math.floor(min / 60);
+            if (hr < 24) return `${hr} 小时前`;
+            return `${Math.floor(hr / 24)} 天前`;
+        }
+
+        // Compact large numbers (Fed balance sheet ≈ 6.7e12 → 6.74B) and
+        // group thousands; values come from observations (plugin-sourced).
+        function formatValue(v) {
+            if (typeof v !== 'number' || !isFinite(v)) return '—';
+            if (Math.abs(v) >= 1e9) return (v / 1e9).toFixed(2) + 'B';
+            return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+        }
 
         // Escape untrusted API data before inserting into innerHTML.
         // Alert titles/ids originate from plugin-suggested rules — treat as hostile.
@@ -111,6 +239,7 @@
             try {
                 const resp = await fetch(`${API_BASE}/api/alerts`);
                 const alerts = await resp.json();
+                alertsList = alerts;
                 renderAlerts(alerts);
                 document.getElementById('status-pill').textContent = 'online';
             } catch (err) {
@@ -123,7 +252,14 @@
         function renderAlerts(alerts) {
             const list = document.getElementById('alerts-list');
             if (!alerts || alerts.length === 0) {
-                list.innerHTML = '<div class="empty">No active alerts</div>';
+                // R3: silent-running empty state with a vital sign, instead of
+                // the ambiguous "No active alerts".
+                const rel = statusData && statusData.latest_data_at
+                    ? relativeTime(statusData.latest_data_at)
+                    : null;
+                list.innerHTML = rel
+                    ? `<div class="empty">✓ 系统静默运行中 · 最新数据 ${esc(rel)}</div>`
+                    : '<div class="empty">✓ 系统静默运行中</div>';
                 return;
             }
             list.innerHTML = alerts.map(a => `
@@ -206,9 +342,191 @@
             });
         }
 
-        // Initial load + refresh every 30s.
+        // ── R1/R2: /api/status aggregate ──────────────────────────────────────
+        // One fetch drives the status bar + pulse cards. Freshness verdicts are
+        // computed server-side; the client only maps the string to a color.
+        async function fetchStatus() {
+            try {
+                const resp = await fetch(`${API_BASE}/api/status`);
+                if (!resp.ok) throw new Error(`status ${resp.status}`);
+                statusData = await resp.json();
+                renderStatus(statusData);
+                // Keep the silent-running empty state's "最新数据 Y 分钟前" fresh
+                // even when no alert fires in between.
+                if (alertsList && alertsList.length === 0) renderAlerts(alertsList);
+            } catch (err) {
+                renderStatusBarError();
+            }
+        }
+
+        function renderStatus(data) {
+            const bar = document.getElementById('status-bar');
+            bar.classList.remove('offline');
+
+            const plugins = data.plugins || [];
+            const healthy = plugins.filter(p => p.healthy).length;
+            const pluginsEl = document.getElementById('sb-plugins');
+            pluginsEl.textContent = `${healthy} 插件在线`;
+            pluginsEl.title = plugins.map(p =>
+                `${p.name}: ${p.healthy ? '在线' : '离线'} · 最后采集 ${p.last_collect_at ? relativeTime(p.last_collect_at) : '—'} · ${p.last_collect_count} 条`
+            ).join('\n');
+
+            const metricsEl = document.getElementById('sb-metrics');
+            metricsEl.textContent = `${(data.metrics || []).length} 指标`;
+
+            // Budget: X/10, ≥8 yellow, >10 red (design D4).
+            const today = data.budget ? data.budget.today : 0;
+            const limit = data.budget ? data.budget.limit : 10;
+            const budgetEl = document.getElementById('sb-budget');
+            budgetEl.textContent = `今日告警 ${today}/${limit}`;
+            budgetEl.classList.toggle('warn', today >= 8 && today <= limit);
+            budgetEl.classList.toggle('danger', today > limit);
+
+            const rel = relativeTime(data.latest_data_at);
+            document.getElementById('sb-latest').textContent =
+                rel ? `最新数据 ${rel}` : '暂无数据';
+
+            renderPluginDetail(plugins);
+            renderPulseGrid(data.metrics || []);
+        }
+
+        function renderStatusBarError() {
+            const bar = document.getElementById('status-bar');
+            bar.classList.add('offline');
+            document.getElementById('sb-plugins').textContent = '连接中断';
+            document.getElementById('sb-metrics').textContent = '';
+            document.getElementById('sb-budget').textContent = '';
+            document.getElementById('sb-latest').textContent = '';
+        }
+
+        // Per-plugin detail (R1): hover shows a tooltip; click toggles the strip.
+        function renderPluginDetail(plugins) {
+            const wrap = document.getElementById('plugin-detail');
+            if (wrap.classList.contains('hidden')) return;
+            wrap.textContent = '';
+            const ul = document.createElement('ul');
+            for (const p of plugins) {
+                const li = document.createElement('li');
+                const name = document.createElement('strong');
+                name.textContent = p.name;
+                li.appendChild(name);
+                const meta = document.createElement('span');
+                meta.className = p.healthy ? '' : 'offline';
+                meta.textContent = ` · ${p.healthy ? '在线' : '离线'} · 最后采集 ${p.last_collect_at ? relativeTime(p.last_collect_at) : '—'} · ${p.last_collect_count} 条`;
+                li.appendChild(meta);
+                ul.appendChild(li);
+            }
+            wrap.appendChild(ul);
+        }
+
+        function togglePluginDetail() {
+            const wrap = document.getElementById('plugin-detail');
+            wrap.classList.toggle('hidden');
+            if (!wrap.classList.contains('hidden')) renderPluginDetail(statusData ? statusData.plugins || [] : []);
+        }
+
+        // ── R2: Metric Pulse cards ───────────────────────────────────────────
+        function renderPulseGrid(metrics) {
+            const grid = document.getElementById('pulse-grid');
+            grid.textContent = '';
+            for (const m of metrics) grid.appendChild(buildPulseCard(m));
+        }
+
+        // Cards are built with DOM APIs and textContent for every value that
+        // originates from the database (names, providers, values) — never
+        // innerHTML string concatenation (XSS; plugin-suggested data is hostile).
+        function buildPulseCard(m) {
+            const card = document.createElement('div');
+            card.className = 'pulse-card';
+
+            const head = document.createElement('div');
+            head.className = 'pulse-head';
+            const dot = document.createElement('span');
+            const freshness = FRESH_CLASSES.includes(m.freshness) ? m.freshness : 'red';
+            dot.className = `pulse-dot ${freshness}`;
+            dot.title = `freshness: ${m.freshness || 'unknown'}`;
+            const name = document.createElement('span');
+            name.className = 'pulse-name';
+            name.textContent = m.name || m.metric_id || '—';
+            head.appendChild(dot);
+            head.appendChild(name);
+            card.appendChild(head);
+
+            const id = document.createElement('div');
+            id.className = 'pulse-id';
+            id.textContent = [m.metric_id, m.uid].filter(Boolean).join(' · ');
+            card.appendChild(id);
+
+            const val = document.createElement('div');
+            val.className = 'pulse-value';
+            const v = document.createElement('span');
+            v.textContent = m.latest_value != null ? formatValue(m.latest_value) : '—';
+            val.appendChild(v);
+            if (m.unit) {
+                const unit = document.createElement('span');
+                unit.className = 'pulse-unit';
+                unit.textContent = ` ${m.unit}`;
+                val.appendChild(unit);
+            }
+            card.appendChild(val);
+
+            const meta = document.createElement('div');
+            meta.className = 'pulse-meta';
+            meta.textContent = [m.provider, m.grade].filter(Boolean).join(' · ') || '—';
+            card.appendChild(meta);
+
+            card.appendChild(buildSparkline(m.series || [], m.latest_value == null));
+            return card;
+        }
+
+        // Hand-drawn SVG sparkline (100×28 viewBox, no chart library). Points
+        // are normalized to min/max with 2px padding; flat or sparse series get
+        // a dashed placeholder line instead of a misleading trend.
+        function buildSparkline(series, noData) {
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('viewBox', '0 0 100 28');
+            svg.setAttribute('preserveAspectRatio', 'none');
+            svg.classList.add('pulse-spark');
+
+            if (noData || !series || series.length < 2) {
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', '2');
+                line.setAttribute('y1', '14');
+                line.setAttribute('x2', '98');
+                line.setAttribute('y2', '14');
+                line.setAttribute('class', 'pulse-spark-placeholder');
+                svg.appendChild(line);
+                return svg;
+            }
+
+            const xs = series.map(p => Date.parse(p.t));
+            const ys = series.map(p => p.v);
+            const xMin = Math.min(...xs);
+            const xMax = Math.max(...xs);
+            const yMin = Math.min(...ys);
+            const yMax = Math.max(...ys);
+            const xSpan = xMax - xMin || 1;
+            const ySpan = yMax - yMin;
+            const pad = 2;
+            const center = 28 / 2;
+            const pts = series.map((p, i) => {
+                const x = pad + ((xs[i] - xMin) / xSpan) * (100 - 2 * pad);
+                const y = ySpan === 0 ? center : pad + (1 - (ys[i] - yMin) / ySpan) * (28 - 2 * pad);
+                return `${x.toFixed(2)},${y.toFixed(2)}`;
+            }).join(' ');
+            const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+            poly.setAttribute('points', pts);
+            poly.setAttribute('class', 'pulse-spark-line');
+            svg.appendChild(poly);
+            return svg;
+        }
+
+        // ── polling ──────────────────────────────────────────────────────────
+        // Initial load + refresh every 30s (same cadence as alerts).
         loadAlerts();
-        setInterval(loadAlerts, 30000);
+        fetchStatus();
+        setInterval(() => { loadAlerts(); fetchStatus(); }, 30000);
+        document.getElementById('sb-plugins').addEventListener('click', togglePluginDetail);
 
         // Responsive chart.
         window.addEventListener('resize', () => {

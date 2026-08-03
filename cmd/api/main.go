@@ -48,6 +48,10 @@ func main() {
 	// List active alerts.
 	mux.HandleFunc("/api/alerts", alertsHandler(db))
 
+	// Pulse dashboard aggregate (read-only): plugin health, alert budget,
+	// metric freshness + sparklines — one fetch for the whole status view.
+	mux.HandleFunc("/api/status", statusHandler(db))
+
 	// Get research context for an alert.
 	mux.HandleFunc("/api/research/", researchHandler(db))
 

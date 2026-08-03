@@ -4,6 +4,7 @@ go 1.22
 
 require (
 	github.com/jackc/pgx/v5 v5.6.0
+	github.com/rs/zerolog v1.33.0
 	google.golang.org/grpc v1.65.0
 	google.golang.org/protobuf v1.34.2
 )
@@ -11,7 +12,6 @@ require (
 require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
-	github.com/rs/zerolog v1.33.0 // indirect
 )
 
 require (
