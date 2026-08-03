@@ -10,10 +10,12 @@ RUN apk add --no-cache git ca-certificates
 # Copy workspace + module manifests
 COPY go.mod go.mod
 COPY go.work go.work.sum ./
+COPY plugins/etf/go.mod ./plugins/etf/go.mod
+COPY plugins/macro/go.mod ./plugins/macro/go.mod
+COPY plugins/crypto/go.mod ./plugins/crypto/go.mod
 COPY pkg/ ./pkg/
 COPY internal/ ./internal/
 COPY cmd/api/ ./cmd/api/
-COPY migrations/ ./migrations/
 
 # Build the API binary
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/api ./cmd/api

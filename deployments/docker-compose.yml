@@ -83,8 +83,8 @@ services:
   # ETF Plugin: GLD real price via Yahoo Finance; synthetic ETF flow (no free public source).
   etf-plugin:
     build:
-      context: ../plugins/etf
-      dockerfile: ../../deployments/Dockerfile.plugin
+      context: ../
+      dockerfile: deployments/Dockerfile.plugin
       args:
         PLUGIN_DIR: etf
     container_name: capital-observatory-etf
@@ -102,8 +102,8 @@ services:
   # plugin fails fast at startup -- this is intentional (silent mock is worse).
   macro-plugin:
     build:
-      context: ../plugins/macro
-      dockerfile: ../../deployments/Dockerfile.plugin
+      context: ../
+      dockerfile: deployments/Dockerfile.plugin
       args:
         PLUGIN_DIR: macro
     container_name: capital-observatory-macro
@@ -121,8 +121,8 @@ services:
   # No API key required for the free public endpoints.
   crypto-plugin:
     build:
-      context: ../plugins/crypto
-      dockerfile: ../../deployments/Dockerfile.plugin
+      context: ../
+      dockerfile: deployments/Dockerfile.plugin
       args:
         PLUGIN_DIR: crypto
     container_name: capital-observatory-crypto

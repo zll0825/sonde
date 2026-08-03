@@ -9,12 +9,18 @@ RUN apk add --no-cache git ca-certificates
 
 ARG PLUGIN_DIR=etf
 
-# Copy workspace manifests.
+# Copy workspace manifests. go.work `use`s every workspace module, so each
+# module's go.mod must be present even when only one plugin is built.
 COPY go.mod go.mod
 COPY go.work go.work.sum ./
+COPY plugins/etf/go.mod ./plugins/etf/go.mod
+COPY plugins/macro/go.mod ./plugins/macro/go.mod
+COPY plugins/crypto/go.mod ./plugins/crypto/go.mod
 
-# Copy the specific plugin + its shared dependencies.
-# The plugin lives in plugins/<name>/ (separate go.mod uses go.work).
+# Shared root-module packages the plugins import (pluginrunner, proto stubs).
+COPY pkg/ ./pkg/
+
+# Copy the specific plugin (overwrites its go.mod stub from above).
 COPY plugins/${PLUGIN_DIR}/ ./plugins/${PLUGIN_DIR}/
 
 # Build the plugin binary (path: plugins/<name>/cmd/<name>/main.go)
