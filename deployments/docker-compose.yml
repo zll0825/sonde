@@ -1,8 +1,8 @@
 # Capital Observatory — Full-Stack Dev Environment
-# M0–M6 deliverable: PostgreSQL + TimescaleDB + Core (gRPC) + API + ETF Plugin
+# M0–M6 deliverable: PostgreSQL + TimescaleDB + Core (gRPC) + API + ETF + Macro + Crypto
 #
 # Usage:
-#   make dev-up     # start database (compose) + migrate + core + api + etf plugin
+#   make dev-up     # start database (compose) + migrate + core + api + etf + macro + crypto
 #   make dev-logs   # tail service logs
 #   make dev-down   # stop everything
 #
@@ -11,13 +11,16 @@
 #   - Core gRPC server at     :50051
 #   - API + Frontend          http://localhost:8080/
 #
-# The ETF plugin connects automatically and begins pushing snapshots (real GLD
-# price from Yahoo Finance + synthetic flow data) every ~24h. Use
+# Plugins (see each service's PROVIDER env):
+#   - etf-plugin      GLD + ETH-P ETF flow & prices (Yahoo Finance + mock flow)
+#   - macro-plugin    Fed balance, US yields, USD index, USD/CNY (FRED real data)
+#   - crypto-plugin   BTC price, hash rate, exchange balance (CoinGecko + mempool.space)
+#
+# To observe the live pipeline:
 #   SELECT * FROM observations ORDER BY ingested_at DESC;
 #   SELECT * FROM alerts;
 #   SELECT * FROM research_snapshots;
 #   SELECT * FROM command_log;
-# to inspect the pipeline.
 
 services:
   timescaledb:
@@ -51,6 +54,12 @@ services:
     environment:
       DB_URL: postgres://capital:capital_dev@timescaledb:5432/capital_observatory?sslmode=disable
       CORE_BIND: ":50051"
+      # Telegram (optional): set both to enable push notifications
+      # TELEGRAM_BOT_TOKEN: "..."
+      # TELEGRAM_CHAT_ID: "..."
+      # Generic webhook (optional; Telegram takes priority if both are set):
+      # WEBHOOK_URL: "https://..."
+      # WEBHOOK_TOKEN: "..."
     ports:
       - "50051:50051"
 
@@ -71,21 +80,60 @@ services:
     ports:
       - "8080:8080"
 
-  # ETF Plugin: connects to core, streams metrics (GLD real price via Yahoo Finance).
+  # ETF Plugin: GLD real price via Yahoo Finance; synthetic ETF flow (no free public source).
   etf-plugin:
     build:
       context: ../plugins/etf
       dockerfile: ../../deployments/Dockerfile.plugin
+      args:
+        PLUGIN_DIR: etf
     container_name: capital-observatory-etf
     restart: unless-stopped
     depends_on:
       - core
-      - api
     environment:
       CORE_ADDR: "core:50051"
       PLUGIN_ID: "etf"
-      COLLECTION_INTERVAL: "24h"          # daily interval (ETF flow cadence)
+      COLLECTION_INTERVAL: "24h"          # daily interval (ETF data cadence)
       PROVIDER: "yahoo"                    # "yahoo" = real GLD price; "mock" = synthetic
+
+  # Macro Plugin: Fed balance, US yields, USD index, USD/CNY from FRED.
+  # Requires FRED_API_KEY (free at https://fred.stlouisfed.org). Without it the
+  # plugin fails fast at startup -- this is intentional (silent mock is worse).
+  macro-plugin:
+    build:
+      context: ../plugins/macro
+      dockerfile: ../../deployments/Dockerfile.plugin
+      args:
+        PLUGIN_DIR: macro
+    container_name: capital-observatory-macro
+    restart: unless-stopped
+    depends_on:
+      - core
+    environment:
+      CORE_ADDR: "core:50051"
+      PLUGIN_ID: "macro"
+      COLLECTION_INTERVAL: "1h"           # FRED publishes daily/weekly -- hourly poll
+      PROVIDER: "fred"                    # "fred" = real FRED data; "mock" = synthetic
+      FRED_API_KEY: "${FRED_API_KEY}"     # REQUIRED -- fails fast if unset
+
+  # Crypto Plugin: BTC price (CoinGecko), hash rate (mempool.space), exchange balance (mock).
+  # No API key required for the free public endpoints.
+  crypto-plugin:
+    build:
+      context: ../plugins/crypto
+      dockerfile: ../../deployments/Dockerfile.plugin
+      args:
+        PLUGIN_DIR: crypto
+    container_name: capital-observatory-crypto
+    restart: unless-stopped
+    depends_on:
+      - core
+    environment:
+      CORE_ADDR: "core:50051"
+      PLUGIN_ID: "crypto"
+      COLLECTION_INTERVAL: "1h"           # public APIs are low-rate-limit
+      PROVIDER: "real"                    # "real" = CoinGecko+mempool; "mock" = synthetic
 
 volumes:
   tsdb_data:

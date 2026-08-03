@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"capital_observatory/pkg/pluginrunner"
@@ -17,15 +18,29 @@ func main() {
 	pluginrunner.NewLifecycle(pluginrunner.Config{
 		PluginName:        "macro",
 		Version:           pluginVersion,
-		DefaultInterval:   30 * time.Second,
+		DefaultInterval:   1 * time.Hour, // FRED publishes daily/weekly — hourly poll respects API quota
 		BuildRegistration: buildRegistration,
 		SetupCollector: func(ctx context.Context) (pluginrunner.Provider, bool, error) {
-			prov := collector.Mock{}
-			_, ok := pluginrunner.Provider(prov).(pluginrunner.WindowedProvider)
-			return prov, ok, nil
+			if os.Getenv("PROVIDER") == "mock" {
+				prov := collector.Mock{}
+				_, windowed := pluginrunner.Provider(prov).(pluginrunner.WindowedProvider)
+				return prov, windowed, nil
+			}
+			fred, err := collector.NewFREDCollector()
+			if err != nil {
+				// Fail fast: without a real key the macro plugin cannot honor its
+				// promise of authentic data; surfacing the error to the operator is
+				// preferable to silently emitting mock values under the "fred" brand.
+				return nil, false, err
+			}
+			return fred, true, nil
 		},
 	}).Run()
 }
+
+// compile-time assertion: FREDCollector implements both interfaces.
+var _ pluginrunner.Provider = (*collector.FREDCollector)(nil)
+var _ pluginrunner.WindowedProvider = (*collector.FREDCollector)(nil)
 
 func buildRegistration() *pb.RegisterPluginRequest {
 	return &pb.RegisterPluginRequest{
@@ -119,6 +134,6 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Description:  "DXY above 105",
 			},
 		},
-		ChangeLog: "Initial Macro plugin registration",
+		ChangeLog: "FRED real-data source enabled; default interval 1h",
 	}
 }

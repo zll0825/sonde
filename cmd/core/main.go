@@ -18,6 +18,7 @@ import (
 	"capital_observatory/internal/core/alert"
 	"capital_observatory/internal/core/detector"
 	"capital_observatory/internal/core/noise"
+	"capital_observatory/internal/core/notifier"
 	"capital_observatory/internal/core/ontology"
 	"capital_observatory/internal/core/pluginmgr"
 	"capital_observatory/internal/core/research"
@@ -62,23 +63,17 @@ func main() {
 	// restart re-calibrates from the trailing 24h of emissions.
 	budgetTracker := noise.NewInMemoryBudget(noise.DefaultBudgetPerDay)
 
-	// Notification-hook stub: without a registered handler every alert.triggered
-	// event would exhaust its retries and land in status='failed'. Phase 2
-	// replaces this with a real notifier (webhook / email / slack). This
-	// handler also records the emission against the noise budget so operators
-	// can spot when the system is over its ≤10 alerts/day target.
-	outboxWorker.RegisterHandler(alert.EventTypeAlertTriggered, func(_ context.Context, ev alert.OutboxEvent) error {
-		// Outbox payload is JSON; unmarshal just the fields we need for the
-		// log and the budget tracker. A malformed payload must not abort the
-		// outbox loop, so we log the failure and fall through with zero fields.
-		var parsed struct {
-			AlertID  string `json:"alert_id"`
-			Title    string `json:"title"`
-			Severity string `json:"severity"`
-			MetricID string `json:"metric_id"`
-			RuleID   int    `json:"rule_id"`
-		}
+	// ── Notification channel (Phase 2) ──────────────────────────────────────────
+	// Resolve picks the first configured channel; without credentials it degrades
+	// to a NopNotifier and emits a startup warning. Ownership of retry semantics
+	// belongs to the outbox worker — if Notify fails we return the error and let
+	// MarkFailed/redelivery take over.
+	n := notifier.Resolve()
+	outboxWorker.RegisterHandler(alert.EventTypeAlertTriggered, func(ctx context.Context, ev alert.OutboxEvent) error {
+		var parsed notifier.AlertInfo
 		if uerr := json.Unmarshal(ev.Payload, &parsed); uerr != nil {
+			// A malformed payload must not abort the outbox loop, so we log the
+			// failure and dispatch with zero-valued AlertInfo.
 			log.Warn().Err(uerr).
 				Int("event_id", ev.ID).
 				Msg("alert payload unmarshal failed; dispatching with empty fields")
@@ -90,10 +85,20 @@ func main() {
 			Str("severity", parsed.Severity).
 			Str("metric_id", parsed.MetricID).
 			Int("rule_id", parsed.RuleID).
-			Msg("alert event dispatched (notification stub)")
+			Msg("alert dispatched")
 
-		// Record to noise budget tracker (non-fatal).
-		budgetTracker.Record(context.Background(), parsed.RuleID, parsed.Title, time.Now())
+		// Record against the noise budget (non-fatal even if it panics on a zero rule_id).
+		budgetTracker.Record(ctx, parsed.RuleID, parsed.Title, time.Now())
+
+		// Send via the configured notifier. Errors propagate to the outbox worker,
+		// which owns redelivery (retry-after backoff, terminal-failure threshold).
+		if err := n.Notify(ctx, parsed); err != nil {
+			log.Error().Err(err).
+				Int("event_id", ev.ID).
+				Str("alert_id", parsed.AlertID).
+				Msg("notification send failed — outbox will retry")
+			return err
+		}
 		return nil
 	})
 
@@ -107,7 +112,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case now := <-t.C:
-				st := budgetTracker.Status(context.Background(), now)
+				st := budgetTracker.Status(ctx, now)
 				if st.OverBudget {
 					log.Warn().
 						Int("projected_daily", int(st.ProjectedDaily+0.5)).

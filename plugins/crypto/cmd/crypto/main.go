@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"capital_observatory/pkg/pluginrunner"
@@ -17,15 +18,23 @@ func main() {
 	pluginrunner.NewLifecycle(pluginrunner.Config{
 		PluginName:        "crypto",
 		Version:           pluginVersion,
-		DefaultInterval:   10 * time.Second,
+		DefaultInterval:   1 * time.Hour, // CoinGecko free tier + stale daily data
 		BuildRegistration: buildRegistration,
 		SetupCollector: func(ctx context.Context) (pluginrunner.Provider, bool, error) {
-			prov := collector.Mock{}
-			_, ok := pluginrunner.Provider(prov).(pluginrunner.WindowedProvider)
-			return prov, ok, nil
+			if os.Getenv("PROVIDER") == "mock" {
+				prov := collector.Mock{}
+				_, windowed := pluginrunner.Provider(prov).(pluginrunner.WindowedProvider)
+				return prov, windowed, nil
+			}
+			prov := collector.NewRealCollector()
+			return prov, true, nil
 		},
 	}).Run()
 }
+
+// compile-time assertion: RealCollector implements both interfaces.
+var _ pluginrunner.Provider = (*collector.RealCollector)(nil)
+var _ pluginrunner.WindowedProvider = (*collector.RealCollector)(nil)
 
 func buildRegistration() *pb.RegisterPluginRequest {
 	return &pb.RegisterPluginRequest{
@@ -96,6 +105,6 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Description:  "BTC exchange balance declining for 7+ consecutive days",
 			},
 		},
-		ChangeLog: "Initial Crypto plugin registration",
+		ChangeLog: "RealCollector enabled: CoinGecko price + mempool.space hash rate, exchange_balance still mock",
 	}
 }

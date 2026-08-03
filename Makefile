@@ -88,11 +88,17 @@ run-api: build-api ## Run the API binary directly
 run-etf: ## Run the ETF plugin directly (connects to core at localhost:50051)
 	cd plugins/etf && CORE_ADDR=localhost:50051 go run ./cmd/etf
 
-run-crypto: ## Run the Crypto plugin directly
+run-crypto: ## Run the Crypto plugin directly (CoinGecko + mempool.space)
 	cd plugins/crypto && CORE_ADDR=localhost:50051 go run ./cmd/crypto
 
-run-macro: ## Run the Macro plugin directly
+run-crypto-mock: ## Run the Crypto plugin with PROVIDER=mock (offline dev)
+	cd plugins/crypto && CORE_ADDR=localhost:50051 PROVIDER=mock go run ./cmd/crypto
+
+run-macro: ## Run the Macro plugin (real FRED data — needs FRED_API_KEY)
 	cd plugins/macro && CORE_ADDR=localhost:50051 go run ./cmd/macro
+
+run-macro-mock: ## Run the Macro plugin with PROVIDER=mock (offline dev)
+	cd plugins/macro && CORE_ADDR=localhost:50051 PROVIDER=mock go run ./cmd/macro
 
 # ---- CI ----
 lint: ## Run gofmt + go vet + buf lint (all workspace modules)
@@ -122,3 +128,13 @@ clean: ## Remove build artifacts + stop docker stack (volumes preserved)
 
 clean-data: ## DESTRUCTIVE: stop stack AND delete database volumes
 	docker compose -f $(COMPOSE_FILE) down -v
+
+# ---- Data soak (real data immersion) ----
+# After `make clean-data`, start the full stack and let it run 1-2 weeks to
+# observe actual false-positive rates against the ≤10 alerts/day noise budget.
+# Setup notes (documented for operators):
+#   - macro: needs FRED_API_KEY (free at https://fred.stlouisfed.org)
+#   - crypto: no key required (CoinGecko / mempool.space free tiers)
+#   - ETF: no key required (Yahoo Finance public API)
+#   - Telegram: set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID on core env to enable
+.PHONY: help install-tools proto migrate-up migrate-down migrate-status migrate-force dev dev-up dev-down dev-logs lint test build clean clean-data run-core run-api run-etf run-crypto run-crypto-mock run-macro run-macro-mock
