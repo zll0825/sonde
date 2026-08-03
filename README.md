@@ -1,54 +1,106 @@
 # Capital Observatory
 
-ETF / Macro / Crypto 数据观测系统：采集 → 评估 → 告警 → 研究 → 展示。
+ETF / Macro / Crypto 资本数据观测系统：采集 → 质量评估 → 规则检测 → 告警通知 → 研究组装 → 前端展示。
 
-## 快速开始（一键起全栈）
+## 投产验证（Soak）操作手册
+
+目标：真实数据下跑 1–2 周，观察误报率并将全系统告警校准至 **≤ 10 条/天**（噪音预算）。
 
 ```bash
+# 1. 清空旧的 dev 数据（历史 mock 数据与旧 metric ID 会污染校准，必须重建）
+make clean-data
+
+# 2. 配置密钥（FRED 必需；Telegram 可选但强烈建议——否则告警只落库不推送）
+export FRED_API_KEY=xxx            # 免费注册 https://fred.stlouisfed.org
+export TELEGRAM_BOT_TOKEN=xxx      # @BotFather 创建 bot 获取
+export TELEGRAM_CHAT_ID=xxx        # @userinfobot 获取数字 chat ID
+
+# 3. 启动全栈（DB + Core + API + ETF/Macro/Crypto 三插件）
 make dev-up
+
+# 4. 验证链路（几分钟内应看到 fred / coingecko / yahoo 来源的观测入库）
+psql postgres://capital:capital_dev@localhost:5432/capital_observatory \
+  -c "SELECT metric_uid, value, source_provider, quality_grade, ingested_at
+      FROM observations ORDER BY ingested_at DESC LIMIT 20;"
 ```
 
-该命令构建并启动：PostgreSQL + TimescaleDB / Core(gRPC) / API + 前端 / ETF Plugin。
+Soak 期间的观察点：
+
+```sql
+-- 告警产出（核心校准对象：按日统计是否 ≤ 10 条）
+SELECT date_trunc('day', triggered_at) AS day, count(*)
+FROM alerts GROUP BY 1 ORDER BY 1 DESC;
+
+-- 各来源数据是否持续流入（某来源长时间无新增 = 采集端出问题）
+SELECT source_provider, max(ingested_at) FROM observations GROUP BY 1;
+
+-- 命令通路健康度
+SELECT * FROM command_log ORDER BY created_at DESC LIMIT 10;
+```
+
+Core 日志每小时输出一次噪音预算状态，超预算时打 WARN（`make dev-logs` 关注 `noise budget EXCEEDED`）。
+误报多的规则在前端（http://localhost:8080/）或数据库中调阈值，改后观察次日效果。
+
+**Soak 注意事项：**
+
+- `FRED_API_KEY` 缺失时 macro 插件按设计**快速失败**并进入退避重连循环（上限 60s），日志会明确提示——这是故意的，防止 mock 数据冒充真实数据入库。
+- `btc.ass.exchange_balance` 无免费真实源，实时路径仍为 mock 随机游走，且挂有两条规则（阈值 + 7 天连跌趋势）。**该指标产生的告警不计入校准结论**；若干扰明显，建议禁用这两条规则。
+- 回填命令（Backfill）对 crypto 的 price / hash_rate 有意不产出历史（拒绝用 mock 造假基线），percentile / trend 规则依赖 soak 期自然积累约 5 个周期后生效。
+
+## 快速开始
 
 ```bash
-# 查看服务日志
-make dev-logs
-
-# 停止全栈
-make dev-down
-
-# 查看告警
-psql postgres://capital:capital_dev@localhost:5432/capital_observatory \
-  -c "SELECT * FROM alerts ORDER BY triggered_at DESC LIMIT 10;"
+make dev-up      # 构建并启动全栈（含迁移）
+make dev-logs    # 查看服务日志
+make dev-down    # 停止全栈（保留数据卷）
+make clean-data  # 停止并删除数据卷（破坏性）
 ```
 
-启动后访问 http://localhost:8080/ 查看前端。
+启动后访问 http://localhost:8080/ 查看 Capital Radar 前端。
+
+## 环境变量
+
+| 变量 | 作用域 | 必需 | 说明 |
+|------|--------|------|------|
+| `FRED_API_KEY` | macro 插件 | ✅ | FRED 数据源密钥，缺失则插件快速失败 |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | core | 可选 | 两者齐备时启用 Telegram 告警推送 |
+| `WEBHOOK_URL` / `WEBHOOK_TOKEN` | core | 可选 | 通用 webhook 通道（Telegram 优先级更高） |
+| `PROVIDER` | 各插件 | 可选 | 设为 `mock` 切换到合成数据（离线开发用） |
+| `COLLECTION_INTERVAL` | 各插件 | 可选 | 采集间隔（Go duration 格式，如 `1h`、`60s`） |
+| `CORE_ADDR` | 各插件 | 可选 | Core gRPC 地址，默认 `:50051` |
+| `DB_URL` | core / api | 可选 | Postgres 连接串，compose 内已配置 |
+
+通知通道解析顺序：Telegram → Webhook → Nop（无配置时告警仅落库，启动时打 WARN 提示）。
 
 ## 服务端口
 
 | 服务 | 端口 | 协议 |
 |------|------|------|
-| PostgreSQL | 5432 | TCP |
+| PostgreSQL (TimescaleDB) | 5432 | TCP |
 | Core gRPC | 50051 | gRPC |
 | API + 前端 | 8080 | HTTP |
 
-## 本地开发（无 Docker）
+## 本地开发（无 Docker 全栈）
 
 ```bash
-# 1. 启动数据库
-make dev-db
+# 1. 仅启动数据库
+docker compose -f deployments/docker-compose.yml up -d timescaledb
 
 # 2. 应用迁移
 make migrate-up
 
-# 3. 运行 Core（热重载）
+# 3. 运行 Core（Air 热重载）
 make dev
 
 # 4. 运行 API（新终端）
 make run-api
 
-# 5. 运行 ETF Plugin（新终端）
+# 5. 按需运行插件（新终端；*-mock 为离线合成数据版）
 make run-etf
+make run-macro        # 需要 FRED_API_KEY
+make run-macro-mock
+make run-crypto       # CoinGecko + mempool.space，无需密钥
+make run-crypto-mock
 ```
 
 ## 系统链路
@@ -57,26 +109,38 @@ make run-etf
 Plugin (gRPC stream)
   → MetricSnapshot
     → Core: M2 入库 (InsertObservation + QualityScore + 覆盖矩阵)
-      → M3 阈值检测 (Threshold → 后续 Percentile/Trend)
-        → M4 告警 (AlertEngine → 自动 resolve)
+      → M3 规则检测 (Threshold / Percentile / Trend，频率感知回看窗口)
+        → M4 告警 (AlertEngine → 去重 → 自动 resolve)
+          → Outbox → 通知 (Telegram / Webhook) + 噪音预算记账
           → M4 研究 (Research Assemble → Snapshot)
-            → M5 前端 (API → Web)
+            → M5 前端 (API → Capital Radar)
 
 控制通路:
 API command_log → CommandDispatcher → Sync/BackfillCommand → Plugin → 采集 → Push → Ack → command_log completed/resolved
 ```
 
-## 数据通路
+## 数据源真实性
 
-- **实时数据**：ETF 插件通过 Yahoo Finance API 获取 GLD 每日价格（公开 API，无需 Key）
-- **采集间隔**：默认每日（符合 ETF 流量日频语义）；开发环境可用 `INTERVAL_SECONDS=60` 缩短
-- **合成数据**：流量（flow）指标无公开源，暂用合成数据；设置 `PROVIDER=mock` 全部切换为合成
+| 插件 | 指标 | 来源 | 真实性 |
+|------|------|------|--------|
+| etf | `gld.ass.price` | Yahoo Finance | ✅ 真实 |
+| etf | `gld.ass.daily_flow` / `eth.ass.daily_flow` | 合成 | ⚠️ mock（无免费源） |
+| macro | `fed.ins.balance_sheet` (WALCL) | FRED | ✅ 真实（周频） |
+| macro | `us.mkt.ten_year_yield` (DGS10) | FRED | ✅ 真实（日频） |
+| macro | `us.mkt.dollar_index` (DTWEXBGS) | FRED | ✅ 真实（日频） |
+| macro | `us.mkt.usd_cny` (DEXCHUS) | FRED | ✅ 真实（日频） |
+| crypto | `btc.ass.price` | CoinGecko | ✅ 真实 |
+| crypto | `btc.ass.hash_rate` | mempool.space | ✅ 真实 |
+| crypto | `btc.ass.exchange_balance` | 合成 | ⚠️ mock（免费源仅付费的 Glassnode/CryptoQuant 提供） |
+
+macro 支持真实历史回填（FRED 原生窗口查询，单次上限 90 天）；crypto 的 price / hash_rate 有意不支持 mock 回填（见 Soak 注意事项）。
 
 ## 测试
 
 ```bash
-go test ./...          # 全量测试
-make lint              # gofmt + go vet + buf lint
+make test        # 全量测试（全 workspace 模块）
+make lint        # gofmt + go vet + buf lint
+make build       # 编译 core + api
 ```
 
 ## 项目状态
@@ -84,15 +148,20 @@ make lint              # gofmt + go vet + buf lint
 | 里程碑 | 状态 | 备注 |
 |--------|------|------|
 | M0 Repository | ✅ | compose / migrations / CI |
-| M1 Plugin Registration | ✅ | gRPC session + single-connection |
-| M2 Observation Ingest | ✅ | QualityScore + 覆盖矩阵（A3 实现） |
-| M3 Rule Evaluation | ✅ | Threshold detector（percentile/trend Phase 2） |
+| M1 Plugin Registration | ✅ | gRPC session + 共享骨架 `pkg/pluginrunner` |
+| M2 Observation Ingest | ✅ | QualityScore + 覆盖矩阵 |
+| M3 Rule Evaluation | ✅ | Threshold / Percentile / Trend 三类探测器 |
 | M4 Research Read | ✅ | Assembly + Snapshot + Review |
-| M5 Control + Frontend | ✅ | 命令通路 (C7) + 静态托管 (D9) |
-| B4 Alert 自动 resolve | ✅ | 有 active alert 未触发 → 自动 resolve |
-| A1 真实数据源 | ✅ | ETF GLD 接 Yahoo Finance |
-| C8 心跳健康 | ✅ | isPluginHealthy 接入真实活跃检测 |
-| B6 噪音预算 | ⏳ | 操作调参——需真实数据跑一段后按误报率调至 ≤10 条/天 |
+| M5 Control + Frontend | ✅ | 命令通路 + Capital Radar |
+| 真实数据源接入 | ✅ | Yahoo / FRED / CoinGecko / mempool.space |
+| 告警通知通道 | ✅ | Telegram / Webhook（outbox 重试托管） |
+| B6 噪音预算校准 | 🔄 | **当前阶段**：soak 中按实际误报率调至 ≤10 条/天 |
+
+## 已知限制
+
+- 控制 API 无鉴权，仅适合本机 / 可信内网部署；暴露公网前需加 token。
+- `btc.ass.exchange_balance` 与 ETF flow 为合成数据（无免费真实源）。
+- 通知失败由 outbox 重试机制托管（退避 + 终态失败阈值），无独立死信告警。
 
 ## 文档
 
@@ -105,3 +174,4 @@ make lint              # gofmt + go vet + buf lint
 | [Database Schema v1.0](docs/database-schema.md) | 数据库 Schema |
 | [ADR](docs/adr.md) | 架构决策记录（ADR-1…7） |
 | [Conventions](docs/conventions.md) | Go 代码约定 |
+| [Real-Data Onboarding](docs/milestone/real-data-onboarding.md) | 真实数据接入里程碑 |
