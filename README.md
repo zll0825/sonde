@@ -11,9 +11,9 @@ ETF / Macro / Crypto 资本数据观测系统：采集 → 质量评估 → 规�
 make clean-data
 
 # 2. 配置密钥（FRED 必需；Telegram 可选但强烈建议——否则告警只落库不推送）
-export FRED_API_KEY=xxx            # 免费注册 https://fred.stlouisfed.org
-export TELEGRAM_BOT_TOKEN=xxx      # @BotFather 创建 bot 获取
-export TELEGRAM_CHAT_ID=xxx        # @userinfobot 获取数字 chat ID
+export FRED_API_KEY=            # 免费注册 https://fred.stlouisfed.org
+export TELEGRAM_BOT_TOKEN=      # @BotFather 创建 bot 获取
+export TELEGRAM_CHAT_ID=        # @userinfobot 获取数字 chat ID
 
 # 3. 启动全栈（DB + Core + API + ETF/Macro/Crypto 三插件）
 make dev-up
@@ -68,7 +68,7 @@ make clean-data  # 停止并删除数据卷（破坏性）
 | `PROVIDER` | 各插件 | 可选 | 设为 `mock` 切换到合成数据（离线开发用） |
 | `COLLECTION_INTERVAL` | 各插件 | 可选 | 采集间隔（Go duration 格式，如 `1h`、`60s`） |
 | `CORE_ADDR` | 各插件 | 可选 | Core gRPC 地址，默认 `:50051` |
-| `DB_URL` | core / api | 可选 | Postgres 连接串，compose 内已配置 |
+| `DATABASE_URL` | core / api | 可选 | Postgres 连接串，compose 内已配置 |
 
 通知通道解析顺序：Telegram → Webhook → Nop（无配置时告警仅落库，启动时打 WARN 提示）。
 

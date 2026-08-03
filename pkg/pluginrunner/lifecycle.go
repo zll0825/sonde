@@ -196,10 +196,14 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 		}
 	})
 
-	// Periodic collection loop.
+	// Periodic collection loop. Collect immediately on session start — with
+	// hourly/daily intervals a fresh stack would otherwise sit empty until the
+	// first tick (24h for the ETF plugin). Reconnect re-collection is safe:
+	// the observations idempotency index dedups identical samples.
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
+		collectOnce("")
 		for {
 			select {
 			case <-ctx.Done():

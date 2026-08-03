@@ -33,14 +33,32 @@ proto: ## Generate Go code from proto files
 	@echo ">> Generated pkg/proto/"
 
 # ---- Database ----
+# Dockerized fallback when the migrate CLI is not installed on the host.
+# Runs on the compose network so `timescaledb` resolves.
+DB_URL_DOCKER ?= postgres://capital:capital_dev@timescaledb:5432/capital_observatory?sslmode=disable
+MIGRATE_DOCKER = docker run --rm -v "$(CURDIR)/migrations:/migrations" --network deployments_default migrate/migrate -path=/migrations -database "$(DB_URL_DOCKER)"
+
 migrate-up: ## Apply all pending migrations
-	migrate -path $(MIGRATIONS_DIR) -database "$(DB_URL)" up
+	@if command -v migrate >/dev/null 2>&1; then \
+		migrate -path $(MIGRATIONS_DIR) -database "$(DB_URL)" up; \
+	else \
+		echo ">> migrate CLI not found; using dockerized migrate/migrate"; \
+		$(MIGRATE_DOCKER) up; \
+	fi
 
 migrate-down: ## Rollback one migration
-	migrate -path $(MIGRATIONS_DIR) -database "$(DB_URL)" down 1
+	@if command -v migrate >/dev/null 2>&1; then \
+		migrate -path $(MIGRATIONS_DIR) -database "$(DB_URL)" down 1; \
+	else \
+		$(MIGRATE_DOCKER) down 1; \
+	fi
 
 migrate-status: ## Show migration status
-	migrate -path $(MIGRATIONS_DIR) -database "$(DB_URL)" version
+	@if command -v migrate >/dev/null 2>&1; then \
+		migrate -path $(MIGRATIONS_DIR) -database "$(DB_URL)" version; \
+	else \
+		$(MIGRATE_DOCKER) version; \
+	fi
 
 migrate-force: ## Force migration version (usage: make migrate-force VERSION=1)
 	migrate -path $(MIGRATIONS_DIR) -database "$(DB_URL)" force $(VERSION)
