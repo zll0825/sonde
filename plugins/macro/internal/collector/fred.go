@@ -1,3 +1,4 @@
+// Package collector 提供 macro 插件的数据采集器：FRED 真实源与离线 mock。
 package collector
 
 import (
@@ -162,8 +163,8 @@ func (f *FREDCollector) GetSnapshotsForWindow(ctx context.Context, start, end ti
 
 // fetchLatest returns the most recent observation within [windowStart, windowEnd].
 func (f *FREDCollector) fetchLatest(ctx context.Context, seriesID string, scale float64, windowStart, windowEnd time.Time) (*float64, time.Time, error) {
-	url := f.observationsURL(seriesID, windowStart, windowEnd, "desc", 1)
-	body, err := f.doGet(ctx, url)
+	reqURL := f.observationsURL(seriesID, windowStart, windowEnd, "desc", 1)
+	body, err := f.doGet(ctx, reqURL)
 	if err != nil {
 		return nil, time.Time{}, err
 	}
@@ -185,8 +186,8 @@ func (f *FREDCollector) fetchLatest(ctx context.Context, seriesID string, scale 
 
 // fetchRange returns all observations within [start, end] in ascending date order.
 func (f *FREDCollector) fetchRange(ctx context.Context, seriesID string, scale float64, start, end time.Time) ([]time.Time, []*float64, error) {
-	url := f.observationsURL(seriesID, start, end, "asc", 0)
-	body, err := f.doGet(ctx, url)
+	reqURL := f.observationsURL(seriesID, start, end, "asc", 0)
+	body, err := f.doGet(ctx, reqURL)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -215,14 +216,14 @@ func (f *FREDCollector) fetchRange(ctx context.Context, seriesID string, scale f
 // observationsURL builds the FRED observations endpoint URL.
 // limit=0 lets FRED use its default (100k); sortOrder is asc or desc.
 func (f *FREDCollector) observationsURL(seriesID string, start, end time.Time, sortOrder string, limit int) string {
-	url := fmt.Sprintf(
+	reqURL := fmt.Sprintf(
 		"https://api.stlouisfed.org/fred/series/observations?series_id=%s&api_key=%s&file_type=json&observation_start=%s&observation_end=%s&sort_order=%s",
 		seriesID, f.apiKey, start.Format("2006-01-02"), end.Format("2006-01-02"), sortOrder,
 	)
 	if limit > 0 {
-		url += fmt.Sprintf("&limit=%d", limit)
+		reqURL += fmt.Sprintf("&limit=%d", limit)
 	}
-	return url
+	return reqURL
 }
 
 // doGet performs HTTP GET and returns the response body.

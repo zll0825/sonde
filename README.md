@@ -65,6 +65,7 @@ make clean-data  # 停止并删除数据卷（破坏性）
 | `FRED_API_KEY` | macro 插件 | ✅ | FRED 数据源密钥，缺失则插件快速失败 |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | core | 可选 | 两者齐备时启用 Telegram 告警推送 |
 | `WEBHOOK_URL` / `WEBHOOK_TOKEN` | core | 可选 | 通用 webhook 通道（Telegram 优先级更高） |
+| `API_TOKEN` | api | 建议 | 控制端点（sync/backfill）的 Bearer 令牌；未配置时写操作被拒绝 |
 | `PROVIDER` | 各插件 | 可选 | 设为 `mock` 切换到合成数据（离线开发用） |
 | `COLLECTION_INTERVAL` | 各插件 | 可选 | 采集间隔（Go duration 格式，如 `1h`、`60s`） |
 | `CORE_ADDR` | 各插件 | 可选 | Core gRPC 地址，默认 `:50051` |
@@ -159,7 +160,7 @@ make build       # 编译 core + api
 
 ## 已知限制
 
-- 控制 API 无鉴权，仅适合本机 / 可信内网部署；暴露公网前需加 token。
+- 控制端点（`/api/control/*`）强制要求 `API_TOKEN`（未配置时拒绝写操作）；读端点无鉴权，仅适合本机 / 可信内网部署。
 - `btc.ass.exchange_balance` 与 ETF flow 为合成数据（无免费真实源）。
 - 通知失败由 outbox 重试机制托管（退避 + 终态失败阈值），无独立死信告警。
 
@@ -167,6 +168,7 @@ make build       # 编译 core + api
 
 | 文档 | 内容 |
 |------|------|
+| [架构运行图（中文）](docs/architecture-zh.md) | as-built 架构：部署/数据流/时序 Mermaid 图 + 表职责 + 代码地图 |
 | [PRD v4](docs/prd-v4.md) | 产品定义（v4.1，与架构对齐） |
 | [System Architecture](docs/system-architecture.md) | 系统架构（冻结，v1.1） |
 | [Domain Model v1.0](docs/domain-model.md) | 领域模型 |

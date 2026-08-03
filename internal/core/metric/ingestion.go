@@ -1,3 +1,5 @@
+// Package metric 承担观测摄入的质量层：质量评分（quality_score）、同指标
+// 多来源时的来源优先级裁决，以及未申报指标的 pending 登记。
 package metric
 
 import (

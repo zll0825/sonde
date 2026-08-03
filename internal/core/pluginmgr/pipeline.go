@@ -65,12 +65,12 @@ func NewPipeline(
 	}
 }
 
-// EvaluateAndAlert runs the full M3 → M4 flow for observations of a metric_id.
+// EvaluateAndAlert 对某个 metric_id 的观测执行完整的 M3 → M4 流程：
+// 查规则 → 频率感知回看取观测 → 探测器评估 → 触发转告警（去重）→
+// 未复现的 active 告警自动 resolve → 组装研究快照。
 //
-// Called by the manager after ingestion has persisted new observations — this
-// gives the detector a chance to see the freshly-inserted rows before querying.
-// The function is safe to call concurrently for different metric_ids; the DB
-// handles row-level locking on the alerts unique partial index.
+// 由 manager 在摄入落库之后调用，确保探测器查询能看到刚插入的行。
+// 不同 metric_id 可并发调用；alerts 唯一部分索引由数据库做行级互斥。
 func (p *Pipeline) EvaluateAndAlert(ctx context.Context, metricID, pluginID string) error {
 	// Fetch all active, enabled rules for this metric.
 	allRules, err := p.rules.GetActiveRules(ctx)
@@ -237,15 +237,13 @@ func frequencyDuration(freq string) time.Duration {
 	}
 }
 
-// frequencyAwareLookback computes how far back a rule evaluation must look to
-// accumulate enough observations for the strictest rule on this metric.
+// frequencyAwareLookback 计算规则评估需要回看多远，才能为该指标上"最苛刻"
+// 的规则凑齐足量观测。
 //
-// Logic: for each rule take the larger of `consecutive`+1 and
-// `min_observations` (percentile rules gate on sample size, not streak length);
-// the window must cover that many periods of the declared frequency. Add 50%
-// headroom for revisions/gaps (e.g. a week with no data
-// point). Floor at 7 days (research/display context wants at least a week),
-// cap at 365 days to protect against pathological configs.
+// 逻辑：每条规则取 consecutive+1 与 min_observations 的较大者（percentile
+// 规则按样本量而非连续长度设门槛），窗口须覆盖该数量 × 声明频率的周期；
+// 再加 50% 余量应对修订/缺数（如某周无数据点）。下限 7 天（研究/展示至少
+// 要一周上下文），上限 365 天防御病态配置。
 func frequencyAwareLookback(freq string, rules []model.Rule) time.Duration {
 	period := frequencyDuration(freq)
 	if period == 0 {
@@ -294,12 +292,9 @@ func frequencyAwareLookback(freq string, rules []model.Rule) time.Duration {
 	return lookback
 }
 
-// observationsLimit computes a row LIMIT for the observations query given the
-// lookback window and declared frequency. The goal: return enough rows so the
-// detector sees the full window (with 2x headroom for the same
-// revisions/gaps reason as above), but never exceed a ceiling that would make
-// the query expensive. For high-frequency metrics (realtime/hourly), the
-// per-period row count is naturally high, so we cap lower.
+// observationsLimit 依据回看窗口与声明频率推算观测查询的行数上限：既要让
+// 探测器看全整个窗口（2 倍余量，理由同上），又不能让查询失控膨胀。高频
+// 指标（realtime/hourly）单位周期行数天然多，上限收得更紧。
 func observationsLimit(lookback time.Duration, freq string) int {
 	period := frequencyDuration(freq)
 	if period == 0 {

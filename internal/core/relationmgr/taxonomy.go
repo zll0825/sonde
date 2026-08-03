@@ -1,6 +1,5 @@
-// Package relationmgr owns the relation taxonomy registry and layer-based
-// review logic. Plugins may suggest relations, but Core decides acceptance
-// per ADR-2.
+// Package relationmgr 维护关系分类学注册表与分层评审逻辑：插件只能"建议"
+// 关系，是否采纳由 Core 按来源优先级裁决（ADR-2）。
 package relationmgr
 
 import "capital_observatory/pkg/model"

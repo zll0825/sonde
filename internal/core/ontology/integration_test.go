@@ -51,11 +51,11 @@ func truncateAll(t *testing.T, db *pgxpool.Pool) {
 			TRUNCATE TABLE
 				observations,
 				relation_suggestions,
-				relations_v2,
+				relations,
 				rule_suggestions,
-				rules_v2,
-				metric_definitions_v2,
-				entities_v2,
+				rules,
+				metric_definitions,
+				entities,
 				plugins,
 				alerts,
 				event_outbox,
@@ -178,10 +178,10 @@ func TestIntegration_RegisterPlugin_VersionBumpOnContentChange(t *testing.T) {
 
 	// Inspect the DB directly: expect exactly 2 rows for vb_ent.
 	rows, err := db.Query(context.Background(), `
-		SELECT id, version, effective_to FROM entities_v2 WHERE id = $1 ORDER BY version
+		SELECT id, version, effective_to FROM entities WHERE id = $1 ORDER BY version
 	`, "vb_ent")
 	if err != nil {
-		t.Fatalf("query entities_v2: %v", err)
+		t.Fatalf("query entities: %v", err)
 	}
 	defer rows.Close()
 
@@ -426,16 +426,16 @@ func TestIntegration_PluginRegister_RelationAutoAccept(t *testing.T) {
 		t.Fatalf("RegisterPlugin: %v", err)
 	}
 
-	// "tracks" is structural → auto-accepted into relations_v2.
+	// "tracks" is structural → auto-accepted into relations.
 	var relationCount int
 	if err := db.QueryRow(context.Background(), `
-		SELECT COUNT(*) FROM relations_v2
+		SELECT COUNT(*) FROM relations
 		WHERE source_id = $1 AND target_id = $2 AND relation_type = $3 AND effective_to IS NULL
 	`, "ra_src", "ra_tgt", "tracks").Scan(&relationCount); err != nil {
-		t.Fatalf("query relations_v2: %v", err)
+		t.Fatalf("query relations: %v", err)
 	}
 	if relationCount != 1 {
-		t.Fatalf("expected 1 relation in relations_v2, got %d", relationCount)
+		t.Fatalf("expected 1 relation in relations, got %d", relationCount)
 	}
 
 	// The relation_suggestions status should be auto_accepted (or the row absent

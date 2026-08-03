@@ -1,4 +1,6 @@
-// Package detector evaluates rules against observations and produces trigger events.
+// Package detector 按规则评估观测序列并产出触发事件（Trigger）。内置三类
+// 探测器：threshold（阈值越界）、percentile（历史分位异常）、trend（连续
+// 趋势）。触发不等于告警——去重与生命周期由 alert 包负责。
 package detector
 
 import (
@@ -55,9 +57,8 @@ func NewEngine(detectors ...Detector) *Engine {
 	return &Engine{detectors: d}
 }
 
-// EvaluateBatch evaluates all matching rules for each observation group.
-// Observations MUST be pre-grouped by MetricID. The engine looks up active
-// rules for each metric_id and runs the configured detector.
+// EvaluateBatch 对每组观测评估所有匹配规则。入参必须已按 MetricID 分组；
+// 引擎为每个 metric_id 找到启用的规则并运行其配置的探测器，产出触发列表。
 func (e *Engine) EvaluateBatch(ctx context.Context, groups map[string][]model.Observation, rules []model.Rule) []*Trigger {
 	var triggers []*Trigger
 

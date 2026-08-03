@@ -34,10 +34,11 @@ type Config struct {
 	// Called once per session, allowing the plugin to customize its registration.
 	BuildRegistration func() *pb.RegisterPluginRequest
 
-	// SetupCollector is called with the ctx + runSession environment and returns
-	// the Provider (and whether it supports WindowedProvider). This is where the
-	// plugin chooses mock vs real data source.
-	SetupCollector func(ctx context.Context) (Provider, bool, error)
+	// SetupCollector 在每次会话建立后调用，返回本插件的数据采集器。
+	// 插件在这里决定使用 mock 还是真实数据源（PROVIDER 环境变量）。
+	// 是否支持窗口回填（WindowedProvider）由 lifecycle 统一做类型断言判定，
+	// 插件侧无需自行声明。
+	SetupCollector func(ctx context.Context) (Provider, error)
 }
 
 // Lifecycle owns the long-lived process: signal handling, reconnection loop,
@@ -121,7 +122,7 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 	}
 	log.Info().Str("plugin_id", pluginID).Msg("plugin registered successfully")
 
-	collector, windowed, err := l.cfg.SetupCollector(ctx)
+	collector, err := l.cfg.SetupCollector(ctx)
 	if err != nil {
 		return fmt.Errorf("setup collector: %w", err)
 	}
@@ -139,14 +140,9 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 		submitAndAck(runner, pluginID, commandID, snaps)
 	}
 
-	var wColl WindowedProvider
-	if windowed {
-		wp, ok := collector.(WindowedProvider)
-		if !ok {
-			return fmt.Errorf("SetupCollector returned windowed=true but %T does not implement WindowedProvider", collector)
-		}
-		wColl = wp
-	}
+	// 窗口回填能力在此统一判定：实现了 WindowedProvider 的采集器自动获得
+	// Backfill 命令支持，未实现的在 collectWindowed 里退化为当前快照。
+	wColl, _ := collector.(WindowedProvider)
 	collectWindowed := func(commandID string, start, end time.Time) {
 		if wColl == nil {
 			log.Warn().Msg("collector does not implement WindowedProvider; falling back to current snapshot")

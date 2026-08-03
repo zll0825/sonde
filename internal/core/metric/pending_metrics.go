@@ -27,7 +27,7 @@ type PendingMetric struct {
 }
 
 // PendingTracker manages the pending_metrics table for observations whose
-// metric_id has not yet been registered in metric_definitions_v2.
+// metric_id has not yet been registered in metric_definitions.
 type PendingTracker struct {
 	db DB
 }
@@ -38,14 +38,14 @@ func NewPendingTracker(db DB) *PendingTracker {
 }
 
 // Record inserts or updates a pending metric entry, setting its status
-// based on whether the metric_id exists in metric_definitions_v2:
-//   - metric_id not in metric_definitions_v2 → "unknown_source"
+// based on whether the metric_id exists in metric_definitions:
+//   - metric_id not in metric_definitions → "unknown_source"
 //   - metric_id exists → "registered"
 func (t *PendingTracker) Record(ctx context.Context, metricID, pluginID, provider string) error {
 	var exists bool
 	err := t.db.QueryRow(ctx, `
 		SELECT EXISTS(
-			SELECT 1 FROM metric_definitions_v2 WHERE id = $1 AND effective_to IS NULL
+			SELECT 1 FROM metric_definitions WHERE id = $1 AND effective_to IS NULL
 		)`, metricID).Scan(&exists)
 
 	if errors.Is(err, pgx.ErrNoRows) {

@@ -85,7 +85,7 @@ func (s *PostgresResearchStore) GetEntityByID(ctx context.Context, entityID stri
 	row := s.db.QueryRow(ctx, `
 		SELECT id, name, namespace, entity_type, plugin_id, tags, metadata,
 		       version, effective_from, effective_to, supersedes, change_log
-		FROM entities_v2
+		FROM entities
 		WHERE id = $1 AND effective_to IS NULL
 	`, entityID)
 
@@ -129,7 +129,7 @@ func (s *PostgresResearchStore) GetRelatedEntities(ctx context.Context, entityID
 		SELECT id, source_id, target_id, relation_type, layer, direction,
 		       confidence, typical_lag, description, source, version,
 		       effective_from, effective_to
-		FROM relations_v2
+		FROM relations
 		WHERE effective_to IS NULL AND (source_id = $1 OR target_id = $1)
 	`, entityID)
 	if err != nil {

@@ -1,3 +1,5 @@
+// Package collector 提供 etf 插件的数据采集器：Yahoo Finance 真实价格源
+// 与离线 mock。
 package collector
 
 import (

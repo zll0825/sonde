@@ -1,14 +1,13 @@
-// Package pluginrunner provides the plugin-side stream session template.
+// Package pluginrunner 提供插件侧的通用运行骨架。
 //
-// High-level entry: a plugin's main.go constructs a Config and calls
-// NewLifecycle(cfg).Run(); that drives the full reconnect→register→collect→
-// stream cycle.  Lower-level Runner / Register / Run are exposed for tests and
-// for the rare plugin that needs to manage the session manually.
+// 入口：插件的 main.go 构造 Config 并调用 NewLifecycle(cfg).Run()，即获得
+// 完整的 重连→注册→采集→推流 循环。底层 Runner / Register / Run 保留导出，
+// 供测试或需要手工管理会话的插件使用。
 //
-// Usage:
+// 用法：
 //
 //	pluginrunner.NewLifecycle(pluginrunner.Config{
-//	    PluginName: "crypto", Version: "0.1.0", DefaultInterval: 10 * time.Second,
+//	    PluginName: "crypto", Version: "0.1.0", DefaultInterval: time.Hour,
 //	    BuildRegistration: buildRegistration, SetupCollector: setupCollector,
 //	}).Run()
 package pluginrunner

@@ -1,4 +1,6 @@
-// Package alert provides outbox worker logic for domain events.
+// outbox.go — 领域事件出箱工作器：轮询 event_outbox 待派发事件，按事件
+// 类型分发给注册的处理器（通知推送、研究组装等异步消费方）；处理失败按
+// 重试预算重投，超限标记为 failed。
 package alert
 
 import (

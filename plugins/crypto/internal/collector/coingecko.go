@@ -1,3 +1,5 @@
+// Package collector 提供 crypto 插件的数据采集器：CoinGecko / mempool.space
+// 真实源与离线 mock。
 package collector
 
 import (

@@ -1,9 +1,6 @@
-// Package store provides persistence for command_log — the control plane
-// by which the Core asks a connected Plugin to run an immediate Sync or Backfill.
-//
-// PRD §6.2: API writes a `pending` command into command_log, the Core polls
-// for it, routes the command to the target Plugin over the active stream, and
-// updates `accepted_at` / `completed_at` / `collected_count` as CommandAcks arrive.
+// command_store.go — 命令日志（command_log）存取，控制面通路（PRD §6.2）：
+// API 写入 pending 命令 → Core 轮询并经活跃流派发给目标插件 → CommandAck
+// 回执更新 accepted_at / completed_at / collected_count。
 package store
 
 import (

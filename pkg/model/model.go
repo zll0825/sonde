@@ -1,6 +1,5 @@
-// Package model defines shared domain types used across Core, API, and Plugins.
-// These are plain Go structs with no behavior — the canonical representation
-// of the five domain objects defined in docs/domain-model.md.
+// Package model 定义 Core、API 与插件共享的领域类型——无行为的纯结构体，
+// 是 docs/domain-model.md 中五个领域对象的权威 Go 表示。
 package model
 
 import "time"

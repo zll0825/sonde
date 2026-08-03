@@ -1,5 +1,6 @@
-// Package ontology provides database persistence for registration data
-// (plugins, entities, metrics, relations, rules).
+// Package ontology 持久化插件注册的本体数据（插件、实体、指标定义、关系、
+// 规则），行级版本管理（version + effective_from/to），并为检测引擎提供
+// 规则与指标频率查询。
 package ontology
 
 import (
@@ -49,9 +50,9 @@ func NewStore(db DB) *Store {
 //     and suggestions carry FKs to plugins.id).
 //  2. Diff-skip: compute once which entities/metrics differ from their current
 //     effective rows; insert new versions only for those.
-//  3. reviewAndAcceptRelations → relations_v2 (accepted) / relation_suggestions
+//  3. reviewAndAcceptRelations → relations (accepted) / relation_suggestions
 //     (pending or rejected-for-audit). Identical re-registrations write nothing.
-//  4. reviewAndAcceptRules → rules_v2 (accepted) / rule_suggestions (conflict).
+//  4. reviewAndAcceptRules → rules (accepted) / rule_suggestions (conflict).
 //  5. Bump registration_version only when something was actually written
 //     (or on first registration), so reconnect spam never inflates versions.
 //
@@ -148,14 +149,14 @@ func (s *Store) RegisterPlugin(ctx context.Context, req *pb.RegisterPluginReques
 func (s *Store) entityChanged(ctx context.Context, tx pgx.Tx, pluginID string, ent *pb.EntityDeclaration) bool {
 	var exists bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS(
-		SELECT 1 FROM entities_v2 WHERE id = $1 AND plugin_id = $2 AND effective_to IS NULL
+		SELECT 1 FROM entities WHERE id = $1 AND plugin_id = $2 AND effective_to IS NULL
 	)`, ent.GetId(), pluginID).Scan(&exists); err != nil || !exists {
 		return true // not present → changed
 	}
 	// Compare content fields (name, namespace, type) for a lightweight diff.
 	var curName, curNS, curType string
 	if err := tx.QueryRow(ctx, `
-		SELECT name, namespace, entity_type FROM entities_v2
+		SELECT name, namespace, entity_type FROM entities
 		WHERE id = $1 AND plugin_id = $2 AND effective_to IS NULL LIMIT 1
 	`, ent.GetId(), pluginID).Scan(&curName, &curNS, &curType); err != nil {
 		return true
@@ -168,13 +169,13 @@ func (s *Store) entityChanged(ctx context.Context, tx pgx.Tx, pluginID string, e
 func (s *Store) metricChanged(ctx context.Context, tx pgx.Tx, pluginID string, met *pb.MetricDeclaration) bool {
 	var exists bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS(
-		SELECT 1 FROM metric_definitions_v2 WHERE id = $1 AND plugin_id = $2 AND effective_to IS NULL
+		SELECT 1 FROM metric_definitions WHERE id = $1 AND plugin_id = $2 AND effective_to IS NULL
 	)`, met.GetId(), pluginID).Scan(&exists); err != nil || !exists {
 		return true
 	}
 	var curName, curUnit, curFreq, curEntity string
 	if err := tx.QueryRow(ctx, `
-		SELECT name, unit, frequency, entity_id FROM metric_definitions_v2
+		SELECT name, unit, frequency, entity_id FROM metric_definitions
 		WHERE id = $1 AND plugin_id = $2 AND effective_to IS NULL LIMIT 1
 	`, met.GetId(), pluginID).Scan(&curName, &curUnit, &curFreq, &curEntity); err != nil {
 		return true
@@ -189,7 +190,7 @@ func (s *Store) GetCurrentEntities(ctx context.Context, pluginID string) ([]mode
 	rows, err := s.db.Query(ctx, `
 		SELECT id, name, namespace, entity_type, plugin_id, tags, metadata,
 		       version, effective_from, effective_to, supersedes, change_log
-		FROM entities_v2
+		FROM entities
 		WHERE plugin_id = $1 AND effective_to IS NULL
 	`, pluginID)
 	if err != nil {
@@ -238,7 +239,7 @@ func (s *Store) GetCurrentMetrics(ctx context.Context, pluginID string) ([]model
 	rows, err := s.db.Query(ctx, `
 		SELECT id, uid, name, description, unit, frequency, entity_id, plugin_id,
 		       tags, active, version, effective_from, effective_to, supersedes, change_log
-		FROM metric_definitions_v2
+		FROM metric_definitions
 		WHERE plugin_id = $1 AND effective_to IS NULL
 	`, pluginID)
 	if err != nil {
@@ -289,13 +290,13 @@ func CreateMetricUID() string {
 // unexported helpers
 // ---------------------------------------------------------------------------
 
-// upsertEntity inserts a new versioned row into entities_v2, superseding any
+// upsertEntity inserts a new versioned row into entities, superseding any
 // prior version (effective_to IS NULL) of the same entity id.
 func upsertEntity(ctx context.Context, tx pgx.Tx, pluginID string, ent *pb.EntityDeclaration, changeLog string) error {
 	// Determine the current max version for this entity id.
 	var maxVersion int
 	if err := tx.QueryRow(ctx, `
-		SELECT COALESCE(MAX(version), 0) FROM entities_v2 WHERE id = $1
+		SELECT COALESCE(MAX(version), 0) FROM entities WHERE id = $1
 	`, ent.GetId()).Scan(&maxVersion); err != nil {
 		return fmt.Errorf("query max entity version: %w", err)
 	}
@@ -306,7 +307,7 @@ func upsertEntity(ctx context.Context, tx pgx.Tx, pluginID string, ent *pb.Entit
 	// Close the prior effective version.
 	if supersedes {
 		if _, err := tx.Exec(ctx, `
-			UPDATE entities_v2 SET effective_to = NOW()
+			UPDATE entities SET effective_to = NOW()
 			WHERE id = $1 AND effective_to IS NULL
 		`, ent.GetId()); err != nil {
 			return fmt.Errorf("close prior entity version: %w", err)
@@ -338,7 +339,7 @@ func upsertEntity(ctx context.Context, tx pgx.Tx, pluginID string, ent *pb.Entit
 	}
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO entities_v2 (
+		INSERT INTO entities (
 			id, version, name, namespace, entity_type, plugin_id,
 			tags, metadata, effective_from, effective_to, supersedes, change_log
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NULL, $9, $10)
@@ -352,7 +353,7 @@ func upsertEntity(ctx context.Context, tx pgx.Tx, pluginID string, ent *pb.Entit
 	return nil
 }
 
-// upsertMetric inserts a new versioned row into metric_definitions_v2,
+// upsertMetric inserts a new versioned row into metric_definitions,
 // superseding any prior version. The uid is the metric's stable system-wide
 // identity: generated once at version 1 and inherited by every later version,
 // so observations keyed by metric_uid stay joinable across redefinitions.
@@ -361,8 +362,8 @@ func upsertMetric(ctx context.Context, tx pgx.Tx, pluginID string, met *pb.Metri
 	var priorUID *string
 	if err := tx.QueryRow(ctx, `
 		SELECT COALESCE(MAX(version), 0),
-		       (SELECT uid FROM metric_definitions_v2 WHERE id = $1 AND effective_to IS NULL LIMIT 1)
-		FROM metric_definitions_v2 WHERE id = $1
+		       (SELECT uid FROM metric_definitions WHERE id = $1 AND effective_to IS NULL LIMIT 1)
+		FROM metric_definitions WHERE id = $1
 	`, met.GetId()).Scan(&maxVersion, &priorUID); err != nil {
 		return fmt.Errorf("query max metric version: %w", err)
 	}
@@ -372,7 +373,7 @@ func upsertMetric(ctx context.Context, tx pgx.Tx, pluginID string, met *pb.Metri
 
 	if supersedes {
 		if _, err := tx.Exec(ctx, `
-			UPDATE metric_definitions_v2 SET effective_to = NOW()
+			UPDATE metric_definitions SET effective_to = NOW()
 			WHERE id = $1 AND effective_to IS NULL
 		`, met.GetId()); err != nil {
 			return fmt.Errorf("close prior metric version: %w", err)
@@ -399,7 +400,7 @@ func upsertMetric(ctx context.Context, tx pgx.Tx, pluginID string, met *pb.Metri
 	}
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO metric_definitions_v2 (
+		INSERT INTO metric_definitions (
 			id, uid, version, name, description, unit, frequency,
 			entity_id, plugin_id, tags, active,
 			effective_from, effective_to, supersedes, change_log
@@ -486,7 +487,7 @@ func gradeRank(grade string) int {
 }
 
 // InsertObservation writes a scored, source-resolved observation into the observations table.
-// metricUID is the registered uid from metric_definitions_v2 (resolved by the caller);
+// metricUID is the registered uid from metric_definitions (resolved by the caller);
 // it is what research-time joins use, so it must never be re-derived here.
 //
 // Coverage matrix (PRD §三.4, architecture §三):

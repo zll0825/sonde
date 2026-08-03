@@ -1,15 +1,12 @@
-// Package notifier delivers alert notifications to external channels
-// (Telegram, generic webhook). It is consumed by the alert.outboxWorker
-// handler so that every alert.triggered event can fan out to a real destination.
+// Package notifier 将告警推送到外部通道（Telegram、通用 webhook），由 alert
+// outbox 处理器调用，使每条 alert.triggered 事件触达真实目的地。
 //
-// Design notes
+// 设计约定
 //
-//   - The handler in cmd/core/main.go owns the noise-budget bookkeeping; the
-//     notifier only sends. If sending fails the handler returns the error so the
-//     outbox retry machinery (already implemented) owns redelivery -- do not
-//     implement your own retry loop here.
-//   - Credentials are read from env at Use- time (NewTelegram, NewWebhook), not
-//     from flags; this keeps the package agnostic to deployment style.
+//   - 噪音预算记账归 cmd/core/main.go 的处理器管，本包只负责发送；发送失败
+//     返回 error，由 outbox 重试机制接管重投——不要在包内自建重试循环。
+//   - 凭据一律在构造时从环境变量读取（NewTelegram / NewWebhook），与部署
+//     方式解耦。
 package notifier
 
 import (

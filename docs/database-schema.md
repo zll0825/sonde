@@ -39,12 +39,12 @@ CREATE TABLE plugins (
 
 ---
 
-## 2. entities_v2
+## 2. entities
 
 Domain: Entity（版本化）
 
 ```sql
-CREATE TABLE entities_v2 (
+CREATE TABLE entities (
     id              TEXT NOT NULL,              -- "ent_gold_etf_flow"
     version         INT NOT NULL DEFAULT 1,
     name            TEXT NOT NULL,              -- "黄金ETF资金流"
@@ -62,20 +62,20 @@ CREATE TABLE entities_v2 (
     PRIMARY KEY (id, version)
 );
 
-CREATE INDEX idx_entities_current ON entities_v2(id, version)
+CREATE INDEX idx_entities_current ON entities(id, version)
     WHERE effective_to IS NULL;
-CREATE INDEX idx_entities_plugin ON entities_v2(plugin_id);
-CREATE INDEX idx_entities_type ON entities_v2(entity_type);
+CREATE INDEX idx_entities_plugin ON entities(plugin_id);
+CREATE INDEX idx_entities_type ON entities(entity_type);
 ```
 
 ---
 
-## 3. metric_definitions_v2
+## 3. metric_definitions
 
 Domain: Metric（版本化）
 
 ```sql
-CREATE TABLE metric_definitions_v2 (
+CREATE TABLE metric_definitions (
     id              TEXT NOT NULL,              -- "gold.etf.net_inflow"
     uid             TEXT NOT NULL,              -- "mtr_abc123def456" (Core assigned, immutable)
     version         INT NOT NULL DEFAULT 1,
@@ -96,10 +96,10 @@ CREATE TABLE metric_definitions_v2 (
     PRIMARY KEY (id, version)
 );
 
-CREATE INDEX idx_metric_def_current ON metric_definitions_v2(id, version)
+CREATE INDEX idx_metric_def_current ON metric_definitions(id, version)
     WHERE effective_to IS NULL;
-CREATE INDEX idx_metric_def_uid ON metric_definitions_v2(uid);
-CREATE INDEX idx_metric_def_plugin ON metric_definitions_v2(plugin_id);
+CREATE INDEX idx_metric_def_uid ON metric_definitions(uid);
+CREATE INDEX idx_metric_def_plugin ON metric_definitions(plugin_id);
 ```
 
 ---
@@ -121,7 +121,7 @@ CREATE TABLE relation_suggestions (
     evidence        TEXT,
     plugin_id       TEXT NOT NULL REFERENCES plugins(id),
     status          TEXT NOT NULL DEFAULT 'pending',  -- pending | accepted | rejected | merged
-    merged_into_id  INT,                        -- → relations_v2.id
+    merged_into_id  INT,                        -- → relations.id
     review_reason   TEXT,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW(),
@@ -132,12 +132,12 @@ CREATE TABLE relation_suggestions (
 
 ---
 
-## 5. relations_v2
+## 5. relations
 
 Domain: Relation（生效阶段，版本化）
 
 ```sql
-CREATE TABLE relations_v2 (
+CREATE TABLE relations (
     id              SERIAL PRIMARY KEY,
     source_id       TEXT NOT NULL,
     target_id       TEXT NOT NULL,
@@ -157,10 +157,10 @@ CREATE TABLE relations_v2 (
     UNIQUE(source_id, target_id, relation_type, version)
 );
 
-CREATE INDEX idx_relations_current ON relations_v2(source_id, target_id, relation_type, version)
+CREATE INDEX idx_relations_current ON relations(source_id, target_id, relation_type, version)
     WHERE effective_to IS NULL;
-CREATE INDEX idx_relations_source ON relations_v2(source_id);
-CREATE INDEX idx_relations_target ON relations_v2(target_id);
+CREATE INDEX idx_relations_source ON relations(source_id);
+CREATE INDEX idx_relations_target ON relations(target_id);
 ```
 
 ---
@@ -190,12 +190,12 @@ CREATE TABLE rule_suggestions (
 
 ---
 
-## 7. rules_v2
+## 7. rules
 
 Domain: Rule（生效阶段，版本化）
 
 ```sql
-CREATE TABLE rules_v2 (
+CREATE TABLE rules (
     id              SERIAL PRIMARY KEY,
     name            TEXT NOT NULL,
     metric_id       TEXT NOT NULL,
@@ -215,7 +215,7 @@ CREATE TABLE rules_v2 (
     UNIQUE(name, metric_id, detector_name, version)
 );
 
-CREATE INDEX idx_rules_current ON rules_v2(name, metric_id, detector_name, version)
+CREATE INDEX idx_rules_current ON rules(name, metric_id, detector_name, version)
     WHERE effective_to IS NULL AND enabled = TRUE;
 ```
 
@@ -410,15 +410,15 @@ CREATE TABLE command_log (
 
 | 表 | 索引 | 类型 | 用途 |
 |----|------|------|------|
-| entities_v2 | `idx_entities_current` | Partial | 查当前生效版本 |
-| entities_v2 | `idx_entities_plugin` | Normal | 按 Plugin 查 Entity |
-| entities_v2 | `idx_entities_type` | Normal | 按类型查 |
-| metric_definitions_v2 | `idx_metric_def_current` | Partial | 查当前生效版本 |
-| metric_definitions_v2 | `idx_metric_def_uid` | Normal | 按 uid 查 |
-| relations_v2 | `idx_relations_current` | Partial | 查当前生效关系 |
-| relations_v2 | `idx_relations_source` | Normal | 图遍历 |
-| relations_v2 | `idx_relations_target` | Normal | 图遍历 |
-| rules_v2 | `idx_rules_current` | Partial | 查当前生效的启用规则 |
+| entities | `idx_entities_current` | Partial | 查当前生效版本 |
+| entities | `idx_entities_plugin` | Normal | 按 Plugin 查 Entity |
+| entities | `idx_entities_type` | Normal | 按类型查 |
+| metric_definitions | `idx_metric_def_current` | Partial | 查当前生效版本 |
+| metric_definitions | `idx_metric_def_uid` | Normal | 按 uid 查 |
+| relations | `idx_relations_current` | Partial | 查当前生效关系 |
+| relations | `idx_relations_source` | Normal | 图遍历 |
+| relations | `idx_relations_target` | Normal | 图遍历 |
+| rules | `idx_rules_current` | Partial | 查当前生效的启用规则 |
 | observations | `idx_obs_metric_uid_time` | Composite | 时间范围扫描 |
 | observations | `idx_obs_source` | Composite | 数据源审计 |
 | observations | `idx_obs_idempotency` | Unique | 幂等保护 |
@@ -436,7 +436,7 @@ CREATE TABLE command_log (
 
 -- 迁移原则:
 -- 1. 每个版本一个 migration pair（.up.sql / .down.sql）
--- 2. 所有 version 表（entities_v2, metric_definitions_v2, relations_v2, rules_v2）
+-- 2. 所有 version 表（entities, metric_definitions, relations, rules）
 --    使用 effective_from/effective_to 而非 DELETE
 -- 3. observations 是 append-only（只 INSERT + 条件 UPDATE）
 -- 4. 历史数据绝不删除，标记 retired/deprecated

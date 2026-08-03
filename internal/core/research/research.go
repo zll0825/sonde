@@ -1,5 +1,6 @@
-// Package research assembles the research context for a given alert.
-// ResearchContext = metric + entities + relations + recent observations.
+// Package research 在告警触发后组装研究上下文（ResearchContext = 指标 +
+// 实体 + 关系 + 近期观测趋势），落盘为 research_snapshots 供前端展示与研判。
+// 观测查询一律使用触发证据（evidence）里的 metric_uid，而非 alert.MetricID。
 package research
 
 import (
@@ -71,7 +72,8 @@ func NewAssembler(store ResearchStore) *Assembler {
 	return &Assembler{store: store}
 }
 
-// Assemble builds the full research context for an alert.
+// Assemble 为一条告警组装完整研究上下文：从触发证据取 metric_uid → 拉取
+// 回看窗口内的观测形成 RecentTrend → 补充实体与关联关系 → 汇总元数据。
 func (a *Assembler) Assemble(ctx context.Context, alert model.Alert) (*ResearchContext, error) {
 	out := &ResearchContext{
 		AlertID:     alert.ID,

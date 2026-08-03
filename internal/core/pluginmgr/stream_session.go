@@ -1,5 +1,6 @@
-// Package pluginmgr implements the Core side of the Plugin ↔ Core gRPC
-// bidirectional stream, including the single-writer loop mandated by ADR-6.
+// Package pluginmgr 实现 Plugin ↔ Core 双向 gRPC 流的 Core 侧逻辑，含
+// ADR-6 规定的单写者（single-writer）发送循环、注册评审入口、快照摄入
+// 管道（pipeline.go）与命令派发。
 package pluginmgr
 
 import (

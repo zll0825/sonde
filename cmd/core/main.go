@@ -1,5 +1,6 @@
-// Command core runs the core gRPC server for plugin connections,
-// wiring the full M0–M5 pipeline: registration → ingestion → detection → alert → research.
+// core 进程入口：装配存储、本体、检测、告警、研究与通知组件，串起完整
+// 链路 注册 → 摄入 → 检测 → 告警 → 研究，并启动 gRPC 插件服务端、outbox
+// 工作器、命令派发器与噪音预算巡检定时器。
 package main
 
 import (
@@ -87,7 +88,7 @@ func main() {
 			Int("rule_id", parsed.RuleID).
 			Msg("alert dispatched")
 
-		// Record against the noise budget (non-fatal even if it panics on a zero rule_id).
+		// 记入噪音预算（仅统计，不影响派发结果）。
 		budgetTracker.Record(ctx, parsed.RuleID, parsed.Title, time.Now())
 
 		// Send via the configured notifier. Errors propagate to the outbox worker,

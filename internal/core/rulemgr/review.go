@@ -1,5 +1,5 @@
-// Package rulemgr owns the rule review logic. Plugins may suggest rules, but
-// Core decides acceptance based on source priority per ADR-2.
+// Package rulemgr 负责规则评审：插件只能"建议"规则，是否采纳由 Core 按
+// 来源优先级裁决（ADR-2）；采纳的规则以新版本行写入 rules 表。
 package rulemgr
 
 import (

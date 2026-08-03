@@ -23,9 +23,9 @@ CREATE TABLE plugins (
 );
 
 -- ============================================================
--- 2. entities_v2
+-- 2. entities
 -- ============================================================
-CREATE TABLE entities_v2 (
+CREATE TABLE entities (
     id              TEXT NOT NULL,
     version         INT NOT NULL DEFAULT 1,
     name            TEXT NOT NULL,
@@ -43,15 +43,15 @@ CREATE TABLE entities_v2 (
     PRIMARY KEY (id, version)
 );
 
-CREATE INDEX idx_entities_current ON entities_v2(id, version)
+CREATE INDEX idx_entities_current ON entities(id, version)
     WHERE effective_to IS NULL;
-CREATE INDEX idx_entities_plugin ON entities_v2(plugin_id);
-CREATE INDEX idx_entities_type ON entities_v2(entity_type);
+CREATE INDEX idx_entities_plugin ON entities(plugin_id);
+CREATE INDEX idx_entities_type ON entities(entity_type);
 
 -- ============================================================
--- 3. metric_definitions_v2
+-- 3. metric_definitions
 -- ============================================================
-CREATE TABLE metric_definitions_v2 (
+CREATE TABLE metric_definitions (
     id              TEXT NOT NULL,
     uid             TEXT NOT NULL,
     version         INT NOT NULL DEFAULT 1,
@@ -72,10 +72,10 @@ CREATE TABLE metric_definitions_v2 (
     PRIMARY KEY (id, version)
 );
 
-CREATE INDEX idx_metric_def_current ON metric_definitions_v2(id, version)
+CREATE INDEX idx_metric_def_current ON metric_definitions(id, version)
     WHERE effective_to IS NULL;
-CREATE INDEX idx_metric_def_uid ON metric_definitions_v2(uid);
-CREATE INDEX idx_metric_def_plugin ON metric_definitions_v2(plugin_id);
+CREATE INDEX idx_metric_def_uid ON metric_definitions(uid);
+CREATE INDEX idx_metric_def_plugin ON metric_definitions(plugin_id);
 
 -- ============================================================
 -- 4. relation_suggestions
@@ -101,9 +101,9 @@ CREATE TABLE relation_suggestions (
 );
 
 -- ============================================================
--- 5. relations_v2
+-- 5. relations
 -- ============================================================
-CREATE TABLE relations_v2 (
+CREATE TABLE relations (
     id              SERIAL PRIMARY KEY,
     source_id       TEXT NOT NULL,
     target_id       TEXT NOT NULL,
@@ -123,10 +123,10 @@ CREATE TABLE relations_v2 (
     UNIQUE(source_id, target_id, relation_type, version)
 );
 
-CREATE INDEX idx_relations_current ON relations_v2(source_id, target_id, relation_type, version)
+CREATE INDEX idx_relations_current ON relations(source_id, target_id, relation_type, version)
     WHERE effective_to IS NULL;
-CREATE INDEX idx_relations_source ON relations_v2(source_id);
-CREATE INDEX idx_relations_target ON relations_v2(target_id);
+CREATE INDEX idx_relations_source ON relations(source_id);
+CREATE INDEX idx_relations_target ON relations(target_id);
 
 -- ============================================================
 -- 6. rule_suggestions
@@ -149,9 +149,9 @@ CREATE TABLE rule_suggestions (
 );
 
 -- ============================================================
--- 7. rules_v2
+-- 7. rules
 -- ============================================================
-CREATE TABLE rules_v2 (
+CREATE TABLE rules (
     id              SERIAL PRIMARY KEY,
     name            TEXT NOT NULL,
     metric_id       TEXT NOT NULL,
@@ -171,7 +171,7 @@ CREATE TABLE rules_v2 (
     UNIQUE(name, metric_id, detector_name, version)
 );
 
-CREATE INDEX idx_rules_current ON rules_v2(name, metric_id, detector_name, version)
+CREATE INDEX idx_rules_current ON rules(name, metric_id, detector_name, version)
     WHERE effective_to IS NULL AND enabled = TRUE;
 
 -- ============================================================

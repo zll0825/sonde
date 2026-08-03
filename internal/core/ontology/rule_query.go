@@ -16,7 +16,7 @@ import (
 func (s *Store) GetMetricUID(ctx context.Context, metricID string) (string, error) {
 	var uid string
 	err := s.db.QueryRow(ctx, `
-		SELECT uid FROM metric_definitions_v2
+		SELECT uid FROM metric_definitions
 		WHERE id = $1 AND effective_to IS NULL LIMIT 1
 	`, metricID).Scan(&uid)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -34,7 +34,7 @@ func (s *Store) GetMetricUID(ctx context.Context, metricID string) (string, erro
 func (s *Store) GetMetricFrequency(ctx context.Context, metricID string) (string, error) {
 	var freq string
 	err := s.db.QueryRow(ctx, `
-		SELECT frequency FROM metric_definitions_v2
+		SELECT frequency FROM metric_definitions
 		WHERE id = $1 AND effective_to IS NULL LIMIT 1
 	`, metricID).Scan(&freq)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -52,7 +52,7 @@ func (s *Store) GetActiveRules(ctx context.Context) ([]model.Rule, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT id, name, metric_id, detector_name, severity, config, description,
 		       enabled, source, is_override, version, effective_from, effective_to
-		FROM rules_v2
+		FROM rules
 		WHERE effective_to IS NULL AND enabled = TRUE
 	`)
 	if err != nil {

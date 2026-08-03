@@ -21,7 +21,7 @@ const (
 
 // reviewAndAcceptRelations processes plugin-suggested relations through the
 // taxonomy-based review pipeline (relationmgr.Review) and writes accepted
-// entries into relations_v2. Already-pending suggestions that have not changed
+// entries into relations. Already-pending suggestions that have not changed
 // are left in place (idempotent).
 func reviewAndAcceptRelations(ctx context.Context, tx pgx.Tx, pluginID string, suggestions []*pb.RelationSuggestion) (accepted, unchanged, rejected int, err error) {
 	for _, rel := range suggestions {
@@ -49,7 +49,7 @@ func reviewAndAcceptRelations(ctx context.Context, tx pgx.Tx, pluginID string, s
 
 		switch decision.Decision {
 		case reviewStatusAutoAccepted, reviewStatusAccepted:
-			// Write to the authoritative relations_v2 table. wrote=false means the
+			// Write to the authoritative relations table. wrote=false means the
 			// current effective version already has identical content (idempotent
 			// re-registration) — not counted as an acceptance.
 			wrote, aerr := acceptRelation(ctx, tx, rel)
@@ -79,7 +79,7 @@ func reviewAndAcceptRelations(ctx context.Context, tx pgx.Tx, pluginID string, s
 }
 
 // reviewAndAcceptRules processes plugin-suggested rules through the source-priority
-// review pipeline (rulemgr.Review). Accepted rules are written to rules_v2 with
+// review pipeline (rulemgr.Review). Accepted rules are written to rules with
 // a new plugin_suggested version. Unchanged ones (skip) leave the prior row intact.
 func reviewAndAcceptRules(ctx context.Context, tx pgx.Tx, pluginID string, suggestions []*pb.RuleSuggestion) (accepted, skipped, pendingConflict int, err error) {
 	for _, rule := range suggestions {
@@ -87,7 +87,7 @@ func reviewAndAcceptRules(ctx context.Context, tx pgx.Tx, pluginID string, sugge
 		var currentSource string
 		var currentConfig []byte
 		queryErr := tx.QueryRow(ctx, `
-			SELECT source, config FROM rules_v2
+			SELECT source, config FROM rules
 			WHERE name = $1 AND metric_id = $2 AND detector_name = $3 AND effective_to IS NULL
 			ORDER BY version DESC LIMIT 1
 		`, rule.GetName(), rule.GetMetricId(), rule.GetDetectorName()).Scan(&currentSource, &currentConfig)
@@ -125,7 +125,7 @@ func reviewAndAcceptRules(ctx context.Context, tx pgx.Tx, pluginID string, sugge
 	return accepted, skipped, pendingConflict, nil
 }
 
-// acceptRelation writes an accepted relation to relations_v2 as a new version,
+// acceptRelation writes an accepted relation to relations as a new version,
 // closing the prior effective version first. When the current effective row
 // already carries identical content, nothing is written (idempotent reconnects
 // must not multiply effective relation rows). Returns whether a row was written.
@@ -143,7 +143,7 @@ func acceptRelation(ctx context.Context, tx pgx.Tx, rel *pb.RelationSuggestion) 
 	var curConfidence float64
 	err := tx.QueryRow(ctx, `
 		SELECT direction, confidence, COALESCE(description, '')
-		FROM relations_v2
+		FROM relations
 		WHERE source_id = $1 AND target_id = $2 AND relation_type = $3 AND effective_to IS NULL
 		ORDER BY version DESC LIMIT 1
 	`, rel.GetSourceId(), rel.GetTargetId(), rel.GetRelationType()).
@@ -157,7 +157,7 @@ func acceptRelation(ctx context.Context, tx pgx.Tx, rel *pb.RelationSuggestion) 
 		}
 		// Content changed — retire the prior effective version.
 		if _, uerr := tx.Exec(ctx, `
-			UPDATE relations_v2 SET effective_to = NOW(), updated_at = NOW()
+			UPDATE relations SET effective_to = NOW(), updated_at = NOW()
 			WHERE source_id = $1 AND target_id = $2 AND relation_type = $3 AND effective_to IS NULL
 		`, rel.GetSourceId(), rel.GetTargetId(), rel.GetRelationType()); uerr != nil {
 			return false, fmt.Errorf("close prior relation version: %w", uerr)
@@ -170,14 +170,14 @@ func acceptRelation(ctx context.Context, tx pgx.Tx, rel *pb.RelationSuggestion) 
 
 	var maxVersion int
 	if err := tx.QueryRow(ctx, `
-		SELECT COALESCE(MAX(version), 0) FROM relations_v2
+		SELECT COALESCE(MAX(version), 0) FROM relations
 		WHERE source_id = $1 AND target_id = $2 AND relation_type = $3
 	`, rel.GetSourceId(), rel.GetTargetId(), rel.GetRelationType()).Scan(&maxVersion); err != nil {
 		return false, fmt.Errorf("query max relation version: %w", err)
 	}
 
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO relations_v2 (source_id, target_id, relation_type, layer, direction,
+		INSERT INTO relations (source_id, target_id, relation_type, layer, direction,
 			confidence, typical_lag, description, source, version, effective_from
 		) VALUES ($1, $2, $3, $4, $5, $6, $7::interval, $8, 'plugin_declared', $9, NOW())
 	`, rel.GetSourceId(), rel.GetTargetId(), rel.GetRelationType(), string(layer),
@@ -188,12 +188,12 @@ func acceptRelation(ctx context.Context, tx pgx.Tx, rel *pb.RelationSuggestion) 
 	return true, nil
 }
 
-// acceptRule writes an accepted rule to rules_v2 with a new version.
+// acceptRule writes an accepted rule to rules with a new version.
 func acceptRule(ctx context.Context, tx pgx.Tx, rule *pb.RuleSuggestion) error {
 	// Aggregate query — never returns ErrNoRows; 0 means no prior version.
 	var maxVersion int
 	if err := tx.QueryRow(ctx, `
-		SELECT COALESCE(MAX(version), 0) FROM rules_v2
+		SELECT COALESCE(MAX(version), 0) FROM rules
 		WHERE name = $1 AND metric_id = $2 AND detector_name = $3
 	`, rule.GetName(), rule.GetMetricId(), rule.GetDetectorName()).Scan(&maxVersion); err != nil {
 		return fmt.Errorf("query max rule version: %w", err)
@@ -206,7 +206,7 @@ func acceptRule(ctx context.Context, tx pgx.Tx, rule *pb.RuleSuggestion) error {
 	if maxVersion > 0 {
 		var curEnabled bool
 		err := tx.QueryRow(ctx, `
-			SELECT enabled FROM rules_v2
+			SELECT enabled FROM rules
 			WHERE name = $1 AND metric_id = $2 AND detector_name = $3 AND effective_to IS NULL
 			ORDER BY version DESC LIMIT 1
 		`, rule.GetName(), rule.GetMetricId(), rule.GetDetectorName()).Scan(&curEnabled)
@@ -215,7 +215,7 @@ func acceptRule(ctx context.Context, tx pgx.Tx, rule *pb.RuleSuggestion) error {
 			enabled = curEnabled
 			// Close the prior effective version.
 			if _, cerr := tx.Exec(ctx, `
-				UPDATE rules_v2 SET effective_to = NOW(), updated_at = NOW()
+				UPDATE rules SET effective_to = NOW(), updated_at = NOW()
 				WHERE name = $1 AND metric_id = $2 AND detector_name = $3 AND effective_to IS NULL
 			`, rule.GetName(), rule.GetMetricId(), rule.GetDetectorName()); cerr != nil {
 				return fmt.Errorf("close prior rule version: %w", cerr)
@@ -228,7 +228,7 @@ func acceptRule(ctx context.Context, tx pgx.Tx, rule *pb.RuleSuggestion) error {
 	}
 
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO rules_v2 (name, metric_id, detector_name, severity, config,
+		INSERT INTO rules (name, metric_id, detector_name, severity, config,
 			description, enabled, source, is_override, version, effective_from
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, 'plugin_suggested', FALSE, $8, NOW())
 	`, rule.GetName(), rule.GetMetricId(), rule.GetDetectorName(),

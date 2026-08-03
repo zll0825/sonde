@@ -1,3 +1,5 @@
+// crypto 插件：BTC 价格（CoinGecko）、全网算力（mempool.space）、交易所
+// 余额（mock，无免费真实源），小时级轮询。
 package main
 
 import (
@@ -20,14 +22,11 @@ func main() {
 		Version:           pluginVersion,
 		DefaultInterval:   1 * time.Hour, // CoinGecko free tier + stale daily data
 		BuildRegistration: buildRegistration,
-		SetupCollector: func(ctx context.Context) (pluginrunner.Provider, bool, error) {
+		SetupCollector: func(ctx context.Context) (pluginrunner.Provider, error) {
 			if os.Getenv("PROVIDER") == "mock" {
-				prov := collector.Mock{}
-				_, windowed := pluginrunner.Provider(prov).(pluginrunner.WindowedProvider)
-				return prov, windowed, nil
+				return collector.Mock{}, nil
 			}
-			prov := collector.NewRealCollector()
-			return prov, true, nil
+			return collector.NewRealCollector(), nil
 		},
 	}).Run()
 }

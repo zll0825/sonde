@@ -1,5 +1,6 @@
-// Package store provides PostgreSQL-backed implementations of the alert and
-// research persistence interfaces (Trellis M-3 deliverable).
+// Package store 提供 PostgreSQL 持久化实现：告警、研究快照与观测查询、
+// 命令日志（控制面）。约定：观测查询带 LIMIT 时必须保住最新行——
+// DESC 取数后内存反转回升序契约。
 package store
 
 import (

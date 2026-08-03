@@ -12,7 +12,7 @@ import (
 type Decision struct {
 	Accept    bool   // true = ingest, false = deduplicate/reject
 	Reason    string // explanation for the decision
-	MetricUID string // registered uid from metric_definitions_v2 (set when Accept)
+	MetricUID string // registered uid from metric_definitions (set when Accept)
 }
 
 // Resolver resolves source preferences by querying the source_preferences table.
@@ -28,7 +28,7 @@ func NewResolver(db DB) *Resolver {
 // Resolve determines if the given (metricID, pluginID, provider) combination
 // should be ingested. Decision logic:
 //
-//   - No matching metric_id in metric_definitions_v2 → "metric_definition_missing", Accept=false
+//   - No matching metric_id in metric_definitions → "metric_definition_missing", Accept=false
 //   - No source_preferences row → Accept=true (first to register wins)
 //   - source_preferences exists and current source has highest or equal priority → Accept=true
 //   - Other source has higher priority → Accept=false
@@ -40,7 +40,7 @@ func (r *Resolver) Resolve(ctx context.Context, metricID, pluginID, provider str
 	// Look up the current metric definition; its uid is the stable identity.
 	var metricUID string
 	err := r.db.QueryRow(ctx, `
-		SELECT uid FROM metric_definitions_v2 WHERE id = $1 AND effective_to IS NULL LIMIT 1
+		SELECT uid FROM metric_definitions WHERE id = $1 AND effective_to IS NULL LIMIT 1
 	`, metricID).Scan(&metricUID)
 
 	if errors.Is(err, pgx.ErrNoRows) {

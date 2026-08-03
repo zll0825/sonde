@@ -1,4 +1,6 @@
-// Package alert manages alert lifecycle: trigger → dedup → active → resolve.
+// Package alert 管理告警生命周期：触发 → 去重 → active → 自动 resolve。
+// 触发路径在同一事务内写入 alerts 与 event_outbox（outbox 模式），保证
+// "告警落库"与"事件派发"要么都发生、要么都不发生。
 package alert
 
 import (
@@ -46,9 +48,9 @@ func NewEngine(store AlertStore) *Engine {
 	return &Engine{store: store}
 }
 
-// HandleTrigger processes a rule trigger:
-// 1. Look up active alert by dedup_key → if found, skip (dedup).
-// 2. Otherwise insert new alert + outbox event in one transaction (ADR-5).
+// HandleTrigger 处理一次规则触发：
+// 1. 按 dedup_key 查 active 告警 → 命中则跳过（去重，不重复扰人）；
+// 2. 未命中则在同一事务内插入新告警 + outbox 事件（ADR-5，原子性）。
 func (e *Engine) HandleTrigger(ctx context.Context, alert model.Alert) error {
 	// Dedup: an active alert with the same dedup_key means we already fired.
 	existing, err := e.store.GetActiveAlert(ctx, alert.DedupKey)
@@ -97,8 +99,8 @@ func (e *Engine) Resolve(ctx context.Context, dedupKey string) error {
 	return e.store.ResolveAlert(ctx, dedupKey, time.Now())
 }
 
-// AutoResolveStaleAlerts finds active alerts for a metric_id whose rule
-// condition did not fire in this evaluation batch, and resolves them.
+// AutoResolveStaleAlerts 找出本轮评估中条件已不再成立的 active 告警并自动
+// resolve（PRD §5.4：条件恢复即自动解除，无需人工关闭）。
 //
 // Loop:
 //  1. Fetch active alerts for this metric (the "previously fired" set).

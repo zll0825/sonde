@@ -4,9 +4,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Resolve picks the first configured notifier from Telegram -> Webhook -> Nop.
-// Return value is always non-nil: operators without credentials get NopNotifier
-// and a warning log, which is intentional (alerts still land in the DB/outbox).
+// Resolve 按 Telegram → Webhook → Nop 的顺序选择第一个配置就绪的通知通道。
+// 返回值恒非 nil：未配置凭据时降级为 NopNotifier 并打启动警告——这是有意
+// 设计，告警仍会落库/进 outbox，只是不外推。
 func Resolve() Notifier {
 	if t, ok := NewTelegram(); ok {
 		log.Info().Msg("notification channel active: Telegram")

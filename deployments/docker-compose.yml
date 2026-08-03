@@ -77,6 +77,8 @@ services:
     environment:
       DATABASE_URL: postgres://capital:capital_dev@timescaledb:5432/capital_observatory?sslmode=disable
       API_BIND: ":8080"
+      # 控制端点（sync/backfill）Bearer 令牌；空 = 拒绝写操作，读端点不受影响
+      API_TOKEN: "${API_TOKEN:-}"
       WEB_DIR: "/app/web"
     ports:
       - "8080:8080"

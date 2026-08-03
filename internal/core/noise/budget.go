@@ -1,12 +1,9 @@
-// Package noise implements the capital observability "noise budget": an
-// operator-tunable cap on the number of alerts the system is allowed to emit
-// per unit time. Per PRD §十七 success criterion #4, the default budget is
-// ≤10 alerts/day across all rules under default rule configuration, to be
-// calibrated against real false-positive rates during M3 tuning.
+// Package noise 实现"噪音预算"：对系统单位时间可发出的告警总量设置可调
+// 上限。按 PRD §十七 成功标准 #4，默认规则配置下全系统预算为 ≤10 条/天，
+// 以 soak 期真实误报率为准校准。
 //
-// The package exposes a BudgetTracker that the alert-outbox handler increments
-// every time an alert fires, plus a viewer that reports current daily rate and
-// per-rule breakdown so operators can identify which rules consume the budget.
+// BudgetTracker 由 alert-outbox 处理器在每次告警派发时递增；Status 输出
+// 当前日投放速率与按规则的消耗排名，帮助运维定位"吵闹"规则。
 package noise
 
 import (
@@ -116,8 +113,8 @@ func (b *InMemoryBudget) Record(_ context.Context, ruleID int, ruleName string, 
 	}
 }
 
-// Status implements BudgetTracker. It trims the trailing window to 24h before
-// computing the projected daily rate so stale history never distorts tuning.
+// Status 实现 BudgetTracker：先把滚动窗口裁剪到最近 24h 再计算日投放
+// 预测值，保证过期历史不会扭曲调参判断；同时输出按规则的消耗排名。
 func (b *InMemoryBudget) Status(_ context.Context, now time.Time) Status {
 	b.mu.Lock()
 	defer b.mu.Unlock()

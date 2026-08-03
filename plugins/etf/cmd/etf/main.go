@@ -1,3 +1,4 @@
+// etf 插件：GLD 真实价格（Yahoo Finance）+ 合成 ETF 流量数据，日频采集。
 package main
 
 import (
@@ -20,15 +21,11 @@ func main() {
 		Version:           pluginVersion,
 		DefaultInterval:   10 * time.Second,
 		BuildRegistration: buildRegistration,
-		SetupCollector: func(ctx context.Context) (pluginrunner.Provider, bool, error) {
-			var prov pluginrunner.Provider
+		SetupCollector: func(ctx context.Context) (pluginrunner.Provider, error) {
 			if os.Getenv("PROVIDER") == "mock" {
-				prov = collector.Mock{}
-			} else {
-				prov = collector.NewYahooCollector()
+				return collector.Mock{}, nil
 			}
-			_, windowed := prov.(pluginrunner.WindowedProvider)
-			return prov, windowed, nil
+			return collector.NewYahooCollector(), nil
 		},
 	}).Run()
 }

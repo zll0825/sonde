@@ -200,7 +200,7 @@ bidirectional — source ↔ target
 SUGGESTED → ACCEPTED → ACTIVE → RETIRED
 
 SUGGESTED: Plugin 通过 RegisterPlugin 提交 RelationSuggestion，存入 relation_suggestions
-ACCEPTED:  Core 的 RelationManager 审核通过，写入 relations_v2
+ACCEPTED:  Core 的 RelationManager 审核通过，写入 relations
 ACTIVE:     effective_to IS NULL
 RETIRED:    被新版本取代，或被 Plugin 不再建议（升级时撤回）
 ```
@@ -314,7 +314,7 @@ RETIRED:   被新版本取代，或 Plugin 不再建议
 | `severity` | Severity | ✅ | critical / warning / info |
 | `status` | AlertStatus | ✅ | active / resolved |
 | `metric_id` | TEXT | ✅ | 触发 Metric 的三段式 ID |
-| `rule_id` | INT | ✅ | FK → rules_v2，触发时的 Rule |
+| `rule_id` | INT | ✅ | FK → rules，触发时的 Rule |
 | `rule_version` | INT | ✅ | 触发时 Rule 的版本号 |
 | `rule_effective_from` | TIMESTAMPTZ | ✅ | 触发时 Rule 版本的生效时间 |
 | `detector_name` | TEXT | ✅ | detector 类型 |

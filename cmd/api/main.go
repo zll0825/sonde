@@ -1,5 +1,6 @@
-// Command api runs the HTTP API server for the capital-observatory frontend.
-// Includes auth middleware (Bearer token from $API_TOKEN) and per-IP rate limiting.
+// api 进程入口：REST 端点（告警查询、研究上下文、Sync/Backfill 控制命令）
+// 与 Capital Radar 前端静态托管；含鉴权中间件（$API_TOKEN 非空时启用
+// Bearer 校验）与按 IP 限流。
 package main
 
 import (

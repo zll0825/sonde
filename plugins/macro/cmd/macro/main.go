@@ -1,3 +1,5 @@
+// macro 插件：美联储资产负债表、美债十年期收益率、美元指数、美元兑人民币，
+// 数据源为 FRED（需 FRED_API_KEY），小时级轮询。
 package main
 
 import (
@@ -20,20 +22,17 @@ func main() {
 		Version:           pluginVersion,
 		DefaultInterval:   1 * time.Hour, // FRED publishes daily/weekly — hourly poll respects API quota
 		BuildRegistration: buildRegistration,
-		SetupCollector: func(ctx context.Context) (pluginrunner.Provider, bool, error) {
+		SetupCollector: func(ctx context.Context) (pluginrunner.Provider, error) {
 			if os.Getenv("PROVIDER") == "mock" {
-				prov := collector.Mock{}
-				_, windowed := pluginrunner.Provider(prov).(pluginrunner.WindowedProvider)
-				return prov, windowed, nil
+				return collector.Mock{}, nil
 			}
+			// 快速失败：没有 FRED_API_KEY 就不启动，宁可报错也不能让
+			// mock 数据顶着 "fred" 的名义入库。
 			fred, err := collector.NewFREDCollector()
 			if err != nil {
-				// Fail fast: without a real key the macro plugin cannot honor its
-				// promise of authentic data; surfacing the error to the operator is
-				// preferable to silently emitting mock values under the "fred" brand.
-				return nil, false, err
+				return nil, err
 			}
-			return fred, true, nil
+			return fred, nil
 		},
 	}).Run()
 }

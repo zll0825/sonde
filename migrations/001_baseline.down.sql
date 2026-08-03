@@ -8,10 +8,10 @@ DROP TABLE IF EXISTS alerts;
 DROP TABLE IF EXISTS source_preferences;
 DROP TABLE IF EXISTS pending_metrics;
 DROP TABLE IF EXISTS observations;  -- hypertable
-DROP TABLE IF EXISTS rules_v2;
+DROP TABLE IF EXISTS rules;
 DROP TABLE IF EXISTS rule_suggestions;
-DROP TABLE IF EXISTS relations_v2;
+DROP TABLE IF EXISTS relations;
 DROP TABLE IF EXISTS relation_suggestions;
-DROP TABLE IF EXISTS metric_definitions_v2;
-DROP TABLE IF EXISTS entities_v2;
+DROP TABLE IF EXISTS metric_definitions;
+DROP TABLE IF EXISTS entities;
 DROP TABLE IF EXISTS plugins;
