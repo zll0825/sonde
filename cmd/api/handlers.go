@@ -28,8 +28,8 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 // server-side (freshness()) — the frontend only maps the verdict to a color.
 //
 // db is declared as statusQuerier (a Query/QueryRow subset of *pgxpool.Pool)
-// so the handler is unit-testable with pgxmock; production passes the real
-// pool unchanged.
+// so the handler is unit-testable with the handwritten fake in status_test.go;
+// production passes the real pool unchanged.
 func statusHandler(db statusQuerier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		status, err := loadStatus(r.Context(), db, time.Now())

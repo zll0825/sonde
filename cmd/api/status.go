@@ -15,9 +15,11 @@ import (
 // sync when the budget default changes.
 const budgetLimit = 10
 
-// statusQuerier is the minimal query surface statusHandler needs. Both
-// *pgxpool.Pool and pgxmock's pool implement it; the narrow interface keeps
-// the handler unit-testable without a live database.
+// statusQuerier is the minimal query surface statusHandler needs. Production
+// passes *pgxpool.Pool; tests pass the handwritten fake in status_test.go
+// (pgxmock is rejected: its v5 needs go ≥1.25 + pgx ≥5.9.2 and would break
+// the go 1.22 Docker/CI builds). The narrow interface keeps the handler
+// unit-testable without a live database.
 type statusQuerier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
