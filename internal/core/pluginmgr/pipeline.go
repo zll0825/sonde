@@ -190,6 +190,7 @@ func triggerToAlert(t *detector.Trigger, pluginID string) model.Alert {
 	return model.Alert{
 		ID:                newAlertID(),
 		Title:             t.RuleName,
+		Summary:           detector.Summarize(t),
 		Severity:          t.Severity,
 		Status:            "active",
 		MetricID:          t.MetricID,

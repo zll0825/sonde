@@ -68,6 +68,7 @@ func (e *Engine) HandleTrigger(ctx context.Context, alert model.Alert) error {
 	payload, err := json.Marshal(map[string]interface{}{
 		"alert_id":     alert.ID,
 		"title":        alert.Title,
+		"summary":      alert.Summary,
 		"severity":     string(alert.Severity),
 		"metric_id":    alert.MetricID,
 		"rule_id":      alert.RuleID,

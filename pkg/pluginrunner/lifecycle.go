@@ -210,6 +210,22 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 		}
 	}()
 
+	// Stream heartbeat loop — keeps Core's health view alive between pushes.
+	// 20s < Core's 60s healthTimeout; hourly collectors depend on this to stay
+	// "online" (and un-penalized in quality scoring) between collections.
+	go func() {
+		ticker := time.NewTicker(20 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				runner.SubmitHeartbeat(pluginID)
+			}
+		}
+	}()
+
 	return runner.Run(ctx, pluginID)
 }
 

@@ -67,6 +67,19 @@ func (m *Manager) markHealthActivity(pluginID string) {
 	h.mu.Unlock()
 }
 
+// persistHeartbeat mirrors the in-memory health signal into plugins.healthy /
+// last_heartbeat so read-only consumers (/api/status) can see liveness.
+// Best-effort: a failed write is logged, never propagated — heartbeats must
+// stay cheap and infallible from the plugin's point of view.
+func (m *Manager) persistHeartbeat(ctx context.Context, pluginID string) {
+	if m.store == nil {
+		return
+	}
+	if err := m.store.TouchHeartbeat(ctx, pluginID); err != nil {
+		log.Warn().Err(err).Str("plugin_id", pluginID).Msg("persist heartbeat failed")
+	}
+}
+
 // NewManager creates a plugin manager backed by the given store and the
 // full set of M3/M4 evaluation components. db is shared with the ingester,
 // resolver, pending tracker, and observation querier.
@@ -322,6 +335,7 @@ func (m *Manager) HandlePluginMessage(ctx context.Context, msg *pb.PluginMessage
 		return m.handlePushSnapshots(ctx, msg.GetPushSnapshots())
 	case *pb.PluginMessage_Heartbeat:
 		m.markHealthActivity(msg.GetHeartbeat().GetPluginId())
+		m.persistHeartbeat(ctx, msg.GetHeartbeat().GetPluginId())
 		log.Debug().Msg("stream heartbeat received")
 		return nil
 	case *pb.PluginMessage_CommandAck:
@@ -353,6 +367,14 @@ func (m *Manager) handlePushSnapshots(ctx context.Context, ps *pb.PushSnapshotsR
 		Int("rejected", result.Rejected).
 		Int("pending", len(result.PendingSeen)).
 		Msg("push ingested")
+
+	// Persist collect stats so the dashboard's status bar reflects reality.
+	// Non-fatal: a failed bookkeeping write must not reject the push.
+	if m.store != nil {
+		if err := m.store.RecordCollect(ctx, ps.PluginId, result.Inserted); err != nil {
+			log.Warn().Err(err).Str("plugin_id", ps.PluginId).Msg("record collect failed")
+		}
+	}
 
 	// M3/M4: evaluate rules for every metric_id that produced new observations.
 	// Dedup the metric_ids so we don't re-evaluate for duplicates.

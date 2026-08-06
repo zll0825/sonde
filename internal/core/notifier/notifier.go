@@ -23,6 +23,7 @@ import (
 type AlertInfo struct {
 	AlertID     string    `json:"alert_id"`
 	Title       string    `json:"title"`
+	Summary     string    `json:"summary"`
 	Severity    string    `json:"severity"`
 	MetricID    string    `json:"metric_id"`
 	RuleID      int       `json:"rule_id"`

@@ -88,14 +88,17 @@ func formatAlert(a AlertInfo) string {
 	metric := markdownEscape(a.MetricID)
 	alertID := markdownEscape(a.AlertID)
 
-	return fmt.Sprintf(
-		"*[%s]* %s\n"+
-			"```\n"+
+	head := fmt.Sprintf("*[%s]* %s\n", sev, title)
+	if a.Summary != "" {
+		head += markdownEscape(a.Summary) + "\n"
+	}
+	return head + fmt.Sprintf(
+		"```\n"+
 			"metric: %s\n"+
 			"rule  : #%d\n"+
 			"id    : %s\n"+
 			"```",
-		sev, title, metric, a.RuleID, alertID,
+		metric, a.RuleID, alertID,
 	)
 }
 

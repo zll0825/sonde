@@ -158,6 +158,28 @@ func (r *Runner) SubmitSnapshots(pluginID string, snapshots []*pb.MetricSnapshot
 	}
 }
 
+// SubmitHeartbeat enqueues a stream heartbeat so Core can mark the plugin
+// healthy between data pushes (hourly collectors would otherwise look offline).
+// Same drop-don't-block semantics as SubmitSnapshots.
+func (r *Runner) SubmitHeartbeat(pluginID string) {
+	if r.ctx == nil {
+		return
+	}
+	select {
+	case r.sendCh <- &pb.PluginMessage{
+		Payload: &pb.PluginMessage_Heartbeat{
+			Heartbeat: &pb.HeartbeatRequest{
+				PluginId:  pluginID,
+				Timestamp: time.Now().Unix(),
+			},
+		},
+	}:
+	case <-r.ctx.Done():
+	default:
+		log.Warn().Str("plugin", r.pluginName).Msg("sendCh full, dropping heartbeat")
+	}
+}
+
 // OnCoreMessage registers a handler for inbound CoreMessages.
 func (r *Runner) OnCoreMessage(fn func(*pb.CoreMessage)) {
 	r.onCoreFuncs = append(r.onCoreFuncs, fn)

@@ -247,9 +247,16 @@ func queryTodayAlertCount(ctx context.Context, db statusQuerier) (int, error) {
 }
 
 // queryPlugins: design D3 query 1 — plugin registration + health state.
+// healthy is derated by heartbeat staleness: the writer (core) sets
+// plugins.healthy=true on heartbeat but cannot flip it back on crash, so a
+// heartbeat older than 90s (3× the 30s plugin heartbeat interval) reads as
+// offline here.
 func queryPlugins(ctx context.Context, db statusQuerier) ([]pluginStatus, error) {
 	rows, err := db.Query(ctx, `
-		SELECT id, name, healthy, state, last_collect_at, last_collect_count
+		SELECT id, name,
+		       (healthy AND last_heartbeat IS NOT NULL
+		        AND last_heartbeat > now() - interval '90 seconds') AS healthy,
+		       state, last_collect_at, last_collect_count
 		FROM plugins
 		ORDER BY name`)
 	if err != nil {
