@@ -13,14 +13,14 @@ import (
 )
 
 const (
-	pluginVersion = "0.1.0"
+	pluginVersion = "0.1.1"
 )
 
 func main() {
 	pluginrunner.NewLifecycle(pluginrunner.Config{
 		PluginName:        "crypto",
 		Version:           pluginVersion,
-		DefaultInterval:   1 * time.Hour, // CoinGecko free tier + stale daily data
+		DefaultInterval:   1 * time.Hour, // CoinGecko free tier + hourly collection cadence
 		BuildRegistration: buildRegistration,
 		SetupCollector: func(ctx context.Context) (pluginrunner.Provider, error) {
 			if os.Getenv("PROVIDER") == "mock" {
@@ -57,7 +57,7 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Name:        "BTC Exchange Balance",
 				Description: "Total BTC held across major exchanges",
 				Unit:        "BTC",
-				Frequency:   "daily",
+				Frequency:   "hourly",
 				EntityId:    "BTC",
 			},
 			{
@@ -65,7 +65,7 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Name:        "BTC Network Hash Rate (EH/s)",
 				Description: "Bitcoin network hash rate in exahashes per second",
 				Unit:        "EH/s",
-				Frequency:   "daily",
+				Frequency:   "hourly",
 				EntityId:    "BTC",
 			},
 			{
@@ -73,7 +73,7 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Name:        "BTC Price (USD)",
 				Description: "Current BTC spot price in USD",
 				Unit:        "USD",
-				Frequency:   "daily",
+				Frequency:   "hourly",
 				EntityId:    "BTC",
 			},
 		},
@@ -85,7 +85,7 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				DetectorName: "threshold",
 				Severity:     pb.Severity_SEVERITY_CRITICAL,
 				Config:       []byte(`{"operator":"lt","value":1800000,"consecutive":2}`),
-				Description:  "BTC exchange balance drops below 1.8M for 2+ days",
+				Description:  "BTC exchange balance drops below 1.8M for 2+ hourly observations",
 			},
 			{
 				Name:         "btc_price_change",
@@ -101,9 +101,9 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				DetectorName: "trend",
 				Severity:     pb.Severity_SEVERITY_WARNING,
 				Config:       []byte(`{"direction":"down","consecutive":7}`),
-				Description:  "BTC exchange balance declining for 7+ consecutive days",
+				Description:  "BTC exchange balance declining for 7+ consecutive hourly observations",
 			},
 		},
-		ChangeLog: "RealCollector enabled: CoinGecko price + mempool.space hash rate, exchange_balance still mock",
+		ChangeLog: "Hourly metric cadence and provider fetch timestamps; CoinGecko + mempool.space real sources, exchange_balance still mock",
 	}
 }

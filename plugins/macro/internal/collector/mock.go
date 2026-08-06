@@ -21,6 +21,7 @@ func (Mock) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 			MetricID:  "fed.ins.balance_sheet",
 			Value:     7_200_000_000_000 + rand.Float64()*100_000_000_000, // ~$7.2T
 			Timestamp: now,
+			FetchedAt: now,
 			Provider:  "mock_macro",
 			Grade:     "delayed",
 		},
@@ -28,6 +29,7 @@ func (Mock) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 			MetricID:  "us.mkt.ten_year_yield",
 			Value:     4.2 + rand.Float64()*0.1, // ~4.2%
 			Timestamp: now,
+			FetchedAt: now,
 			Provider:  "mock_macro",
 			Grade:     "delayed",
 		},
@@ -35,6 +37,7 @@ func (Mock) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 			MetricID:  "us.mkt.dollar_index",
 			Value:     103.0 + rand.Float64()*0.5,
 			Timestamp: now,
+			FetchedAt: now,
 			Provider:  "mock_macro",
 			Grade:     "delayed",
 		},
@@ -42,6 +45,7 @@ func (Mock) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 			MetricID:  "us.mkt.usd_cny",
 			Value:     7.2 + rand.Float64()*0.05,
 			Timestamp: now,
+			FetchedAt: now,
 			Provider:  "mock_macro",
 			Grade:     "delayed",
 		},
@@ -56,16 +60,17 @@ func (Mock) GetSnapshotsForWindow(ctx context.Context, start, end time.Time) ([]
 		end = start
 	}
 	const maxSamples = 60
+	fetchedAt := time.Now()
 	out := make([]pluginrunner.Snapshot, 0, maxSamples*4)
 	for d, n := start, 0; !d.After(end) && n < maxSamples; d, n = d.Add(day), n+1 {
 		seeded := rand.New(rand.NewSource(d.Unix() / 86400))
 		drift := 1.0 + (seeded.Float64()-0.5)*0.005 // tighter drift — macro moves slower
 		drift = math.Max(0.95, math.Min(1.05, drift))
 		out = append(out,
-			pluginrunner.Snapshot{MetricID: "fed.ins.balance_sheet", Value: 7_200_000_000_000 * drift, Timestamp: d, Provider: "mock_macro", Grade: "estimated"},
-			pluginrunner.Snapshot{MetricID: "us.mkt.ten_year_yield", Value: 4.2 * drift, Timestamp: d, Provider: "mock_macro", Grade: "estimated"},
-			pluginrunner.Snapshot{MetricID: "us.mkt.dollar_index", Value: 103.0 * drift, Timestamp: d, Provider: "mock_macro", Grade: "estimated"},
-			pluginrunner.Snapshot{MetricID: "us.mkt.usd_cny", Value: 7.2 * drift, Timestamp: d, Provider: "mock_macro", Grade: "estimated"},
+			pluginrunner.Snapshot{MetricID: "fed.ins.balance_sheet", Value: 7_200_000_000_000 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", Grade: "estimated"},
+			pluginrunner.Snapshot{MetricID: "us.mkt.ten_year_yield", Value: 4.2 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", Grade: "estimated"},
+			pluginrunner.Snapshot{MetricID: "us.mkt.dollar_index", Value: 103.0 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", Grade: "estimated"},
+			pluginrunner.Snapshot{MetricID: "us.mkt.usd_cny", Value: 7.2 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", Grade: "estimated"},
 		)
 	}
 	return out, nil

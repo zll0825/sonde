@@ -70,12 +70,14 @@ func (y *YahooCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snaps
 		log.Warn().Err(err).Msg("Yahoo Finance unavailable, falling back to mock ETF data")
 		return Mock{}.GetSnapshots(ctx)
 	}
+	fetchedAt := time.Now()
 
 	snapshots := []pluginrunner.Snapshot{
 		{
 			MetricID:  "gld.ass.price",
 			Value:     price,
-			Timestamp: time.Now(),
+			Timestamp: fetchedAt,
+			FetchedAt: fetchedAt,
 			Provider:  providerYahoo,
 			Grade:     "delayed", // Yahoo data is ~15min delayed, not realtime
 		},
@@ -109,6 +111,7 @@ func (y *YahooCollector) GetSnapshotsForWindow(ctx context.Context, start, end t
 		log.Warn().Err(err).Msg("Yahoo Finance history unavailable, falling back to mock window")
 		return Mock{}.GetSnapshotsForWindow(ctx, start, end)
 	}
+	fetchedAt := time.Now()
 
 	snapshots := make([]pluginrunner.Snapshot, 0, len(times)*2)
 	for i, ts := range times {
@@ -119,6 +122,7 @@ func (y *YahooCollector) GetSnapshotsForWindow(ctx context.Context, start, end t
 			MetricID:  "gld.ass.price",
 			Value:     *closes[i],
 			Timestamp: ts,
+			FetchedAt: fetchedAt,
 			Provider:  providerYahoo,
 			Grade:     "delayed",
 		})

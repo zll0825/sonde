@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	pluginVersion = "0.1.0"
+	pluginVersion = "0.1.1"
 )
 
 func main() {
@@ -98,6 +98,6 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Description:  "GLD daily flow exceeds 500M USD threshold",
 			},
 		},
-		ChangeLog: "Initial ETF plugin registration",
+		ChangeLog: "Provider fetch timestamps are recorded independently from observation time",
 	}
 }

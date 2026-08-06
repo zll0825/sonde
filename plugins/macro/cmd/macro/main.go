@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	pluginVersion = "0.1.0"
+	pluginVersion = "0.1.1"
 )
 
 func main() {
@@ -102,9 +102,9 @@ func buildRegistration() *pb.RegisterPluginRequest {
 			{
 				SourceId:     "FED",
 				TargetId:     "US",
-				RelationType: "influences",
+				RelationType: "causes",
 				Direction:    pb.Direction_DIRECTION_FORWARD,
-				Description:  "Fed policy influences US macro conditions",
+				Description:  "Fed policy causes changes in US macro conditions",
 			},
 		},
 		Rules: []*pb.RuleSuggestion{
@@ -133,6 +133,6 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Description:  "DXY above 105",
 			},
 		},
-		ChangeLog: "FRED real-data source enabled; default interval 1h",
+		ChangeLog: "Canonical causes relation taxonomy and provider fetch timestamps; FRED real-data source, default interval 1h",
 	}
 }

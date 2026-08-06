@@ -99,10 +99,12 @@ func (f *FREDCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 		if ts.IsZero() {
 			ts = now
 		}
+		fetchedAt := time.Now()
 		snaps = append(snaps, pluginrunner.Snapshot{
 			MetricID:  entry.MetricID,
 			Value:     *val,
 			Timestamp: ts,
+			FetchedAt: fetchedAt,
 			Provider:  providerFRED,
 			Grade:     "delayed", // FRED publishes with 1..7 day lag; not realtime-grade
 		})
@@ -145,6 +147,7 @@ func (f *FREDCollector) GetSnapshotsForWindow(ctx context.Context, start, end ti
 				Msg("FRED window fetch failed; skipping metric")
 			continue
 		}
+		fetchedAt := time.Now()
 		for i, ts := range times {
 			if vals[i] == nil {
 				continue // missing observation (holiday, etc.)
@@ -153,6 +156,7 @@ func (f *FREDCollector) GetSnapshotsForWindow(ctx context.Context, start, end ti
 				MetricID:  entry.MetricID,
 				Value:     *vals[i],
 				Timestamp: ts,
+				FetchedAt: fetchedAt,
 				Provider:  providerFRED,
 				Grade:     "delayed",
 			})

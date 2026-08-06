@@ -13,7 +13,8 @@ import (
 type Snapshot struct {
 	MetricID  string
 	Value     float64
-	Timestamp time.Time
+	Timestamp time.Time // source observation/event time
+	FetchedAt time.Time // provider fetch completion time
 	Provider  string
 	Grade     string
 }
@@ -34,14 +35,19 @@ type WindowedProvider interface {
 // SnapshotsToProto converts plugin snapshots to proto MetricSnapshots.
 func SnapshotsToProto(snapshots []Snapshot, version string) []*pb.MetricSnapshot {
 	result := make([]*pb.MetricSnapshot, 0, len(snapshots))
+	fallbackFetchedAt := time.Now()
 	for _, s := range snapshots {
+		fetchedAt := s.FetchedAt
+		if fetchedAt.IsZero() {
+			fetchedAt = fallbackFetchedAt
+		}
 		result = append(result, &pb.MetricSnapshot{
 			MetricId:            s.MetricID,
 			Value:               s.Value,
 			Timestamp:           s.Timestamp.Unix(),
 			SourcePluginVersion: version,
 			SourceProvider:      s.Provider,
-			SourceFetchedAt:     s.Timestamp.Unix(),
+			SourceFetchedAt:     fetchedAt.Unix(),
 			QualityGrade:        gradeToProto(s.Grade),
 		})
 	}

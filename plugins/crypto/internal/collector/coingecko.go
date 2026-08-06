@@ -61,17 +61,18 @@ type mempoolHashrateResponse struct {
 // it is reflected in the returned Snapshot (omitted) so the caller sees a
 // partial but coherent view.
 func (r *RealCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
-	now := time.Now()
 	snaps := make([]pluginrunner.Snapshot, 0, 3)
 
 	// Real price
 	if price, err := r.fetchPrice(ctx); err != nil {
 		log.Warn().Err(err).Msg("CoinGecko price fetch failed; dropping btc.ass.price")
 	} else {
+		fetchedAt := time.Now()
 		snaps = append(snaps, pluginrunner.Snapshot{
 			MetricID:  "btc.ass.price",
 			Value:     price,
-			Timestamp: now,
+			Timestamp: fetchedAt,
+			FetchedAt: fetchedAt,
 			Provider:  providerCoinGecko,
 			Grade:     "delayed", // CoinGecko is ~1m delayed under normal load
 		})
@@ -81,10 +82,12 @@ func (r *RealCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 	if hr, err := r.fetchHashRate(ctx); err != nil {
 		log.Warn().Err(err).Msg("mempool.space hash rate fetch failed; dropping btc.ass.hash_rate")
 	} else {
+		fetchedAt := time.Now()
 		snaps = append(snaps, pluginrunner.Snapshot{
 			MetricID:  "btc.ass.hash_rate",
 			Value:     hr,
-			Timestamp: now,
+			Timestamp: fetchedAt,
+			FetchedAt: fetchedAt,
 			Provider:  providerMempool,
 			Grade:     "delayed",
 		})
