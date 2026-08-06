@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"capital_observatory/internal/core/alert"
+	coreevent "capital_observatory/internal/core/event"
 	"capital_observatory/internal/core/store"
 	"capital_observatory/pkg/model"
 	pb "capital_observatory/pkg/proto/plugin/v1"
@@ -274,9 +275,8 @@ func TestIntegration_InsertObservation_CoverageMatrix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("third InsertObservation (revised upsert): unexpected error: %v", err)
 	}
-	if action != ActionInserted {
-		// revised overwrites count as ActionInserted (data was persisted).
-		t.Fatalf("expected ActionInserted on revised overwrite, got %q", action)
+	if action != ActionUpdatedRevised {
+		t.Fatalf("expected ActionUpdatedRevised on revised overwrite, got %q", action)
 	}
 
 	// Verify: exactly one observation row still, with the revised value.
@@ -301,6 +301,20 @@ func TestIntegration_InsertObservation_CoverageMatrix(t *testing.T) {
 	}
 	if action != ActionNoopDedup {
 		t.Fatalf("expected ActionNoopDedup when incoming grade is lower, got %q", action)
+	}
+
+	// First insert and higher-grade correction each receive one durable work
+	// item. Exact/lower-grade replays do not create detection work.
+	var workCount, keyCount int
+	if err := db.QueryRow(context.Background(), `
+		SELECT COUNT(*), COUNT(DISTINCT dedup_key)
+		FROM event_outbox
+		WHERE event_type = $1
+	`, coreevent.TypeDetectionRequested).Scan(&workCount, &keyCount); err != nil {
+		t.Fatalf("count detection work: %v", err)
+	}
+	if workCount != 2 || keyCount != 2 {
+		t.Fatalf("detection work count/keys = %d/%d, want 2/2", workCount, keyCount)
 	}
 }
 
@@ -462,6 +476,14 @@ func TestIntegration_PluginRegister_RelationAutoAccept(t *testing.T) {
 func TestIntegration_RuleReview_HumanOverrideWins(t *testing.T) {
 	db := dbConn(t)
 	truncateAll(t, db)
+	ctx := context.Background()
+
+	pluginID, _, err := NewStore(db).RegisterPlugin(ctx, &pb.RegisterPluginRequest{
+		Info: &pb.PluginInfo{Name: "HumanOverride", Version: "1.0.0"},
+	})
+	if err != nil {
+		t.Fatalf("RegisterPlugin fixture: %v", err)
+	}
 
 	alertStore := store.NewPostgresAlertStore(db)
 
@@ -480,23 +502,148 @@ func TestIntegration_RuleReview_HumanOverrideWins(t *testing.T) {
 			RuleEffectiveFrom: now,
 			DetectorName:      "test_detector",
 			DedupKey:          dedupKey,
-			PluginID:          "plg_hr_test",
+			PluginID:          pluginID,
 			TriggeredAt:       now,
 			Evidence:          []byte(`{}`),
 		}
 	}
 
 	// First insert must succeed.
-	if err := alertStore.CreateAlertWithEvent(context.Background(), makeAlert("alert_001"), "alert.raised", []byte(`{"id":"alert_001"}`)); err != nil {
+	if err := alertStore.CreateAlertWithEvent(ctx, makeAlert("alert_001"), "alert.raised", []byte(`{"id":"alert_001"}`)); err != nil {
 		t.Fatalf("first CreateAlertWithEvent: %v", err)
 	}
 
 	// Second insert with same dedup_key must return alert.ErrDuplicateAlert.
-	err := alertStore.CreateAlertWithEvent(context.Background(), makeAlert("alert_002"), "alert.raised", []byte(`{"id":"alert_002"}`))
+	err = alertStore.CreateAlertWithEvent(ctx, makeAlert("alert_002"), "alert.raised", []byte(`{"id":"alert_002"}`))
 	if err == nil {
 		t.Fatal("expected ErrDuplicateAlert on second insert with same dedup_key (both active), got nil")
 	}
 	if !errors.Is(err, alert.ErrDuplicateAlert) {
 		t.Fatalf("expected errors.Is(err, alert.ErrDuplicateAlert); got %v (type %T)", err, err)
+	}
+}
+
+// =============================================================================
+// Test 7 — Startup detection reconciliation is bounded and idempotent
+// =============================================================================
+
+func TestIntegration_DetectionReconciliation_Idempotent(t *testing.T) {
+	db := dbConn(t)
+	truncateAll(t, db)
+	ctx := context.Background()
+
+	ontologyStore := NewStore(db)
+	pluginID, _, err := ontologyStore.RegisterPlugin(ctx, &pb.RegisterPluginRequest{
+		Info: &pb.PluginInfo{Name: "TestReconcile", Version: "1.0.0"},
+		Entities: []*pb.EntityDeclaration{
+			{Id: "reconcile_entity", Name: "Reconcile Entity", Namespace: "test", EntityType: pb.EntityType_ENTITY_TYPE_ASSET},
+		},
+		Metrics: []*pb.MetricDeclaration{
+			{Id: "reconcile.metric", Name: "Reconcile Metric", Unit: "count", Frequency: "daily", EntityId: "reconcile_entity"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RegisterPlugin: %v", err)
+	}
+	metricUID, err := ontologyStore.GetMetricUID(ctx, "reconcile.metric")
+	if err != nil {
+		t.Fatalf("GetMetricUID: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	snap := &pb.MetricSnapshot{
+		MetricId:            "reconcile.metric",
+		Value:               1,
+		Timestamp:           now.Unix(),
+		SourcePluginVersion: "1.0.0",
+		SourceProvider:      "test",
+		SourceFetchedAt:     now.Unix(),
+	}
+	if _, err := ontologyStore.InsertObservation(ctx, snap, metricUID, "delayed", 0.9, 0.8, "reconcile-labels", pluginID); err != nil {
+		t.Fatalf("InsertObservation: %v", err)
+	}
+
+	outboxStore := store.NewPostgresOutboxStore(db)
+	count, err := outboxStore.ReconcileDetectionRequests(ctx)
+	if err != nil {
+		t.Fatalf("first reconciliation: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("first reconciliation inserted %d events, want 1", count)
+	}
+	count, err = outboxStore.ReconcileDetectionRequests(ctx)
+	if err != nil {
+		t.Fatalf("second reconciliation: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("second reconciliation inserted %d events, want 0", count)
+	}
+
+	var reconciledMetric, reconciledPlugin string
+	if err := db.QueryRow(ctx, `
+		SELECT payload->>'metric_id', payload->>'plugin_id'
+		FROM event_outbox
+		WHERE event_type = $1 AND dedup_key LIKE 'reconcile:%'
+	`, coreevent.TypeDetectionRequested).Scan(&reconciledMetric, &reconciledPlugin); err != nil {
+		t.Fatalf("query reconciled payload: %v", err)
+	}
+	if reconciledMetric != "reconcile.metric" || reconciledPlugin != pluginID {
+		t.Fatalf("reconciled payload = %s/%s, want reconcile.metric/%s", reconciledMetric, reconciledPlugin, pluginID)
+	}
+}
+
+// =============================================================================
+// Test 8 — Outbox retries expose backoff/error and terminate at the budget
+// =============================================================================
+
+func TestIntegration_OutboxRetryState_Observable(t *testing.T) {
+	db := dbConn(t)
+	truncateAll(t, db)
+	ctx := context.Background()
+
+	var eventID int
+	if err := db.QueryRow(ctx, `
+		INSERT INTO event_outbox (event_type, payload, dedup_key)
+		VALUES ('test.retry', '{}', 'retry-key')
+		RETURNING id
+	`).Scan(&eventID); err != nil {
+		t.Fatalf("insert retry event: %v", err)
+	}
+
+	outboxStore := store.NewPostgresOutboxStore(db)
+	if err := outboxStore.MarkFailed(ctx, eventID, "temporary failure"); err != nil {
+		t.Fatalf("first MarkFailed: %v", err)
+	}
+	var status, lastError string
+	var attempts int
+	var nextAttemptAt time.Time
+	if err := db.QueryRow(ctx, `
+		SELECT status, attempts, last_error, next_attempt_at
+		FROM event_outbox WHERE id = $1
+	`, eventID).Scan(&status, &attempts, &lastError, &nextAttemptAt); err != nil {
+		t.Fatalf("query retry state: %v", err)
+	}
+	if status != "pending" || attempts != 1 || lastError != "temporary failure" || !nextAttemptAt.After(time.Now()) {
+		t.Fatalf("retry state = %s/%d/%q/%s", status, attempts, lastError, nextAttemptAt)
+	}
+	ready, err := outboxStore.PickPending(ctx, 10)
+	if err != nil {
+		t.Fatalf("PickPending during backoff: %v", err)
+	}
+	if len(ready) != 0 {
+		t.Fatalf("PickPending returned %d events during backoff, want 0", len(ready))
+	}
+
+	for attempt := 2; attempt <= 5; attempt++ {
+		if err := outboxStore.MarkFailed(ctx, eventID, "still failing"); err != nil {
+			t.Fatalf("MarkFailed attempt %d: %v", attempt, err)
+		}
+	}
+	if err := db.QueryRow(ctx, `
+		SELECT status, attempts FROM event_outbox WHERE id = $1
+	`, eventID).Scan(&status, &attempts); err != nil {
+		t.Fatalf("query terminal retry state: %v", err)
+	}
+	if status != "failed" || attempts != 5 {
+		t.Fatalf("terminal retry state = %s/%d, want failed/5", status, attempts)
 	}
 }

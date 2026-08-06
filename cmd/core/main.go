@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"os/signal"
@@ -18,6 +19,7 @@ import (
 
 	"capital_observatory/internal/core/alert"
 	"capital_observatory/internal/core/detector"
+	coreevent "capital_observatory/internal/core/event"
 	"capital_observatory/internal/core/noise"
 	"capital_observatory/internal/core/notifier"
 	"capital_observatory/internal/core/ontology"
@@ -140,6 +142,27 @@ func main() {
 	// ── Manager (wires M1–M5; researchStore doubles as the observation querier) ─
 	mgr := pluginmgr.NewManager(repo, db, detEngine, alertEng, researchAsm, researchStore, cmdStore)
 	handler := pluginmgr.NewHandler(mgr)
+
+	// Durable observation -> detection consumer. The observation and this work
+	// item are committed together; a Core crash leaves the event pending.
+	outboxWorker.RegisterHandler(coreevent.TypeDetectionRequested, func(ctx context.Context, ev alert.OutboxEvent) error {
+		var req coreevent.DetectionRequest
+		if err := json.Unmarshal(ev.Payload, &req); err != nil {
+			return fmt.Errorf("unmarshal detection request: %w", err)
+		}
+		evalCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := mgr.EvaluateDetection(evalCtx, req.MetricID, req.PluginID); err != nil {
+			return fmt.Errorf("evaluate detection %s: %w", req.DetectionKey, err)
+		}
+		return nil
+	})
+
+	if count, err := outboxStore.ReconcileDetectionRequests(ctx); err != nil {
+		log.Error().Err(err).Msg("detection request reconciliation failed")
+	} else if count > 0 {
+		log.Info().Int64("count", count).Msg("reconciled detection requests")
+	}
 
 	// ── CommandDispatcher: poll command_log → dispatch → wait for CommandAck ────
 	go mgr.StartCommandDispatcher(ctx, 2*time.Second)

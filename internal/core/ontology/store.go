@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	coreevent "capital_observatory/internal/core/event"
 	"capital_observatory/pkg/model"
 	pb "capital_observatory/pkg/proto/plugin/v1"
 	"github.com/google/uuid"
@@ -486,7 +487,8 @@ func gradeRank(grade string) int {
 	}
 }
 
-// InsertObservation writes a scored, source-resolved observation into the observations table.
+// InsertObservation writes a scored observation and its durable detection work
+// into observations/event_outbox in one transaction.
 // metricUID is the registered uid from metric_definitions (resolved by the caller);
 // it is what research-time joins use, so it must never be re-derived here.
 //
@@ -498,12 +500,26 @@ func gradeRank(grade string) int {
 //
 // Quality values are passed directly (no dependency on metric.QualityResult avoids an import cycle).
 func (s *Store) InsertObservation(ctx context.Context, snap *pb.MetricSnapshot, metricUID, grade string, confidence float64, systemScore float64, labelsHash, pluginID string) (ObserveAction, error) {
+	detection := coreevent.NewDetectionRequest(
+		snap.MetricId, metricUID, pluginID, snap.SourceProvider, labelsHash, grade, snap.Timestamp,
+	)
+	payload, err := json.Marshal(detection)
+	if err != nil {
+		return "", fmt.Errorf("marshal detection request: %w", err)
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("begin observation transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
 	// RETURNING (xmax = 0) distinguishes a fresh INSERT (xmax=0) from an
 	// ON CONFLICT UPDATE (xmax≠0) — that's what makes the revised-correction
 	// path observable. ErrNoRows means the conflict WHERE clause filtered the
 	// update out: incoming grade did not outrank the existing row (dedup).
 	var freshInsert bool
-	err := s.db.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		INSERT INTO observations (
 			time, metric_id, metric_uid, value, labels, labels_hash,
 			source_plugin, source_plugin_version, source_provider, source_fetched_at,
@@ -551,6 +567,18 @@ func (s *Store) InsertObservation(ctx context.Context, snap *pb.MetricSnapshot, 
 	}
 	if err != nil {
 		return "", fmt.Errorf("insert observation: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO event_outbox (event_type, payload, dedup_key)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (event_type, dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING
+	`, coreevent.TypeDetectionRequested, payload, detection.DetectionKey); err != nil {
+		return "", fmt.Errorf("insert detection outbox event: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("commit observation transaction: %w", err)
 	}
 	if freshInsert {
 		return ActionInserted, nil

@@ -31,11 +31,14 @@ type EventHandler func(ctx context.Context, event OutboxEvent) error
 
 // OutboxEvent is a row from the event_outbox table.
 type OutboxEvent struct {
-	ID        int
-	EventType string
-	Payload   []byte
-	Attempts  int
-	CreatedAt time.Time
+	ID            int
+	EventType     string
+	Payload       []byte
+	DedupKey      *string
+	Attempts      int
+	LastError     *string
+	NextAttemptAt time.Time
+	CreatedAt     time.Time
 }
 
 // NewOutboxWorker creates a worker that polls at the given interval.

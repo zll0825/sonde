@@ -278,10 +278,19 @@ CREATE TABLE event_outbox (
     id              SERIAL PRIMARY KEY,
     event_type      TEXT NOT NULL,
     payload         JSONB NOT NULL,
+    dedup_key       TEXT,
     status          TEXT DEFAULT 'pending',
     attempts        INT DEFAULT 0,
-    created_at      TIMESTAMPTZ DEFAULT NOW()
+    last_error      TEXT,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX idx_event_outbox_dedup
+    ON event_outbox(event_type, dedup_key) WHERE dedup_key IS NOT NULL;
+CREATE INDEX idx_event_outbox_pending
+    ON event_outbox(next_attempt_at, id) WHERE status = 'pending';
 
 -- ============================================================
 -- 14. command_log

@@ -376,24 +376,6 @@ func (m *Manager) handlePushSnapshots(ctx context.Context, ps *pb.PushSnapshotsR
 		}
 	}
 
-	// M3/M4: evaluate rules for every metric_id that produced new observations.
-	// Dedup the metric_ids so we don't re-evaluate for duplicates.
-	seen := make(map[string]struct{})
-	for _, snap := range ps.Snapshots {
-		if _, ok := seen[snap.MetricId]; ok {
-			continue
-		}
-		seen[snap.MetricId] = struct{}{}
-
-		// Fire-and-forget evaluation: evaluation failures must not break the
-		// ingestion acknowledgement. Errors are logged inside the pipeline.
-		go func(metricID, pluginID string) {
-			evalCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			_ = m.pipeline.EvaluateAndAlert(evalCtx, metricID, pluginID)
-		}(snap.MetricId, ps.PluginId)
-	}
-
 	// Send PushAck over the stream if the plugin has an active session.
 	if session := m.GetSession(ps.PluginId); session != nil {
 		_ = session.SendAsync(&pb.CoreMessage{
@@ -408,6 +390,16 @@ func (m *Manager) handlePushSnapshots(ctx context.Context, ps *pb.PushSnapshotsR
 		})
 	}
 	return nil
+}
+
+// EvaluateDetection runs one durable detection work item. The outbox worker
+// owns retry and terminal-failure state; returning an error keeps the event
+// pending until its retry budget is exhausted.
+func (m *Manager) EvaluateDetection(ctx context.Context, metricID, pluginID string) error {
+	if metricID == "" || pluginID == "" {
+		return fmt.Errorf("detection request requires metric_id and plugin_id")
+	}
+	return m.pipeline.EvaluateAndAlert(ctx, metricID, pluginID)
 }
 
 // isPluginHealthy determines whether a plugin is currently healthy.

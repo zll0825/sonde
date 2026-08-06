@@ -192,8 +192,12 @@ COMMENT ON COLUMN research_snapshots.ontology_frozen_at IS '组装时本体的�
 COMMENT ON TABLE event_outbox IS '事件出箱（outbox 模式）：与业务写入同事务落表，worker 轮询派发到通知/研究等异步消费方，保证不丢事件';
 COMMENT ON COLUMN event_outbox.event_type IS '事件类型（如 alert.triggered）';
 COMMENT ON COLUMN event_outbox.payload IS '事件负载（JSONB）';
+COMMENT ON COLUMN event_outbox.dedup_key IS '事件幂等键；同事件类型内唯一';
 COMMENT ON COLUMN event_outbox.status IS '状态：pending / dispatched / failed';
 COMMENT ON COLUMN event_outbox.attempts IS '已尝试派发次数（超过重试预算置 failed）';
+COMMENT ON COLUMN event_outbox.last_error IS '最近一次派发错误';
+COMMENT ON COLUMN event_outbox.next_attempt_at IS '下次允许重试时间（指数退避）';
+COMMENT ON COLUMN event_outbox.updated_at IS '最近状态更新时间';
 
 -- ============================================================
 -- 14. command_log — 控制命令日志
