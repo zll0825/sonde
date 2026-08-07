@@ -155,17 +155,13 @@ func (s *PostgresResearchStore) GetRelatedEntities(ctx context.Context, entityID
 	return relations, nil
 }
 
-// SaveSnapshot writes the research context JSON to research_snapshots. Uses
-// upsert semantics so re-running research for the same alert overwrites prior
-// snapshots.
+// SaveSnapshot freezes the first research context for an alert. Redelivery is
+// idempotent and never reinterprets a historical alert using newer ontology.
 func (s *PostgresResearchStore) SaveSnapshot(ctx context.Context, snapshot model.ResearchSnapshot) error {
 	_, err := s.db.Exec(ctx, `
 		INSERT INTO research_snapshots (alert_id, context, ontology_frozen_at)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (alert_id) DO UPDATE SET
-			context = EXCLUDED.context,
-			ontology_frozen_at = EXCLUDED.ontology_frozen_at,
-			created_at = NOW()
+		ON CONFLICT (alert_id) DO NOTHING
 	`, snapshot.AlertID, snapshot.Context, snapshot.OntologyFrozenAt)
 	if err != nil {
 		return fmt.Errorf("save research snapshot: %w", err)

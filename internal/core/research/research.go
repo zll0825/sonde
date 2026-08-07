@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rs/zerolog/log"
-
 	"capital_observatory/pkg/model"
 )
 
@@ -87,7 +85,9 @@ func (a *Assembler) Assemble(ctx context.Context, alert model.Alert) (*ResearchC
 	// Decode evidence for current value / threshold.
 	var evidence map[string]interface{}
 	if len(alert.Evidence) > 0 {
-		_ = json.Unmarshal(alert.Evidence, &evidence)
+		if err := json.Unmarshal(alert.Evidence, &evidence); err != nil {
+			return nil, fmt.Errorf("decode alert evidence: %w", err)
+		}
 		if v, ok := evidence["current_value"]; ok {
 			out.CurrentValue = toFloat(v)
 		}
@@ -111,12 +111,11 @@ func (a *Assembler) Assemble(ctx context.Context, alert model.Alert) (*ResearchC
 	const researchTrendLimit = 60
 	observations, err := a.store.GetObservations(ctx, metricUID, lookbackStart, out.WindowEnd, researchTrendLimit)
 	if err != nil {
-		log.Error().Err(err).Str("metric_id", alert.MetricID).Msg("fetch observations failed")
-	} else {
-		out.RecentTrend = make([]TrendPoint, 0, len(observations))
-		for _, obs := range observations {
-			out.RecentTrend = append(out.RecentTrend, TrendPoint{Time: obs.Time, Value: obs.Value})
-		}
+		return nil, fmt.Errorf("fetch observations for %s: %w", alert.MetricID, err)
+	}
+	out.RecentTrend = make([]TrendPoint, 0, len(observations))
+	for _, obs := range observations {
+		out.RecentTrend = append(out.RecentTrend, TrendPoint{Time: obs.Time, Value: obs.Value})
 	}
 
 	// Fetch related entities + relations (via metric → entity → relations).
@@ -124,8 +123,9 @@ func (a *Assembler) Assemble(ctx context.Context, alert model.Alert) (*ResearchC
 	if entityID, ok := evidence["entity_id"].(string); ok && entityID != "" {
 		entity, err := a.store.GetEntityByID(ctx, entityID)
 		if err != nil {
-			log.Error().Err(err).Str("entity_id", entityID).Msg("fetch entity failed")
-		} else {
+			return nil, fmt.Errorf("fetch entity %s: %w", entityID, err)
+		}
+		if entity != nil {
 			out.MetricName = entity.Name
 			out.RelatedEntities = append(out.RelatedEntities, EntityRef{
 				ID:         entity.ID,
@@ -139,17 +139,16 @@ func (a *Assembler) Assemble(ctx context.Context, alert model.Alert) (*ResearchC
 		// Relations (2-hop in system-architecture.md §11.4 — single hop for MVP).
 		relations, err := a.store.GetRelatedEntities(ctx, entityID)
 		if err != nil {
-			log.Error().Err(err).Str("entity_id", entityID).Msg("fetch relations failed")
-		} else {
-			for _, rel := range relations {
-				out.Relations = append(out.Relations, RelationRef{
-					SourceID:     rel.SourceID,
-					TargetID:     rel.TargetID,
-					RelationType: rel.RelationType,
-					Direction:    rel.Direction,
-					Description:  rel.Description,
-				})
-			}
+			return nil, fmt.Errorf("fetch relations for %s: %w", entityID, err)
+		}
+		for _, rel := range relations {
+			out.Relations = append(out.Relations, RelationRef{
+				SourceID:     rel.SourceID,
+				TargetID:     rel.TargetID,
+				RelationType: rel.RelationType,
+				Direction:    rel.Direction,
+				Description:  rel.Description,
+			})
 		}
 	}
 

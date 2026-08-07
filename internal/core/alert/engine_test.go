@@ -15,8 +15,7 @@ type fakeAlertStore struct {
 	active       map[string]*model.Alert
 	getErr       error
 	created      []model.Alert
-	eventTypes   []string
-	payloads     [][]byte
+	events       [][]PendingEvent
 	createErr    error
 	resolvedKeys []string
 }
@@ -25,13 +24,12 @@ func newFakeAlertStore() *fakeAlertStore {
 	return &fakeAlertStore{active: make(map[string]*model.Alert)}
 }
 
-func (f *fakeAlertStore) CreateAlertWithEvent(_ context.Context, alert model.Alert, eventType string, payload []byte) error {
+func (f *fakeAlertStore) CreateAlertWithEvents(_ context.Context, alert model.Alert, events []PendingEvent) error {
 	if f.createErr != nil {
 		return f.createErr
 	}
 	f.created = append(f.created, alert)
-	f.eventTypes = append(f.eventTypes, eventType)
-	f.payloads = append(f.payloads, payload)
+	f.events = append(f.events, events)
 	return nil
 }
 
@@ -82,15 +80,25 @@ func TestHandleTrigger_NewAlertWritesAlertAndOutboxEvent(t *testing.T) {
 	if len(store.created) != 1 {
 		t.Fatalf("created %d alerts, want 1", len(store.created))
 	}
-	if store.eventTypes[0] != EventTypeAlertTriggered {
-		t.Errorf("event type = %q, want %q", store.eventTypes[0], EventTypeAlertTriggered)
+	if len(store.events) != 1 || len(store.events[0]) != 2 {
+		t.Fatalf("events = %v, want one notification and one research event", store.events)
+	}
+	if store.events[0][0].EventType != EventTypeAlertTriggered {
+		t.Errorf("event type = %q, want %q", store.events[0][0].EventType, EventTypeAlertTriggered)
 	}
 	var payload map[string]interface{}
-	if err := json.Unmarshal(store.payloads[0], &payload); err != nil {
+	if err := json.Unmarshal(store.events[0][0].Payload, &payload); err != nil {
 		t.Fatalf("payload is not valid JSON: %v", err)
 	}
 	if payload["alert_id"] != "alt_001" {
 		t.Errorf("payload alert_id = %v, want alt_001", payload["alert_id"])
+	}
+	researchEvent := store.events[0][1]
+	if researchEvent.EventType != "research.requested" {
+		t.Errorf("research event type = %q, want research.requested", researchEvent.EventType)
+	}
+	if researchEvent.DedupKey == nil || *researchEvent.DedupKey != "alt_001" {
+		t.Errorf("research dedup key = %v, want alt_001", researchEvent.DedupKey)
 	}
 }
 

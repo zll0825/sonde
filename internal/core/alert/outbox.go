@@ -41,6 +41,15 @@ type OutboxEvent struct {
 	CreatedAt     time.Time
 }
 
+// PendingEvent is an event written in the same transaction as its owning
+// domain record. DedupKey is nil for one-shot events whose owning row already
+// supplies idempotency, and non-nil when reconciliation may enqueue the work.
+type PendingEvent struct {
+	EventType string
+	Payload   []byte
+	DedupKey  *string
+}
+
 // NewOutboxWorker creates a worker that polls at the given interval.
 func NewOutboxWorker(store OutboxStore, interval time.Duration) *OutboxWorker {
 	return &OutboxWorker{

@@ -28,12 +28,12 @@ func NewPostgresAlertStore(db *pgxpool.Pool) *PostgresAlertStore {
 	return &PostgresAlertStore{db: db}
 }
 
-// CreateAlertWithEvent inserts the alert row AND its outbox event in one
+// CreateAlertWithEvents inserts the alert row AND its outbox events in one
 // database transaction (ADR-5: no silent data loss). The unique partial index
 // idx_alerts_active_dedup (WHERE status='active') guarantees dedup at the DB
 // level: a concurrent insert that already created an active alert for the same
 // dedup_key raises PG 23505, which we translate to ErrDuplicateAlert.
-func (s *PostgresAlertStore) CreateAlertWithEvent(ctx context.Context, a model.Alert, eventType string, payload []byte) error {
+func (s *PostgresAlertStore) CreateAlertWithEvents(ctx context.Context, a model.Alert, events []alert.PendingEvent) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
@@ -65,16 +65,39 @@ func (s *PostgresAlertStore) CreateAlertWithEvent(ctx context.Context, a model.A
 		return fmt.Errorf("insert alert: %w", err)
 	}
 
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO event_outbox (event_type, payload) VALUES ($1, $2)
-	`, eventType, payload); err != nil {
-		return fmt.Errorf("insert outbox event: %w", err)
+	for _, event := range events {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO event_outbox (event_type, payload, dedup_key) VALUES ($1, $2, $3)
+		`, event.EventType, event.Payload, event.DedupKey); err != nil {
+			return fmt.Errorf("insert outbox event %s: %w", event.EventType, err)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
 	return nil
+}
+
+// GetAlertByID returns one persisted alert, or nil if it does not exist.
+func (s *PostgresAlertStore) GetAlertByID(ctx context.Context, alertID string) (*model.Alert, error) {
+	row := s.db.QueryRow(ctx, `
+		SELECT id, title, summary, severity, status,
+		       metric_id, rule_id, rule_version, rule_effective_from,
+		       detector_name, dedup_key, window_start, window_end,
+		       evidence, plugin_id, triggered_at, resolved_at
+		FROM alerts
+		WHERE id = $1
+	`, alertID)
+
+	alert, err := scanAlert(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("scan alert by id: %w", err)
+	}
+	return alert, nil
 }
 
 // GetActiveAlert returns the active alert for a dedup_key, or nil if none exists.
@@ -88,18 +111,29 @@ func (s *PostgresAlertStore) GetActiveAlert(ctx context.Context, dedupKey string
 		WHERE dedup_key = $1 AND status = 'active'
 	`, dedupKey)
 
-	var alert model.Alert
-	err := row.Scan(
-		&alert.ID, &alert.Title, &alert.Summary, &alert.Severity, &alert.Status,
-		&alert.MetricID, &alert.RuleID, &alert.RuleVersion, &alert.RuleEffectiveFrom,
-		&alert.DetectorName, &alert.DedupKey, &alert.WindowStart, &alert.WindowEnd,
-		&alert.Evidence, &alert.PluginID, &alert.TriggeredAt, &alert.ResolvedAt,
-	)
+	alert, err := scanAlert(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("scan active alert: %w", err)
+	}
+	return alert, nil
+}
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanAlert(row rowScanner) (*model.Alert, error) {
+	var alert model.Alert
+	if err := row.Scan(
+		&alert.ID, &alert.Title, &alert.Summary, &alert.Severity, &alert.Status,
+		&alert.MetricID, &alert.RuleID, &alert.RuleVersion, &alert.RuleEffectiveFrom,
+		&alert.DetectorName, &alert.DedupKey, &alert.WindowStart, &alert.WindowEnd,
+		&alert.Evidence, &alert.PluginID, &alert.TriggeredAt, &alert.ResolvedAt,
+	); err != nil {
+		return nil, err
 	}
 	return &alert, nil
 }

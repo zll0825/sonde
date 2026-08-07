@@ -13,7 +13,6 @@ import (
 	"capital_observatory/internal/core/alert"
 	"capital_observatory/internal/core/detector"
 	"capital_observatory/internal/core/ontology"
-	"capital_observatory/internal/core/research"
 	"capital_observatory/pkg/model"
 )
 
@@ -24,9 +23,9 @@ type ObservationQuerier interface {
 	GetObservations(ctx context.Context, metricUID string, since, until time.Time, limit int) ([]model.Observation, error)
 }
 
-// Pipeline orchestrates M3 (rule evaluation → alert) and M4 (research assembly)
-// after M2 ingestion succeeds. It is the single wiring point that turns the
-// previously-orphan detector/alert/research libraries into a live data flow.
+// Pipeline orchestrates M3 rule evaluation and durable alert creation after M2
+// ingestion succeeds. Research assembly is consumed independently from the
+// transactional research.requested event written with each new alert.
 //
 // Data flow (driven by PluginManager after a successful PushSnapshots):
 //
@@ -38,36 +37,32 @@ type ObservationQuerier interface {
 //	    → frequency-aware lookback window + row limit
 //	    → obsQuerier.GetObservations (bounded window + LIMIT)
 //	    → detector.EvaluateBatch
-//	    → alert.Engine.HandleTrigger (→ alerts + outbox)
-//	    → research.Assemble + SaveSnapshot
+//	    → alert.Engine.HandleTrigger (→ alerts + notification/research outbox)
 type Pipeline struct {
 	rules     *ontology.Store
 	obs       ObservationQuerier
-	research  *research.Assembler
 	detectors *detector.Engine
 	alerts    *alert.Engine
 }
 
-// NewPipeline creates a fully-wired M3+M4 evaluation pipeline.
+// NewPipeline creates a fully-wired M3 evaluation pipeline.
 func NewPipeline(
 	ruleStore *ontology.Store,
 	obsQuerier ObservationQuerier,
-	researchAsmer *research.Assembler,
 	detEngine *detector.Engine,
 	alertEng *alert.Engine,
 ) *Pipeline {
 	return &Pipeline{
 		rules:     ruleStore,
 		obs:       obsQuerier,
-		research:  researchAsmer,
 		detectors: detEngine,
 		alerts:    alertEng,
 	}
 }
 
-// EvaluateAndAlert 对某个 metric_id 的观测执行完整的 M3 → M4 流程：
-// 查规则 → 频率感知回看取观测 → 探测器评估 → 触发转告警（去重）→
-// 未复现的 active 告警自动 resolve → 组装研究快照。
+// EvaluateAndAlert 对某个 metric_id 的观测执行 M3 流程：查规则 → 频率感知
+// 回看取观测 → 探测器评估 → 触发转告警（去重）→ 未复现的 active 告警
+// 自动 resolve。新告警的研究快照由 durable outbox 消费者异步装配。
 //
 // 由 manager 在摄入落库之后调用，确保探测器查询能看到刚插入的行。
 // 不同 metric_id 可并发调用；alerts 唯一部分索引由数据库做行级互斥。
@@ -142,20 +137,6 @@ func (p *Pipeline) EvaluateAndAlert(ctx context.Context, metricID, pluginID stri
 				Str("rule", t.RuleName).
 				Msg("alert handle failed")
 			continue
-		}
-
-		// M4: assemble + persist research context.
-		rc, asmErr := p.research.Assemble(ctx, modelAlert)
-		if asmErr != nil {
-			log.Error().Err(asmErr).
-				Str("alert_id", modelAlert.ID).
-				Msg("research assembly failed")
-			continue
-		}
-		if snapErr := p.research.SaveSnapshot(ctx, rc); snapErr != nil {
-			log.Error().Err(snapErr).
-				Str("alert_id", modelAlert.ID).
-				Msg("research snapshot save failed")
 		}
 	}
 

@@ -15,6 +15,15 @@ import (
 // moved to status='failed' instead of staying 'pending' for retry.
 const maxDispatchAttempts = 5
 
+// ResearchLinkAudit exposes the alert-to-snapshot invariant and terminal work
+// failures for operational checks and release qualification.
+type ResearchLinkAudit struct {
+	MissingSnapshots   int64
+	DuplicateSnapshots int64
+	OrphanSnapshots    int64
+	FailedRequests     int64
+}
+
 // PostgresOutboxStore implements alert.OutboxStore against a PostgreSQL pool.
 type PostgresOutboxStore struct {
 	db *pgxpool.Pool
@@ -149,4 +158,73 @@ func (s *PostgresOutboxStore) ReconcileDetectionRequests(ctx context.Context) (i
 		return 0, fmt.Errorf("reconcile detection requests: %w", err)
 	}
 	return tag.RowsAffected(), nil
+}
+
+// ReconcileResearchRequests enqueues bounded, idempotent work for alerts that
+// predate the durable research event. Existing pending or failed work is left
+// untouched so retry ownership and terminal failure visibility are preserved.
+func (s *PostgresOutboxStore) ReconcileResearchRequests(ctx context.Context, limit int) (int64, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	tag, err := s.db.Exec(ctx, `
+		WITH candidates AS (
+			SELECT a.id
+			FROM alerts a
+			LEFT JOIN research_snapshots rs ON rs.alert_id = a.id
+			LEFT JOIN event_outbox eo
+			       ON eo.event_type = $1 AND eo.dedup_key = a.id
+			WHERE rs.alert_id IS NULL AND eo.id IS NULL
+			ORDER BY a.triggered_at ASC, a.id ASC
+			LIMIT $2
+		)
+		INSERT INTO event_outbox (event_type, payload, dedup_key)
+		SELECT $1, JSONB_BUILD_OBJECT('alert_id', id), id
+		FROM candidates
+		ON CONFLICT (event_type, dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING
+	`, coreevent.TypeResearchRequested, limit)
+	if err != nil {
+		return 0, fmt.Errorf("reconcile research requests: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
+// AuditResearchLinks counts broken one-to-one links and exhausted research
+// work. The duplicate/orphan counts should remain structurally zero because
+// research_snapshots.alert_id is both a primary key and an alert foreign key.
+func (s *PostgresOutboxStore) AuditResearchLinks(ctx context.Context) (ResearchLinkAudit, error) {
+	var audit ResearchLinkAudit
+	err := s.db.QueryRow(ctx, `
+		SELECT
+			(SELECT COUNT(*)
+			 FROM alerts a
+			 LEFT JOIN research_snapshots rs ON rs.alert_id = a.id
+			 WHERE rs.alert_id IS NULL),
+			(SELECT COALESCE(SUM(snapshot_count - 1), 0)
+			 FROM (
+				SELECT COUNT(*) AS snapshot_count
+				FROM research_snapshots
+				GROUP BY alert_id
+				HAVING COUNT(*) > 1
+			 ) duplicates),
+			(SELECT COUNT(*)
+			 FROM research_snapshots rs
+			 LEFT JOIN alerts a ON a.id = rs.alert_id
+			 WHERE a.id IS NULL),
+			(SELECT COUNT(*)
+			 FROM event_outbox eo
+			 LEFT JOIN research_snapshots rs ON rs.alert_id = eo.dedup_key
+			 WHERE eo.event_type = $1
+			   AND eo.status = 'failed'
+			   AND rs.alert_id IS NULL)
+	`, coreevent.TypeResearchRequested).Scan(
+		&audit.MissingSnapshots,
+		&audit.DuplicateSnapshots,
+		&audit.OrphanSnapshots,
+		&audit.FailedRequests,
+	)
+	if err != nil {
+		return ResearchLinkAudit{}, fmt.Errorf("audit research links: %w", err)
+	}
+	return audit, nil
 }

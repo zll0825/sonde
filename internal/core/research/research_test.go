@@ -11,34 +11,59 @@ import (
 
 // mockResearchStore is an in-memory ResearchStore for unit tests.
 type mockResearchStore struct {
-	observations []model.Observation
-	entity       *model.Entity
-	relations    []model.Relation
-	saveCalled   int
-	savedSnap    *model.ResearchSnapshot
-	queriedUID   string
+	observations   []model.Observation
+	entity         *model.Entity
+	relations      []model.Relation
+	observationErr error
+	entityErr      error
+	relationErr    error
+	saveErr        error
+	saveCalled     int
+	savedSnap      *model.ResearchSnapshot
+	queriedUID     string
 }
 
 func (m *mockResearchStore) GetObservations(_ context.Context, metricUID string, _, _ time.Time, _ int) ([]model.Observation, error) {
 	m.queriedUID = metricUID
-	return m.observations, nil
+	return m.observations, m.observationErr
 }
 
 func (m *mockResearchStore) GetEntityByID(_ context.Context, _ string) (*model.Entity, error) {
-	if m.entity == nil {
-		return nil, errors.New("not found")
-	}
-	return m.entity, nil
+	return m.entity, m.entityErr
 }
 
 func (m *mockResearchStore) GetRelatedEntities(_ context.Context, _ string) ([]model.Relation, error) {
-	return m.relations, nil
+	return m.relations, m.relationErr
 }
 
 func (m *mockResearchStore) SaveSnapshot(_ context.Context, snap model.ResearchSnapshot) error {
 	m.saveCalled++
 	m.savedSnap = &snap
-	return nil
+	return m.saveErr
+}
+
+func TestAssembler_Assemble_PropagatesTransientStoreFailure(t *testing.T) {
+	store := &mockResearchStore{observationErr: errors.New("database unavailable")}
+	now := time.Now()
+	alert := model.Alert{
+		ID:        "alt_retry",
+		MetricID:  "metric.retry",
+		WindowEnd: &now,
+		Evidence:  []byte(`{"metric_uid":"mtr_retry"}`),
+	}
+
+	_, err := NewAssembler(store).Assemble(context.Background(), alert)
+	if err == nil || !errors.Is(err, store.observationErr) {
+		t.Fatalf("Assemble() error = %v, want wrapped transient error", err)
+	}
+}
+
+func TestAssembler_Assemble_RejectsMalformedEvidence(t *testing.T) {
+	alert := model.Alert{ID: "alt_bad", Evidence: []byte(`{"broken"`)}
+
+	if _, err := NewAssembler(&mockResearchStore{}).Assemble(context.Background(), alert); err == nil {
+		t.Fatal("Assemble() accepted malformed evidence")
+	}
 }
 
 func TestAssembler_Assemble_BuildsContext(t *testing.T) {

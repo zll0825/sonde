@@ -12,6 +12,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	coreevent "capital_observatory/internal/core/event"
 	"capital_observatory/pkg/model"
 )
 
@@ -30,10 +31,10 @@ type Engine struct {
 
 // AlertStore is the persistence interface for alerts.
 type AlertStore interface {
-	// CreateAlertWithEvent inserts the alert row AND its outbox event in one
+	// CreateAlertWithEvents inserts the alert row AND its outbox events in one
 	// database transaction. Tier-1 events must never be emitted outside the
 	// transaction that produced them (ADR-5: no silent data loss).
-	CreateAlertWithEvent(ctx context.Context, alert model.Alert, eventType string, payload []byte) error
+	CreateAlertWithEvents(ctx context.Context, alert model.Alert, events []PendingEvent) error
 	ResolveAlert(ctx context.Context, dedupKey string, resolvedAt time.Time) error
 	GetActiveAlert(ctx context.Context, dedupKey string) (*model.Alert, error)
 
@@ -65,7 +66,7 @@ func (e *Engine) HandleTrigger(ctx context.Context, alert model.Alert) error {
 		return nil
 	}
 
-	payload, err := json.Marshal(map[string]interface{}{
+	notificationPayload, err := json.Marshal(map[string]interface{}{
 		"alert_id":     alert.ID,
 		"title":        alert.Title,
 		"summary":      alert.Summary,
@@ -77,13 +78,23 @@ func (e *Engine) HandleTrigger(ctx context.Context, alert model.Alert) error {
 	if err != nil {
 		return fmt.Errorf("marshal alert event payload: %w", err)
 	}
+	researchRequest := coreevent.NewResearchRequest(alert.ID)
+	researchPayload, err := json.Marshal(researchRequest)
+	if err != nil {
+		return fmt.Errorf("marshal research request payload: %w", err)
+	}
+	researchKey := researchRequest.AlertID
 
 	log.Info().
 		Str("title", alert.Title).
 		Str("metric", alert.MetricID).
 		Str("severity", string(alert.Severity)).
 		Msg("alert triggered")
-	if err := e.store.CreateAlertWithEvent(ctx, alert, EventTypeAlertTriggered, payload); err != nil {
+	events := []PendingEvent{
+		{EventType: EventTypeAlertTriggered, Payload: notificationPayload},
+		{EventType: coreevent.TypeResearchRequested, Payload: researchPayload, DedupKey: &researchKey},
+	}
+	if err := e.store.CreateAlertWithEvents(ctx, alert, events); err != nil {
 		if errors.Is(err, ErrDuplicateAlert) {
 			// Lost the insert race to a concurrent trigger — same outcome as dedup.
 			log.Debug().Str("dedup_key", alert.DedupKey).Msg("alert deduplicated by DB index")

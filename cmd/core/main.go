@@ -26,6 +26,7 @@ import (
 	"capital_observatory/internal/core/pluginmgr"
 	"capital_observatory/internal/core/research"
 	"capital_observatory/internal/core/store"
+	"capital_observatory/pkg/model"
 	pb "capital_observatory/pkg/proto/plugin/v1"
 )
 
@@ -135,12 +136,20 @@ func main() {
 	// ── M4: research assembly ──────────────────────────────────────────────────
 	researchStore := store.NewPostgresResearchStore(db)
 	researchAsm := research.NewAssembler(researchStore)
+	outboxWorker.RegisterHandler(coreevent.TypeResearchRequested, func(ctx context.Context, ev alert.OutboxEvent) error {
+		researchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := handleResearchRequest(researchCtx, ev, alertStore, researchAsm); err != nil {
+			return err
+		}
+		return nil
+	})
 
 	// ── C7: command_log control-plane ──────────────────────────────────────────
 	cmdStore := store.NewPostgresCommandStore(db)
 
 	// ── Manager (wires M1–M5; researchStore doubles as the observation querier) ─
-	mgr := pluginmgr.NewManager(repo, db, detEngine, alertEng, researchAsm, researchStore, cmdStore)
+	mgr := pluginmgr.NewManager(repo, db, detEngine, alertEng, researchStore, cmdStore)
 	handler := pluginmgr.NewHandler(mgr)
 
 	// Durable observation -> detection consumer. The observation and this work
@@ -162,6 +171,33 @@ func main() {
 		log.Error().Err(err).Msg("detection request reconciliation failed")
 	} else if count > 0 {
 		log.Info().Int64("count", count).Msg("reconciled detection requests")
+	}
+
+	const researchReconcileBatch = 100
+	var reconciledResearch int64
+	for {
+		count, err := outboxStore.ReconcileResearchRequests(ctx, researchReconcileBatch)
+		if err != nil {
+			log.Error().Err(err).Msg("research request reconciliation failed")
+			break
+		}
+		reconciledResearch += count
+		if count < researchReconcileBatch {
+			break
+		}
+	}
+	if reconciledResearch > 0 {
+		log.Info().Int64("count", reconciledResearch).Msg("reconciled research requests")
+	}
+	if audit, err := outboxStore.AuditResearchLinks(ctx); err != nil {
+		log.Error().Err(err).Msg("research link audit failed")
+	} else {
+		log.Info().
+			Int64("missing", audit.MissingSnapshots).
+			Int64("duplicates", audit.DuplicateSnapshots).
+			Int64("orphans", audit.OrphanSnapshots).
+			Int64("failed", audit.FailedRequests).
+			Msg("research link audit")
 	}
 
 	// ── CommandDispatcher: poll command_log → dispatch → wait for CommandAck ────
@@ -195,6 +231,48 @@ func main() {
 	<-ctx.Done()
 	log.Info().Msg("shutting down...")
 	srv.GracefulStop()
+}
+
+type alertByIDStore interface {
+	GetAlertByID(ctx context.Context, alertID string) (*model.Alert, error)
+}
+
+type researchRequestAssembler interface {
+	Assemble(ctx context.Context, alert model.Alert) (*research.ResearchContext, error)
+	SaveSnapshot(ctx context.Context, rc *research.ResearchContext) error
+}
+
+// handleResearchRequest consumes only research work. Keeping this separate
+// from alert.triggered ensures an assembly retry never resends a notification.
+func handleResearchRequest(
+	ctx context.Context,
+	ev alert.OutboxEvent,
+	alerts alertByIDStore,
+	assembler researchRequestAssembler,
+) error {
+	var req coreevent.ResearchRequest
+	if err := json.Unmarshal(ev.Payload, &req); err != nil {
+		return fmt.Errorf("unmarshal research request: %w", err)
+	}
+	if err := req.Validate(); err != nil {
+		return err
+	}
+	persistedAlert, err := alerts.GetAlertByID(ctx, req.AlertID)
+	if err != nil {
+		return fmt.Errorf("load alert %s: %w", req.AlertID, err)
+	}
+	if persistedAlert == nil {
+		return fmt.Errorf("load alert %s: not found", req.AlertID)
+	}
+	researchContext, err := assembler.Assemble(ctx, *persistedAlert)
+	if err != nil {
+		return fmt.Errorf("assemble research for %s: %w", req.AlertID, err)
+	}
+	if err := assembler.SaveSnapshot(ctx, researchContext); err != nil {
+		return fmt.Errorf("save research snapshot for %s: %w", req.AlertID, err)
+	}
+	log.Info().Str("alert_id", req.AlertID).Msg("research snapshot assembled")
+	return nil
 }
 
 // signalContext returns a context that cancels on SIGINT or SIGTERM.

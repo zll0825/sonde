@@ -509,12 +509,16 @@ func TestIntegration_RuleReview_HumanOverrideWins(t *testing.T) {
 	}
 
 	// First insert must succeed.
-	if err := alertStore.CreateAlertWithEvent(ctx, makeAlert("alert_001"), "alert.raised", []byte(`{"id":"alert_001"}`)); err != nil {
-		t.Fatalf("first CreateAlertWithEvent: %v", err)
+	if err := alertStore.CreateAlertWithEvents(ctx, makeAlert("alert_001"), []alert.PendingEvent{
+		{EventType: "alert.raised", Payload: []byte(`{"id":"alert_001"}`)},
+	}); err != nil {
+		t.Fatalf("first CreateAlertWithEvents: %v", err)
 	}
 
 	// Second insert with same dedup_key must return alert.ErrDuplicateAlert.
-	err = alertStore.CreateAlertWithEvent(ctx, makeAlert("alert_002"), "alert.raised", []byte(`{"id":"alert_002"}`))
+	err = alertStore.CreateAlertWithEvents(ctx, makeAlert("alert_002"), []alert.PendingEvent{
+		{EventType: "alert.raised", Payload: []byte(`{"id":"alert_002"}`)},
+	})
 	if err == nil {
 		t.Fatal("expected ErrDuplicateAlert on second insert with same dedup_key (both active), got nil")
 	}

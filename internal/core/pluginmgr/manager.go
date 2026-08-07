@@ -14,7 +14,6 @@ import (
 	"capital_observatory/internal/core/detector"
 	"capital_observatory/internal/core/metric"
 	"capital_observatory/internal/core/ontology"
-	"capital_observatory/internal/core/research"
 	"capital_observatory/internal/core/store"
 	pb "capital_observatory/pkg/proto/plugin/v1"
 )
@@ -37,7 +36,6 @@ type Manager struct {
 	// (e.g. percentile, trend) can be added after construction.
 	detectorEngine *detector.Engine
 	alertEngine    *alert.Engine
-	researchAsm    *research.Assembler
 
 	db metric.DB
 
@@ -88,7 +86,6 @@ func NewManager(
 	db metric.DB,
 	detEngine *detector.Engine,
 	alertEng *alert.Engine,
-	researchAsmer *research.Assembler,
 	obsQuerier ObservationQuerier,
 	cmdStore store.CommandStore,
 ) *Manager {
@@ -100,11 +97,10 @@ func NewManager(
 		db:             db,
 		detectorEngine: detEngine,
 		alertEngine:    alertEng,
-		researchAsm:    researchAsmer,
 		healthTimeout:  60 * time.Second,
 	}
 	m.ingester = metric.NewIngester(store, db)
-	m.pipeline = NewPipeline(store, obsQuerier, researchAsmer, detEngine, alertEng)
+	m.pipeline = NewPipeline(store, obsQuerier, detEngine, alertEng)
 	return m
 }
 
