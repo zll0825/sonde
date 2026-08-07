@@ -155,11 +155,11 @@ func assignScan(dst, src any) error {
 
 func TestLoadStatus_EmptyDB(t *testing.T) {
 	db := &fakeDB{}
-	db.stub(newFakeRows())         // plugins
-	db.stub(newFakeRows())         // metric definitions
-	db.stub(newFakeRows())         // latest observations
-	db.stub(newFakeRows())         // series
-	db.stub(newFakeRows([]any{0})) // today's alert count
+	db.stub(newFakeRows())                  // plugins
+	db.stub(newFakeRows())                  // metric definitions
+	db.stub(newFakeRows())                  // latest observations
+	db.stub(newFakeRows())                  // series
+	db.stub(newFakeRows([]any{0, 0, 0, 0})) // today's alert counts
 	defer db.exhausted(t)
 
 	p, err := loadStatus(context.Background(), db, time.Now())
@@ -204,7 +204,7 @@ func TestLoadStatus_JoinAndFreshness(t *testing.T) {
 		[]any{"mtr_aaa", now.Add(-4 * 24 * time.Hour), 312.0},
 		[]any{"mtr_bbb", now.Add(-6 * time.Hour), 12300.0},
 	))
-	db.stub(newFakeRows([]any{2})) // today's alert count
+	db.stub(newFakeRows([]any{2, 3, 1, 4})) // today's alert counts
 	defer db.exhausted(t)
 
 	p, err := loadStatus(context.Background(), db, now)
@@ -227,6 +227,12 @@ func TestLoadStatus_JoinAndFreshness(t *testing.T) {
 
 	if p.Budget.Today != 2 {
 		t.Errorf("budget today = %d, want 2", p.Budget.Today)
+	}
+	if p.Budget.RealToday != 2 || p.Budget.MockToday != 3 || p.Budget.TestToday != 1 || p.Budget.UnknownToday != 4 {
+		t.Errorf("detailed budget = %+v", p.Budget)
+	}
+	if p.Budget.RealLimit != 10 || p.Budget.RealOverBudget {
+		t.Errorf("real budget = %+v, want limit 10 and not over", p.Budget)
 	}
 
 	if len(p.Metrics) != 3 {
@@ -270,16 +276,32 @@ func TestLoadStatus_JoinAndFreshness(t *testing.T) {
 	}
 }
 
+func TestQueryTodayAlertCounts_OnlyRealDrivesBudget(t *testing.T) {
+	db := (&fakeDB{}).stub(newFakeRows([]any{11, 200, 300, 400}))
+	defer db.exhausted(t)
+
+	got, err := queryTodayAlertCounts(context.Background(), db)
+	if err != nil {
+		t.Fatalf("queryTodayAlertCounts: %v", err)
+	}
+	if got.Today != 11 || got.Limit != 10 || got.RealToday != 11 || !got.RealOverBudget {
+		t.Errorf("real budget = %+v, want 11/10 over budget with compatibility aliases", got)
+	}
+	if got.MockToday != 200 || got.TestToday != 300 || got.UnknownToday != 400 {
+		t.Errorf("categorized counts = %+v", got)
+	}
+}
+
 // TestStatusHandler_EmptyDB_JSONShape exercises the full HTTP path (httptest,
 // mirroring middleware_test.go) against an empty database: 200, all four
 // top-level keys, arrays serialize as [] rather than null.
 func TestStatusHandler_EmptyDB_JSONShape(t *testing.T) {
 	db := &fakeDB{}
-	db.stub(newFakeRows())         // plugins
-	db.stub(newFakeRows())         // metric definitions
-	db.stub(newFakeRows())         // latest observations
-	db.stub(newFakeRows())         // series
-	db.stub(newFakeRows([]any{0})) // today's alert count
+	db.stub(newFakeRows())                  // plugins
+	db.stub(newFakeRows())                  // metric definitions
+	db.stub(newFakeRows())                  // latest observations
+	db.stub(newFakeRows())                  // series
+	db.stub(newFakeRows([]any{0, 0, 0, 0})) // today's alert counts
 	defer db.exhausted(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)

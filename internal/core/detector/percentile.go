@@ -130,6 +130,8 @@ func buildPercentileTrigger(rule model.Rule, sorted []model.Observation, windowS
 			"sample_size":          len(sorted),
 			"metric_uid":           newest.MetricUID,
 		},
-		DedupKey: ComputeDedupKey(rule.MetricID, rule.ID),
+		DedupKey:       ComputeDedupKey(rule.MetricID, rule.ID),
+		SourceProvider: newest.SourceProvider,
+		SourceClass:    model.NormalizeSourceClass(newest.SourceClass),
 	}
 }

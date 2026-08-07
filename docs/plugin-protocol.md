@@ -196,6 +196,13 @@ message RegisterPluginResponse {
 ### 数据推送
 
 ```protobuf
+enum SourceClass {
+  SOURCE_CLASS_UNSPECIFIED = 0; // absent/legacy/invalid -> unknown
+  SOURCE_CLASS_REAL = 1;
+  SOURCE_CLASS_MOCK = 2;
+  SOURCE_CLASS_TEST = 3;
+}
+
 // Domain: Observation snapshot
 message MetricSnapshot {
   string metric_id = 1;                // "gold.etf.net_inflow"
@@ -210,6 +217,7 @@ message MetricSnapshot {
 
   QualityGrade quality_grade = 9;
   double quality_confidence = 10;      // Plugin self-assessment
+  SourceClass source_class = 11;       // explicit per snapshot; never inferred from names
 }
 
 message PushSnapshotsRequest {

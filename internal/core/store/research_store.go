@@ -45,7 +45,7 @@ func (s *PostgresResearchStore) GetObservations(ctx context.Context, metricUID s
 	}
 	rows, err := s.db.Query(ctx, `
 		SELECT time, metric_id, metric_uid, value, labels, labels_hash,
-		       source_plugin, source_plugin_version, source_provider, source_fetched_at,
+		       source_plugin, source_plugin_version, source_provider, source_class, source_fetched_at,
 		       quality_grade, quality_confidence, system_quality_score
 		FROM observations
 		WHERE metric_uid = $1 AND time >= $2 AND time <= $3
@@ -62,7 +62,7 @@ func (s *PostgresResearchStore) GetObservations(ctx context.Context, metricUID s
 		var obs model.Observation
 		if err := rows.Scan(
 			&obs.Time, &obs.MetricID, &obs.MetricUID, &obs.Value, &obs.Labels, &obs.LabelsHash,
-			&obs.SourcePlugin, &obs.SourcePluginVersion, &obs.SourceProvider, &obs.SourceFetchedAt,
+			&obs.SourcePlugin, &obs.SourcePluginVersion, &obs.SourceProvider, &obs.SourceClass, &obs.SourceFetchedAt,
 			&obs.QualityGrade, &obs.QualityConfidence, &obs.SystemQualityScore,
 		); err != nil {
 			return nil, fmt.Errorf("scan observation: %w", err)

@@ -44,18 +44,19 @@ func (s *PostgresAlertStore) CreateAlertWithEvents(ctx context.Context, a model.
 		INSERT INTO alerts (
 			id, title, summary, severity, status,
 			metric_id, rule_id, rule_version, rule_effective_from,
-			detector_name, dedup_key, window_start, window_end,
-			evidence, plugin_id, triggered_at
+				detector_name, dedup_key, window_start, window_end,
+				evidence, plugin_id, source_provider, source_class, triggered_at
 		) VALUES (
 			$1, $2, $3, $4, 'active',
 			$5, $6, $7, $8,
 			$9, $10, $11, $12,
-			$13, $14, $15
+				$13, $14, $15, $16, $17
 		)
 	`, a.ID, a.Title, a.Summary, string(a.Severity),
 		a.MetricID, a.RuleID, a.RuleVersion, a.RuleEffectiveFrom,
 		a.DetectorName, a.DedupKey, a.WindowStart, a.WindowEnd,
-		a.Evidence, a.PluginID, a.TriggeredAt)
+		a.Evidence, a.PluginID, a.SourceProvider,
+		model.NormalizeSourceClass(a.SourceClass), a.TriggeredAt)
 
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -85,7 +86,8 @@ func (s *PostgresAlertStore) GetAlertByID(ctx context.Context, alertID string) (
 		SELECT id, title, summary, severity, status,
 		       metric_id, rule_id, rule_version, rule_effective_from,
 		       detector_name, dedup_key, window_start, window_end,
-		       evidence, plugin_id, triggered_at, resolved_at
+		       evidence, plugin_id, source_provider, source_class,
+		       dedup_count, last_deduplicated_at, triggered_at, resolved_at
 		FROM alerts
 		WHERE id = $1
 	`, alertID)
@@ -106,7 +108,8 @@ func (s *PostgresAlertStore) GetActiveAlert(ctx context.Context, dedupKey string
 		SELECT id, title, summary, severity, status,
 		       metric_id, rule_id, rule_version, rule_effective_from,
 		       detector_name, dedup_key, window_start, window_end,
-		       evidence, plugin_id, triggered_at, resolved_at
+		       evidence, plugin_id, source_provider, source_class,
+		       dedup_count, last_deduplicated_at, triggered_at, resolved_at
 		FROM alerts
 		WHERE dedup_key = $1 AND status = 'active'
 	`, dedupKey)
@@ -131,11 +134,32 @@ func scanAlert(row rowScanner) (*model.Alert, error) {
 		&alert.ID, &alert.Title, &alert.Summary, &alert.Severity, &alert.Status,
 		&alert.MetricID, &alert.RuleID, &alert.RuleVersion, &alert.RuleEffectiveFrom,
 		&alert.DetectorName, &alert.DedupKey, &alert.WindowStart, &alert.WindowEnd,
-		&alert.Evidence, &alert.PluginID, &alert.TriggeredAt, &alert.ResolvedAt,
+		&alert.Evidence, &alert.PluginID, &alert.SourceProvider, &alert.SourceClass,
+		&alert.DedupCount, &alert.LastDeduplicatedAt, &alert.TriggeredAt, &alert.ResolvedAt,
 	); err != nil {
 		return nil, err
 	}
 	return &alert, nil
+}
+
+// RecordDeduplication durably records one trigger folded into an existing
+// active alert. A zero-row update is an error because callers rely on the
+// detection outbox retry to avoid silently losing the audit record.
+func (s *PostgresAlertStore) RecordDeduplication(ctx context.Context, dedupKey string, at time.Time) error {
+	tag, err := s.db.Exec(ctx, `
+		UPDATE alerts
+		SET dedup_count = dedup_count + 1,
+		    last_deduplicated_at = $2,
+		    updated_at = NOW()
+		WHERE dedup_key = $1 AND status = 'active'
+	`, dedupKey, at)
+	if err != nil {
+		return fmt.Errorf("record alert deduplication: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("record alert deduplication: active alert %q not found", dedupKey)
+	}
+	return nil
 }
 
 // ResolveAlert sets status='resolved' for the active alert matching dedupKey.
@@ -163,7 +187,8 @@ func (s *PostgresAlertStore) GetActiveAlertsByMetric(ctx context.Context, metric
 		SELECT id, title, summary, severity, status,
 		       metric_id, rule_id, rule_version, rule_effective_from,
 		       detector_name, dedup_key, window_start, window_end,
-		       evidence, plugin_id, triggered_at, resolved_at
+		       evidence, plugin_id, source_provider, source_class,
+		       dedup_count, last_deduplicated_at, triggered_at, resolved_at
 		FROM alerts
 		WHERE metric_id = $1 AND status = 'active'
 		ORDER BY triggered_at DESC
@@ -180,7 +205,8 @@ func (s *PostgresAlertStore) GetActiveAlertsByMetric(ctx context.Context, metric
 			&a.ID, &a.Title, &a.Summary, &a.Severity, &a.Status,
 			&a.MetricID, &a.RuleID, &a.RuleVersion, &a.RuleEffectiveFrom,
 			&a.DetectorName, &a.DedupKey, &a.WindowStart, &a.WindowEnd,
-			&a.Evidence, &a.PluginID, &a.TriggeredAt, &a.ResolvedAt,
+			&a.Evidence, &a.PluginID, &a.SourceProvider, &a.SourceClass,
+			&a.DedupCount, &a.LastDeduplicatedAt, &a.TriggeredAt, &a.ResolvedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan active alert: %w", err)
 		}

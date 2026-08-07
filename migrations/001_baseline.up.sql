@@ -188,6 +188,9 @@ CREATE TABLE observations (
     source_plugin           TEXT NOT NULL,
     source_plugin_version   TEXT NOT NULL,
     source_provider         TEXT NOT NULL,
+    source_class            TEXT NOT NULL DEFAULT 'unknown'
+        CONSTRAINT observations_source_class_check
+        CHECK (source_class IN ('real', 'mock', 'test', 'unknown')),
     source_fetched_at       TIMESTAMPTZ NOT NULL,
 
     quality_grade           TEXT DEFAULT 'delayed',
@@ -250,6 +253,13 @@ CREATE TABLE alerts (
     window_end      TIMESTAMPTZ,
     evidence        JSONB DEFAULT '{}',
     plugin_id       TEXT NOT NULL REFERENCES plugins(id),
+    source_provider TEXT NOT NULL DEFAULT '',
+    source_class    TEXT NOT NULL DEFAULT 'unknown'
+        CONSTRAINT alerts_source_class_check
+        CHECK (source_class IN ('real', 'mock', 'test', 'unknown')),
+    dedup_count     INT NOT NULL DEFAULT 0
+        CONSTRAINT alerts_dedup_count_check CHECK (dedup_count >= 0),
+    last_deduplicated_at TIMESTAMPTZ,
     triggered_at    TIMESTAMPTZ DEFAULT NOW(),
     resolved_at     TIMESTAMPTZ,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
@@ -259,6 +269,7 @@ CREATE TABLE alerts (
 CREATE INDEX idx_alerts_status ON alerts(status);
 CREATE INDEX idx_alerts_severity ON alerts(severity);
 CREATE INDEX idx_alerts_triggered ON alerts(triggered_at DESC);
+CREATE INDEX idx_alerts_source_class_triggered ON alerts(source_class, triggered_at DESC);
 CREATE UNIQUE INDEX idx_alerts_active_dedup ON alerts(dedup_key) WHERE status = 'active';
 
 -- ============================================================

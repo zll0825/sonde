@@ -4,6 +4,28 @@ package model
 
 import "time"
 
+// SourceClass identifies how an individual provider snapshot was produced.
+// It is explicit provenance: callers must never derive it from plugin or
+// provider names. NormalizeSourceClass protects persistence/API boundaries
+// from missing or future values.
+type SourceClass string
+
+const (
+	SourceClassReal    SourceClass = "real"
+	SourceClassMock    SourceClass = "mock"
+	SourceClassTest    SourceClass = "test"
+	SourceClassUnknown SourceClass = "unknown"
+)
+
+func NormalizeSourceClass(class SourceClass) SourceClass {
+	switch class {
+	case SourceClassReal, SourceClassMock, SourceClassTest, SourceClassUnknown:
+		return class
+	default:
+		return SourceClassUnknown
+	}
+}
+
 // ---- Entity ----
 
 type Entity struct {
@@ -56,19 +78,20 @@ type MetricDefinition struct {
 // ---- Observation ----
 
 type Observation struct {
-	Time                time.Time `json:"time"`
-	MetricID            string    `json:"metric_id"`
-	MetricUID           string    `json:"metric_uid"`
-	Value               float64   `json:"value"`
-	Labels              []byte    `json:"labels,omitempty"` // JSONB
-	LabelsHash          string    `json:"labels_hash"`
-	SourcePlugin        string    `json:"source_plugin"`
-	SourcePluginVersion string    `json:"source_plugin_version"`
-	SourceProvider      string    `json:"source_provider"`
-	SourceFetchedAt     time.Time `json:"source_fetched_at"`
-	QualityGrade        string    `json:"quality_grade"`
-	QualityConfidence   float64   `json:"quality_confidence"`
-	SystemQualityScore  *float64  `json:"system_quality_score,omitempty"`
+	Time                time.Time   `json:"time"`
+	MetricID            string      `json:"metric_id"`
+	MetricUID           string      `json:"metric_uid"`
+	Value               float64     `json:"value"`
+	Labels              []byte      `json:"labels,omitempty"` // JSONB
+	LabelsHash          string      `json:"labels_hash"`
+	SourcePlugin        string      `json:"source_plugin"`
+	SourcePluginVersion string      `json:"source_plugin_version"`
+	SourceProvider      string      `json:"source_provider"`
+	SourceClass         SourceClass `json:"source_class"`
+	SourceFetchedAt     time.Time   `json:"source_fetched_at"`
+	QualityGrade        string      `json:"quality_grade"`
+	QualityConfidence   float64     `json:"quality_confidence"`
+	SystemQualityScore  *float64    `json:"system_quality_score,omitempty"`
 }
 
 // ---- Relation ----
@@ -135,23 +158,27 @@ const (
 // ---- Alert ----
 
 type Alert struct {
-	ID                string     `json:"id"`
-	Title             string     `json:"title"`
-	Summary           string     `json:"summary"`
-	Severity          Severity   `json:"severity"`
-	Status            string     `json:"status"` // active | resolved
-	MetricID          string     `json:"metric_id"`
-	RuleID            int        `json:"rule_id"`
-	RuleVersion       int        `json:"rule_version"`
-	RuleEffectiveFrom time.Time  `json:"rule_effective_from"`
-	DetectorName      string     `json:"detector_name"`
-	DedupKey          string     `json:"dedup_key"`
-	WindowStart       *time.Time `json:"window_start,omitempty"`
-	WindowEnd         *time.Time `json:"window_end,omitempty"`
-	Evidence          []byte     `json:"evidence"` // JSONB
-	PluginID          string     `json:"plugin_id"`
-	TriggeredAt       time.Time  `json:"triggered_at"`
-	ResolvedAt        *time.Time `json:"resolved_at,omitempty"`
+	ID                 string      `json:"id"`
+	Title              string      `json:"title"`
+	Summary            string      `json:"summary"`
+	Severity           Severity    `json:"severity"`
+	Status             string      `json:"status"` // active | resolved
+	MetricID           string      `json:"metric_id"`
+	RuleID             int         `json:"rule_id"`
+	RuleVersion        int         `json:"rule_version"`
+	RuleEffectiveFrom  time.Time   `json:"rule_effective_from"`
+	DetectorName       string      `json:"detector_name"`
+	DedupKey           string      `json:"dedup_key"`
+	WindowStart        *time.Time  `json:"window_start,omitempty"`
+	WindowEnd          *time.Time  `json:"window_end,omitempty"`
+	Evidence           []byte      `json:"evidence"` // JSONB
+	PluginID           string      `json:"plugin_id"`
+	SourceProvider     string      `json:"source_provider"`
+	SourceClass        SourceClass `json:"source_class"`
+	DedupCount         int         `json:"dedup_count"`
+	LastDeduplicatedAt *time.Time  `json:"last_deduplicated_at,omitempty"`
+	TriggeredAt        time.Time   `json:"triggered_at"`
+	ResolvedAt         *time.Time  `json:"resolved_at,omitempty"`
 }
 
 // ---- Research Snapshot ----

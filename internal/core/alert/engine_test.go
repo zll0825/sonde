@@ -12,12 +12,14 @@ import (
 
 // fakeAlertStore records calls so tests can assert dedup + outbox behavior.
 type fakeAlertStore struct {
-	active       map[string]*model.Alert
-	getErr       error
-	created      []model.Alert
-	events       [][]PendingEvent
-	createErr    error
-	resolvedKeys []string
+	active           map[string]*model.Alert
+	getErr           error
+	created          []model.Alert
+	events           [][]PendingEvent
+	createErr        error
+	resolvedKeys     []string
+	deduplicatedKeys []string
+	dedupErr         error
 }
 
 func newFakeAlertStore() *fakeAlertStore {
@@ -43,6 +45,14 @@ func (f *fakeAlertStore) GetActiveAlert(_ context.Context, dedupKey string) (*mo
 		return nil, f.getErr
 	}
 	return f.active[dedupKey], nil
+}
+
+func (f *fakeAlertStore) RecordDeduplication(_ context.Context, dedupKey string, _ time.Time) error {
+	if f.dedupErr != nil {
+		return f.dedupErr
+	}
+	f.deduplicatedKeys = append(f.deduplicatedKeys, dedupKey)
+	return nil
 }
 
 func (f *fakeAlertStore) GetActiveAlertsByMetric(_ context.Context, metricID string) ([]model.Alert, error) {
@@ -115,6 +125,34 @@ func TestHandleTrigger_ActiveAlertDeduplicates(t *testing.T) {
 	}
 	if len(store.created) != 0 {
 		t.Errorf("created %d alerts for a deduplicated trigger, want 0", len(store.created))
+	}
+	if len(store.deduplicatedKeys) != 1 || store.deduplicatedKeys[0] != "m1|42" {
+		t.Errorf("dedup audit keys = %v, want [m1|42]", store.deduplicatedKeys)
+	}
+}
+
+func TestHandleTrigger_DedupAuditErrorPropagates(t *testing.T) {
+	store := newFakeAlertStore()
+	existing := sampleAlert("m1|42")
+	store.active["m1|42"] = &existing
+	store.dedupErr = errors.New("db down")
+
+	err := NewEngine(store).HandleTrigger(context.Background(), sampleAlert("m1|42"))
+	if err == nil {
+		t.Fatal("expected durable dedup audit failure")
+	}
+}
+
+func TestHandleTrigger_InsertRaceRecordsDedup(t *testing.T) {
+	store := newFakeAlertStore()
+	store.createErr = ErrDuplicateAlert
+
+	err := NewEngine(store).HandleTrigger(context.Background(), sampleAlert("m1|42"))
+	if err != nil {
+		t.Fatalf("HandleTrigger: %v", err)
+	}
+	if len(store.deduplicatedKeys) != 1 || store.deduplicatedKeys[0] != "m1|42" {
+		t.Errorf("dedup audit keys = %v, want [m1|42]", store.deduplicatedKeys)
 	}
 }
 

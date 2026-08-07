@@ -37,6 +37,7 @@ type AlertStore interface {
 	CreateAlertWithEvents(ctx context.Context, alert model.Alert, events []PendingEvent) error
 	ResolveAlert(ctx context.Context, dedupKey string, resolvedAt time.Time) error
 	GetActiveAlert(ctx context.Context, dedupKey string) (*model.Alert, error)
+	RecordDeduplication(ctx context.Context, dedupKey string, at time.Time) error
 
 	// GetActiveAlertsByMetric returns all currently-active alerts for a given
 	// metric_id, keyed by dedup_key. Used by the auto-resolve sweeper to find
@@ -59,6 +60,9 @@ func (e *Engine) HandleTrigger(ctx context.Context, alert model.Alert) error {
 		return fmt.Errorf("get active alert: %w", err)
 	}
 	if existing != nil {
+		if err := e.store.RecordDeduplication(ctx, alert.DedupKey, alert.TriggeredAt); err != nil {
+			return fmt.Errorf("record active alert deduplication: %w", err)
+		}
 		log.Debug().
 			Str("dedup_key", alert.DedupKey).
 			Str("title", alert.Title).
@@ -96,7 +100,11 @@ func (e *Engine) HandleTrigger(ctx context.Context, alert model.Alert) error {
 	}
 	if err := e.store.CreateAlertWithEvents(ctx, alert, events); err != nil {
 		if errors.Is(err, ErrDuplicateAlert) {
-			// Lost the insert race to a concurrent trigger — same outcome as dedup.
+			// Lost the insert race to a concurrent trigger. Audit this duplicate
+			// through a separate atomic update after the failed transaction rolls back.
+			if auditErr := e.store.RecordDeduplication(ctx, alert.DedupKey, alert.TriggeredAt); auditErr != nil {
+				return fmt.Errorf("record raced alert deduplication: %w", auditErr)
+			}
 			log.Debug().Str("dedup_key", alert.DedupKey).Msg("alert deduplicated by DB index")
 			return nil
 		}

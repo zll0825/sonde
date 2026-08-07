@@ -12,6 +12,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"capital_observatory/pkg/model"
 	"capital_observatory/pkg/pluginrunner"
 )
 
@@ -74,12 +75,13 @@ func (y *YahooCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snaps
 
 	snapshots := []pluginrunner.Snapshot{
 		{
-			MetricID:  "gld.ass.price",
-			Value:     price,
-			Timestamp: fetchedAt,
-			FetchedAt: fetchedAt,
-			Provider:  providerYahoo,
-			Grade:     "delayed", // Yahoo data is ~15min delayed, not realtime
+			MetricID:    "gld.ass.price",
+			Value:       price,
+			Timestamp:   fetchedAt,
+			FetchedAt:   fetchedAt,
+			Provider:    providerYahoo,
+			SourceClass: model.SourceClassReal,
+			Grade:       "delayed", // Yahoo data is ~15min delayed, not realtime
 		},
 	}
 
@@ -119,12 +121,13 @@ func (y *YahooCollector) GetSnapshotsForWindow(ctx context.Context, start, end t
 			continue // market holiday / missing bar
 		}
 		snapshots = append(snapshots, pluginrunner.Snapshot{
-			MetricID:  "gld.ass.price",
-			Value:     *closes[i],
-			Timestamp: ts,
-			FetchedAt: fetchedAt,
-			Provider:  providerYahoo,
-			Grade:     "delayed",
+			MetricID:    "gld.ass.price",
+			Value:       *closes[i],
+			Timestamp:   ts,
+			FetchedAt:   fetchedAt,
+			Provider:    providerYahoo,
+			SourceClass: model.SourceClassReal,
+			Grade:       "delayed",
 		})
 	}
 

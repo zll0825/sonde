@@ -1,6 +1,37 @@
 package collector
 
-import "testing"
+import (
+	"context"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+
+	"capital_observatory/pkg/model"
+)
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func TestFREDCollector_ClassifiesUpstreamSnapshotsAsReal(t *testing.T) {
+	f := &FREDCollector{
+		apiKey: "test",
+		client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			body := `{"observations":[{"date":"2026-08-01","value":"4.2"}]}`
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+		})},
+	}
+	snaps, err := f.GetSnapshots(context.Background())
+	if err != nil {
+		t.Fatalf("GetSnapshots: %v", err)
+	}
+	for _, snap := range snaps {
+		if snap.SourceClass != model.SourceClassReal {
+			t.Errorf("snapshot %q class = %q, want real", snap.MetricID, snap.SourceClass)
+		}
+	}
+}
 
 func TestParseFREDValue_Missing(t *testing.T) {
 	// FRED marks missing observations with ".".

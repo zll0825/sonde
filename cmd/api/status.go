@@ -7,13 +7,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-)
 
-// budgetLimit is the frontend's "today X/10" denominator and mirrors
-// internal/core/noise.DefaultBudgetPerDay (10). The API process runs
-// separately from core and must not import core internals — keep this in
-// sync when the budget default changes.
-const budgetLimit = 10
+	"capital_observatory/pkg/model"
+)
 
 // statusQuerier is the minimal query surface statusHandler needs. Production
 // passes *pgxpool.Pool; tests pass the handwritten fake in status_test.go
@@ -45,8 +41,14 @@ type pluginStatus struct {
 }
 
 type budgetStatus struct {
-	Today int `json:"today"`
-	Limit int `json:"limit"`
+	Today          int  `json:"today"` // compatibility alias for real_today
+	Limit          int  `json:"limit"` // compatibility alias for real_limit
+	RealToday      int  `json:"real_today"`
+	MockToday      int  `json:"mock_today"`
+	TestToday      int  `json:"test_today"`
+	UnknownToday   int  `json:"unknown_today"`
+	RealLimit      int  `json:"real_limit"`
+	RealOverBudget bool `json:"real_over_budget"`
 }
 
 // metricStatus carries the current definition joined with its newest
@@ -93,14 +95,14 @@ func loadStatus(ctx context.Context, db statusQuerier, now time.Time) (*statusPa
 	if err != nil {
 		return nil, fmt.Errorf("query observation series: %w", err)
 	}
-	today, err := queryTodayAlertCount(ctx, db)
+	budget, err := queryTodayAlertCounts(ctx, db)
 	if err != nil {
-		return nil, fmt.Errorf("query today alert count: %w", err)
+		return nil, fmt.Errorf("query today alert counts: %w", err)
 	}
 
 	p := &statusPayload{
 		Plugins: plugins,
-		Budget:  budgetStatus{Today: today, Limit: budgetLimit},
+		Budget:  budget,
 		Metrics: make([]metricStatus, 0, len(defs)),
 	}
 
@@ -229,21 +231,31 @@ func queryObservationSeries(ctx context.Context, db statusQuerier) (map[string][
 	return series, rows.Err()
 }
 
-// queryTodayAlertCount: design D3 query 5 — alerts triggered since the UTC
+// queryTodayAlertCounts aggregates alerts triggered since the UTC
 // midnight boundary. Core keeps a rolling in-memory budget (noise package);
 // the API cannot see it (separate process), so this recomputes the natural-day
 // count from the alerts table. The explicit UTC round-trip makes the boundary
 // independent of the session timezone.
-func queryTodayAlertCount(ctx context.Context, db statusQuerier) (int, error) {
-	var count int
+func queryTodayAlertCounts(ctx context.Context, db statusQuerier) (budgetStatus, error) {
+	var counts budgetStatus
 	err := db.QueryRow(ctx, `
-		SELECT count(*) FROM alerts
-		WHERE triggered_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
-	).Scan(&count)
+		SELECT
+			count(*) FILTER (WHERE source_class = 'real'),
+			count(*) FILTER (WHERE source_class = 'mock'),
+			count(*) FILTER (WHERE source_class = 'test'),
+			count(*) FILTER (WHERE source_class = 'unknown')
+		FROM alerts
+		WHERE triggered_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+		  AND triggered_at < (date_trunc('day', now() AT TIME ZONE 'UTC') + interval '1 day') AT TIME ZONE 'UTC'`,
+	).Scan(&counts.RealToday, &counts.MockToday, &counts.TestToday, &counts.UnknownToday)
 	if err != nil {
-		return 0, err
+		return budgetStatus{}, err
 	}
-	return count, nil
+	counts.RealLimit = model.DefaultAlertBudgetPerDay
+	counts.RealOverBudget = counts.RealToday > counts.RealLimit
+	counts.Today = counts.RealToday
+	counts.Limit = counts.RealLimit
+	return counts, nil
 }
 
 // queryPlugins: design D3 query 1 — plugin registration + health state.

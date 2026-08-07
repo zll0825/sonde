@@ -124,6 +124,7 @@ func (p *Pipeline) EvaluateAndAlert(ctx context.Context, metricID, pluginID stri
 
 	// Track which rule IDs fired this round (dedup by rule ID).
 	firedRuleIDs := make(map[int]struct{}, len(triggers))
+	var alertErr error
 	for _, t := range triggers {
 		firedRuleIDs[t.RuleID] = struct{}{}
 	}
@@ -136,6 +137,9 @@ func (p *Pipeline) EvaluateAndAlert(ctx context.Context, metricID, pluginID stri
 				Str("metric_id", metricID).
 				Str("rule", t.RuleName).
 				Msg("alert handle failed")
+			if alertErr == nil {
+				alertErr = fmt.Errorf("handle alert for rule %q: %w", t.RuleName, err)
+			}
 			continue
 		}
 	}
@@ -150,6 +154,9 @@ func (p *Pipeline) EvaluateAndAlert(ctx context.Context, metricID, pluginID stri
 				Str("metric_id", metricID).
 				Msg("auto-resolve stale alerts failed")
 		}
+	}
+	if alertErr != nil {
+		return alertErr
 	}
 
 	return nil
@@ -184,6 +191,8 @@ func triggerToAlert(t *detector.Trigger, pluginID string) model.Alert {
 		WindowEnd:         &t.WindowEnd,
 		Evidence:          detector.EvidenceJSON(t.Evidence),
 		PluginID:          pluginID,
+		SourceProvider:    t.SourceProvider,
+		SourceClass:       model.NormalizeSourceClass(t.SourceClass),
 		TriggeredAt:       now,
 	}
 }

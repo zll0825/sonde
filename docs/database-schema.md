@@ -238,6 +238,9 @@ CREATE TABLE observations (
     source_plugin           TEXT NOT NULL,
     source_plugin_version   TEXT NOT NULL,
     source_provider         TEXT NOT NULL,
+    source_class            TEXT NOT NULL DEFAULT 'unknown'
+        CONSTRAINT observations_source_class_check
+        CHECK (source_class IN ('real', 'mock', 'test', 'unknown')),
     source_fetched_at       TIMESTAMPTZ NOT NULL,
 
     -- 质量
@@ -262,15 +265,16 @@ ON observations(metric_uid, time, source_plugin, source_provider, labels_hash);
 ```sql
 INSERT INTO observations (
     metric_id, metric_uid, time, value, source_plugin,
-    source_plugin_version, source_provider, source_fetched_at,
+    source_plugin_version, source_provider, source_class, source_fetched_at,
     quality_grade, quality_confidence, labels_hash, labels
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 ON CONFLICT (metric_uid, time, source_plugin, source_provider, labels_hash)
 DO UPDATE SET
     value = EXCLUDED.value,
     quality_grade = EXCLUDED.quality_grade,
     quality_confidence = EXCLUDED.quality_confidence,
     source_fetched_at = EXCLUDED.source_fetched_at,
+    source_class = EXCLUDED.source_class,
     ingested_at = NOW()
 WHERE EXCLUDED.quality_grade = 'revised'
   AND observations.quality_grade != 'revised';
@@ -335,6 +339,13 @@ CREATE TABLE alerts (
     window_end      TIMESTAMPTZ,
     evidence        JSONB DEFAULT '{}',
     plugin_id       TEXT NOT NULL REFERENCES plugins(id),
+    source_provider TEXT NOT NULL DEFAULT '',
+    source_class    TEXT NOT NULL DEFAULT 'unknown'
+        CONSTRAINT alerts_source_class_check
+        CHECK (source_class IN ('real', 'mock', 'test', 'unknown')),
+    dedup_count     INT NOT NULL DEFAULT 0
+        CONSTRAINT alerts_dedup_count_check CHECK (dedup_count >= 0),
+    last_deduplicated_at TIMESTAMPTZ,
     triggered_at    TIMESTAMPTZ DEFAULT NOW(),
     resolved_at     TIMESTAMPTZ,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
@@ -344,6 +355,7 @@ CREATE TABLE alerts (
 CREATE INDEX idx_alerts_status ON alerts(status);
 CREATE INDEX idx_alerts_severity ON alerts(severity);
 CREATE INDEX idx_alerts_triggered ON alerts(triggered_at DESC);
+CREATE INDEX idx_alerts_source_class_triggered ON alerts(source_class, triggered_at DESC);
 
 -- 同一 dedup_key 只能有一个 active alert
 CREATE UNIQUE INDEX idx_alerts_active_dedup ON alerts(dedup_key) WHERE status = 'active';

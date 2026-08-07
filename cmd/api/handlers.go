@@ -43,10 +43,11 @@ func statusHandler(db statusQuerier) http.HandlerFunc {
 }
 
 // alertsHandler returns the list of active alerts.
-func alertsHandler(db *pgxpool.Pool) http.HandlerFunc {
+func alertsHandler(db statusQuerier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rows, err := db.Query(r.Context(), `
-			SELECT id, title, summary, severity, metric_id, triggered_at, status
+			SELECT id, title, summary, severity, metric_id, triggered_at, status,
+			       source_provider, source_class, dedup_count, last_deduplicated_at
 			FROM alerts WHERE status = 'active'
 			ORDER BY triggered_at DESC LIMIT 100
 		`)
@@ -62,20 +63,28 @@ func alertsHandler(db *pgxpool.Pool) http.HandlerFunc {
 		for rows.Next() {
 			var (
 				id, title, summary, severity, metricID, status string
+				sourceProvider, sourceClass                    string
 				triggeredAt                                    time.Time
+				dedupCount                                     int
+				lastDeduplicatedAt                             *time.Time
 			)
-			if err := rows.Scan(&id, &title, &summary, &severity, &metricID, &triggeredAt, &status); err != nil {
+			if err := rows.Scan(&id, &title, &summary, &severity, &metricID, &triggeredAt, &status,
+				&sourceProvider, &sourceClass, &dedupCount, &lastDeduplicatedAt); err != nil {
 				log.Error().Err(err).Msg("scan alert row failed")
 				continue
 			}
 			alerts = append(alerts, map[string]interface{}{
-				"id":           id,
-				"title":        title,
-				"summary":      summary,
-				"severity":     severity,
-				"metric_id":    metricID,
-				"triggered_at": triggeredAt,
-				"status":       status,
+				"id":                   id,
+				"title":                title,
+				"summary":              summary,
+				"severity":             severity,
+				"metric_id":            metricID,
+				"triggered_at":         triggeredAt,
+				"status":               status,
+				"source_provider":      sourceProvider,
+				"source_class":         sourceClass,
+				"dedup_count":          dedupCount,
+				"last_deduplicated_at": lastDeduplicatedAt,
 			})
 		}
 		if err := rows.Err(); err != nil {

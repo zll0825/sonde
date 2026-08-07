@@ -16,16 +16,18 @@ import (
 func TestTriggerToAlert_BuildsPureAlert(t *testing.T) {
 	now := time.Now()
 	trigger := &detector.Trigger{
-		RuleID:        42,
-		RuleName:      "gld_flow_spike",
-		MetricID:      "gld_flow",
-		RuleEffective: now,
-		WindowStart:   now.Add(-1 * time.Minute),
-		WindowEnd:     now,
-		Severity:      model.SeverityWarning,
-		DetectorName:  "threshold",
-		DedupKey:      "rule_42:gld_flow:5m",
-		Evidence:      map[string]interface{}{"value": 722.0},
+		RuleID:         42,
+		RuleName:       "gld_flow_spike",
+		MetricID:       "gld_flow",
+		RuleEffective:  now,
+		WindowStart:    now.Add(-1 * time.Minute),
+		WindowEnd:      now,
+		Severity:       model.SeverityWarning,
+		DetectorName:   "threshold",
+		DedupKey:       "rule_42:gld_flow:5m",
+		Evidence:       map[string]interface{}{"value": 722.0},
+		SourceProvider: "yahoo_finance",
+		SourceClass:    model.SourceClassReal,
 	}
 
 	a := triggerToAlert(trigger, "plg_etf")
@@ -58,6 +60,16 @@ func TestTriggerToAlert_BuildsPureAlert(t *testing.T) {
 	}
 	if a.DedupKey != "rule_42:gld_flow:5m" {
 		t.Errorf("alert.DedupKey = %q", a.DedupKey)
+	}
+	if a.SourceProvider != "yahoo_finance" || a.SourceClass != model.SourceClassReal {
+		t.Errorf("alert provenance = %q/%q, want yahoo_finance/real", a.SourceProvider, a.SourceClass)
+	}
+}
+
+func TestTriggerToAlert_NormalizesMissingSourceClass(t *testing.T) {
+	a := triggerToAlert(&detector.Trigger{RuleName: "x", MetricID: "m", DedupKey: "k", SourceClass: "future"}, "p1")
+	if a.SourceClass != model.SourceClassUnknown {
+		t.Errorf("source class = %q, want unknown", a.SourceClass)
 	}
 }
 

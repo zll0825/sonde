@@ -15,6 +15,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"capital_observatory/pkg/model"
 	"capital_observatory/pkg/pluginrunner"
 )
 
@@ -101,12 +102,13 @@ func (f *FREDCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 		}
 		fetchedAt := time.Now()
 		snaps = append(snaps, pluginrunner.Snapshot{
-			MetricID:  entry.MetricID,
-			Value:     *val,
-			Timestamp: ts,
-			FetchedAt: fetchedAt,
-			Provider:  providerFRED,
-			Grade:     "delayed", // FRED publishes with 1..7 day lag; not realtime-grade
+			MetricID:    entry.MetricID,
+			Value:       *val,
+			Timestamp:   ts,
+			FetchedAt:   fetchedAt,
+			Provider:    providerFRED,
+			SourceClass: model.SourceClassReal,
+			Grade:       "delayed", // FRED publishes with 1..7 day lag; not realtime-grade
 		})
 	}
 
@@ -153,12 +155,13 @@ func (f *FREDCollector) GetSnapshotsForWindow(ctx context.Context, start, end ti
 				continue // missing observation (holiday, etc.)
 			}
 			snaps = append(snaps, pluginrunner.Snapshot{
-				MetricID:  entry.MetricID,
-				Value:     *vals[i],
-				Timestamp: ts,
-				FetchedAt: fetchedAt,
-				Provider:  providerFRED,
-				Grade:     "delayed",
+				MetricID:    entry.MetricID,
+				Value:       *vals[i],
+				Timestamp:   ts,
+				FetchedAt:   fetchedAt,
+				Provider:    providerFRED,
+				SourceClass: model.SourceClassReal,
+				Grade:       "delayed",
 			})
 		}
 	}

@@ -27,6 +27,9 @@ func TestIntegration_ResearchLinkage_DurableAndImmutable(t *testing.T) {
 	if err := engine.HandleTrigger(ctx, persisted); err != nil {
 		t.Fatalf("HandleTrigger: %v", err)
 	}
+	if err := engine.HandleTrigger(ctx, persisted); err != nil {
+		t.Fatalf("HandleTrigger duplicate: %v", err)
+	}
 
 	var notificationCount, researchCount int
 	if err := db.QueryRow(ctx, `
@@ -41,12 +44,23 @@ func TestIntegration_ResearchLinkage_DurableAndImmutable(t *testing.T) {
 	if notificationCount != 1 || researchCount != 1 {
 		t.Fatalf("alert events notification/research = %d/%d, want 1/1", notificationCount, researchCount)
 	}
+	var dedupCount int
+	var lastDeduplicatedAt *time.Time
+	if err := db.QueryRow(ctx, `
+		SELECT dedup_count, last_deduplicated_at FROM alerts WHERE id = $1
+	`, persisted.ID).Scan(&dedupCount, &lastDeduplicatedAt); err != nil {
+		t.Fatalf("query dedup audit: %v", err)
+	}
+	if dedupCount != 1 || lastDeduplicatedAt == nil {
+		t.Fatalf("dedup audit count/time = %d/%v, want 1/non-nil", dedupCount, lastDeduplicatedAt)
+	}
 
 	loaded, err := alertStore.GetAlertByID(ctx, persisted.ID)
 	if err != nil {
 		t.Fatalf("GetAlertByID: %v", err)
 	}
-	if loaded == nil || loaded.ID != persisted.ID || loaded.MetricID != persisted.MetricID {
+	if loaded == nil || loaded.ID != persisted.ID || loaded.MetricID != persisted.MetricID ||
+		loaded.SourceProvider != persisted.SourceProvider || loaded.SourceClass != persisted.SourceClass {
 		t.Fatalf("loaded alert = %+v, want persisted alert", loaded)
 	}
 
@@ -276,6 +290,8 @@ func researchTestAlert(id, dedupKey, pluginID string) model.Alert {
 		DedupKey:          dedupKey,
 		Evidence:          []byte(`{"metric_uid":"mtr_research"}`),
 		PluginID:          pluginID,
+		SourceProvider:    "test-fixture",
+		SourceClass:       model.SourceClassTest,
 		TriggeredAt:       now,
 	}
 }

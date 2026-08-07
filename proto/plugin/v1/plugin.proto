@@ -56,6 +56,14 @@ enum QualityGrade {
   QUALITY_GRADE_REVISED = 5;
 }
 
+// Domain: Observation.source_class
+enum SourceClass {
+  SOURCE_CLASS_UNSPECIFIED = 0;
+  SOURCE_CLASS_REAL = 1;
+  SOURCE_CLASS_MOCK = 2;
+  SOURCE_CLASS_TEST = 3;
+}
+
 // ===========================================================================
 // Registration
 // ===========================================================================
@@ -163,6 +171,8 @@ message MetricSnapshot {
   int64 source_fetched_at = 8;
   QualityGrade quality_grade = 9;
   double quality_confidence = 10;
+  // Domain: Observation.source_class. Absent/zero means unknown.
+  SourceClass source_class = 11;
 }
 
 message PushSnapshotsRequest {

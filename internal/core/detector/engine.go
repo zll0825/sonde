@@ -27,18 +27,20 @@ type Detector interface {
 
 // Trigger represents a fired rule evaluation.
 type Trigger struct {
-	RuleID        int
-	RuleName      string
-	MetricID      string
-	DetectorName  string
-	Severity      model.Severity
-	WindowStart   time.Time
-	WindowEnd     time.Time
-	Evidence      map[string]interface{}
-	DedupKey      string // stable per (metric_id, rule_id); see ComputeDedupKey
-	RuleVersion   int
-	RuleEffective time.Time
-	PluginID      string
+	RuleID         int
+	RuleName       string
+	MetricID       string
+	DetectorName   string
+	Severity       model.Severity
+	WindowStart    time.Time
+	WindowEnd      time.Time
+	Evidence       map[string]interface{}
+	DedupKey       string // stable per (metric_id, rule_id); see ComputeDedupKey
+	RuleVersion    int
+	RuleEffective  time.Time
+	PluginID       string
+	SourceProvider string
+	SourceClass    model.SourceClass
 }
 
 // Engine orchestrates rule evaluation across all detectors.

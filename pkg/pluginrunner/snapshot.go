@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"capital_observatory/pkg/model"
 	pb "capital_observatory/pkg/proto/plugin/v1"
 )
 
@@ -11,12 +12,13 @@ import (
 // type so that the lifecycle helpers can convert and submit without knowing the
 // collector's own package.
 type Snapshot struct {
-	MetricID  string
-	Value     float64
-	Timestamp time.Time // source observation/event time
-	FetchedAt time.Time // provider fetch completion time
-	Provider  string
-	Grade     string
+	MetricID    string
+	Value       float64
+	Timestamp   time.Time // source observation/event time
+	FetchedAt   time.Time // provider fetch completion time
+	Provider    string
+	SourceClass model.SourceClass
+	Grade       string
 }
 
 // Provider fetches current snapshots for all metrics a plugin watches.
@@ -47,11 +49,25 @@ func SnapshotsToProto(snapshots []Snapshot, version string) []*pb.MetricSnapshot
 			Timestamp:           s.Timestamp.Unix(),
 			SourcePluginVersion: version,
 			SourceProvider:      s.Provider,
+			SourceClass:         sourceClassToProto(s.SourceClass),
 			SourceFetchedAt:     fetchedAt.Unix(),
 			QualityGrade:        gradeToProto(s.Grade),
 		})
 	}
 	return result
+}
+
+func sourceClassToProto(class model.SourceClass) pb.SourceClass {
+	switch model.NormalizeSourceClass(class) {
+	case model.SourceClassReal:
+		return pb.SourceClass_SOURCE_CLASS_REAL
+	case model.SourceClassMock:
+		return pb.SourceClass_SOURCE_CLASS_MOCK
+	case model.SourceClassTest:
+		return pb.SourceClass_SOURCE_CLASS_TEST
+	default:
+		return pb.SourceClass_SOURCE_CLASS_UNSPECIFIED
+	}
 }
 
 // gradeToProto converts a collector grade string to its proto enum value.

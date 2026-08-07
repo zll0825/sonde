@@ -94,6 +94,8 @@ func buildTrigger(rule model.Rule, sorted []model.Observation, windowStart time.
 			"current_value": newest.Value,
 			"metric_uid":    newest.MetricUID,
 		},
-		DedupKey: ComputeDedupKey(rule.MetricID, rule.ID),
+		DedupKey:       ComputeDedupKey(rule.MetricID, rule.ID),
+		SourceProvider: newest.SourceProvider,
+		SourceClass:    model.NormalizeSourceClass(newest.SourceClass),
 	}
 }

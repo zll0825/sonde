@@ -323,6 +323,10 @@ RETIRED:   被新版本取代，或 Plugin 不再建议
 | `window_end` | TIMESTAMPTZ | ❌ | 检测窗口终点 |
 | `evidence` | JSONB | ✅ | 检测证据（当前值、历史分位、趋势信息等） |
 | `plugin_id` | TEXT | ✅ | FK → plugins |
+| `source_provider` | TEXT | ✅ | 触发时最新观测的数据提供方（冻结值） |
+| `source_class` | TEXT | ✅ | real / mock / test / unknown（冻结值） |
+| `dedup_count` | INT | ✅ | active 期间被折叠的重复触发次数 |
+| `last_deduplicated_at` | TIMESTAMPTZ | ❌ | 最近一次重复触发时间 |
 | `triggered_at` | TIMESTAMPTZ | ✅ | 首次触发时间 |
 | `resolved_at` | TIMESTAMPTZ | ❌ | 解除时间 |
 | `created_at` | TIMESTAMPTZ | ✅ | 记录创建时间 |
@@ -368,6 +372,7 @@ Alert 生成后 → ResearchAssembler.GetContext() → research_snapshots（冻�
 
 - 同一时刻同一 dedup_key 只能有一个 ACTIVE Alert（唯一索引 `WHERE status='active'`）
 - `rule_version` 和 `rule_effective_from` 在 Alert 创建时固化，不可变更
+- `source_provider` 和 `source_class` 从触发用的最新 Observation 固化，不根据名称推断
 - Alert 无法被删除，只能 RESOLVED
 
 ---

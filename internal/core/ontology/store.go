@@ -522,18 +522,20 @@ func (s *Store) InsertObservation(ctx context.Context, snap *pb.MetricSnapshot, 
 	err = tx.QueryRow(ctx, `
 		INSERT INTO observations (
 			time, metric_id, metric_uid, value, labels, labels_hash,
-			source_plugin, source_plugin_version, source_provider, source_fetched_at,
+			 source_plugin, source_plugin_version, source_provider, source_fetched_at,
+			source_class,
 			quality_grade, quality_confidence, system_quality_score, ingested_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
-			$7, $8, $9, $10,
-			$11, $12, $13, NOW()
+			$7, $8, $9, $10, $11,
+			$12, $13, $14, NOW()
 		)
 		ON CONFLICT (metric_uid, time, source_plugin, source_provider, labels_hash) DO UPDATE SET
 			value = EXCLUDED.value,
 			quality_grade = EXCLUDED.quality_grade,
 			quality_confidence = EXCLUDED.quality_confidence,
-			source_fetched_at = EXCLUDED.source_fetched_at,
+				source_fetched_at = EXCLUDED.source_fetched_at,
+			source_class = EXCLUDED.source_class,
 			system_quality_score = EXCLUDED.system_quality_score,
 			ingested_at = NOW()
 		WHERE
@@ -559,7 +561,7 @@ func (s *Store) InsertObservation(ctx context.Context, snap *pb.MetricSnapshot, 
 		labelsToBytes(snap.Labels), labelsHash,
 		pluginID, snap.SourcePluginVersion, snap.SourceProvider,
 		time.Unix(snap.SourceFetchedAt, 0),
-		grade, confidence, systemScore).Scan(&freshInsert)
+		sourceClassFromProto(snap.SourceClass), grade, confidence, systemScore).Scan(&freshInsert)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		// ON CONFLICT match but WHERE excluded rank ≤ existing rank → dedup skip.
@@ -584,6 +586,19 @@ func (s *Store) InsertObservation(ctx context.Context, snap *pb.MetricSnapshot, 
 		return ActionInserted, nil
 	}
 	return ActionUpdatedRevised, nil
+}
+
+func sourceClassFromProto(class pb.SourceClass) model.SourceClass {
+	switch class {
+	case pb.SourceClass_SOURCE_CLASS_REAL:
+		return model.SourceClassReal
+	case pb.SourceClass_SOURCE_CLASS_MOCK:
+		return model.SourceClassMock
+	case pb.SourceClass_SOURCE_CLASS_TEST:
+		return model.SourceClassTest
+	default:
+		return model.SourceClassUnknown
+	}
 }
 
 // labelsToBytes serializes a labels map for the JSONB column.

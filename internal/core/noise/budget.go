@@ -10,10 +10,12 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"capital_observatory/pkg/model"
 )
 
 // DefaultBudgetPerDay is the first calibration target from PRD §十七.
-const DefaultBudgetPerDay = 10
+const DefaultBudgetPerDay = model.DefaultAlertBudgetPerDay
 
 // Decision is the budget's recommendation for a hot rule.
 type Decision string

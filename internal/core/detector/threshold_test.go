@@ -152,6 +152,27 @@ func TestThresholdDetector_EvidenceCarriesResearchFields(t *testing.T) {
 	}
 }
 
+func TestThresholdDetector_FreezesNewestObservationProvenance(t *testing.T) {
+	base := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	older := obs("mtr_a", base, 101)
+	older.SourceProvider = "older-provider"
+	older.SourceClass = model.SourceClassMock
+	newest := obs("mtr_a", base.Add(time.Minute), 102)
+	newest.SourceProvider = "upstream"
+	newest.SourceClass = model.SourceClassReal
+
+	trigger, err := ThresholdDetector{}.Evaluate(context.Background(), thresholdRule(`{"operator":"gt","value":100,"consecutive":2}`), []model.Observation{newest, older})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if trigger == nil {
+		t.Fatal("expected trigger")
+	}
+	if trigger.SourceProvider != "upstream" || trigger.SourceClass != model.SourceClassReal {
+		t.Errorf("provenance = %q/%q, want upstream/real", trigger.SourceProvider, trigger.SourceClass)
+	}
+}
+
 func TestThresholdDetector_InvalidConfig(t *testing.T) {
 	rule := thresholdRule(`{not json`)
 

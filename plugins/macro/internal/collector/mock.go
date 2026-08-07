@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"time"
 
+	"capital_observatory/pkg/model"
 	"capital_observatory/pkg/pluginrunner"
 )
 
@@ -18,36 +19,40 @@ func (Mock) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 	now := time.Now()
 	return []pluginrunner.Snapshot{
 		{
-			MetricID:  "fed.ins.balance_sheet",
-			Value:     7_200_000_000_000 + rand.Float64()*100_000_000_000, // ~$7.2T
-			Timestamp: now,
-			FetchedAt: now,
-			Provider:  "mock_macro",
-			Grade:     "delayed",
+			MetricID:    "fed.ins.balance_sheet",
+			Value:       7_200_000_000_000 + rand.Float64()*100_000_000_000, // ~$7.2T
+			Timestamp:   now,
+			FetchedAt:   now,
+			Provider:    "mock_macro",
+			SourceClass: model.SourceClassMock,
+			Grade:       "delayed",
 		},
 		{
-			MetricID:  "us.mkt.ten_year_yield",
-			Value:     4.2 + rand.Float64()*0.1, // ~4.2%
-			Timestamp: now,
-			FetchedAt: now,
-			Provider:  "mock_macro",
-			Grade:     "delayed",
+			MetricID:    "us.mkt.ten_year_yield",
+			Value:       4.2 + rand.Float64()*0.1, // ~4.2%
+			Timestamp:   now,
+			FetchedAt:   now,
+			Provider:    "mock_macro",
+			SourceClass: model.SourceClassMock,
+			Grade:       "delayed",
 		},
 		{
-			MetricID:  "us.mkt.dollar_index",
-			Value:     103.0 + rand.Float64()*0.5,
-			Timestamp: now,
-			FetchedAt: now,
-			Provider:  "mock_macro",
-			Grade:     "delayed",
+			MetricID:    "us.mkt.dollar_index",
+			Value:       103.0 + rand.Float64()*0.5,
+			Timestamp:   now,
+			FetchedAt:   now,
+			Provider:    "mock_macro",
+			SourceClass: model.SourceClassMock,
+			Grade:       "delayed",
 		},
 		{
-			MetricID:  "us.mkt.usd_cny",
-			Value:     7.2 + rand.Float64()*0.05,
-			Timestamp: now,
-			FetchedAt: now,
-			Provider:  "mock_macro",
-			Grade:     "delayed",
+			MetricID:    "us.mkt.usd_cny",
+			Value:       7.2 + rand.Float64()*0.05,
+			Timestamp:   now,
+			FetchedAt:   now,
+			Provider:    "mock_macro",
+			SourceClass: model.SourceClassMock,
+			Grade:       "delayed",
 		},
 	}, nil
 }
@@ -67,10 +72,10 @@ func (Mock) GetSnapshotsForWindow(ctx context.Context, start, end time.Time) ([]
 		drift := 1.0 + (seeded.Float64()-0.5)*0.005 // tighter drift — macro moves slower
 		drift = math.Max(0.95, math.Min(1.05, drift))
 		out = append(out,
-			pluginrunner.Snapshot{MetricID: "fed.ins.balance_sheet", Value: 7_200_000_000_000 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", Grade: "estimated"},
-			pluginrunner.Snapshot{MetricID: "us.mkt.ten_year_yield", Value: 4.2 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", Grade: "estimated"},
-			pluginrunner.Snapshot{MetricID: "us.mkt.dollar_index", Value: 103.0 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", Grade: "estimated"},
-			pluginrunner.Snapshot{MetricID: "us.mkt.usd_cny", Value: 7.2 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", Grade: "estimated"},
+			pluginrunner.Snapshot{MetricID: "fed.ins.balance_sheet", Value: 7_200_000_000_000 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", SourceClass: model.SourceClassMock, Grade: "estimated"},
+			pluginrunner.Snapshot{MetricID: "us.mkt.ten_year_yield", Value: 4.2 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", SourceClass: model.SourceClassMock, Grade: "estimated"},
+			pluginrunner.Snapshot{MetricID: "us.mkt.dollar_index", Value: 103.0 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", SourceClass: model.SourceClassMock, Grade: "estimated"},
+			pluginrunner.Snapshot{MetricID: "us.mkt.usd_cny", Value: 7.2 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", SourceClass: model.SourceClassMock, Grade: "estimated"},
 		)
 	}
 	return out, nil

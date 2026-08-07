@@ -381,13 +381,16 @@
             const metricsEl = document.getElementById('sb-metrics');
             metricsEl.textContent = `${(data.metrics || []).length} 指标`;
 
-            // Budget: X/10, ≥8 yellow, >10 red (design D4).
-            const today = data.budget ? data.budget.today : 0;
-            const limit = data.budget ? data.budget.limit : 10;
-            const budgetEl = document.getElementById('sb-budget');
-            budgetEl.textContent = `今日告警 ${today}/${limit}`;
-            budgetEl.classList.toggle('warn', today >= 8 && today <= limit);
-            budgetEl.classList.toggle('danger', today > limit);
+            const budget = data.budget || {};
+            const today = Number.isFinite(budget.real_today) ? budget.real_today : (budget.today || 0);
+            const limit = Number.isFinite(budget.real_limit) ? budget.real_limit : (budget.limit || 10);
+            const hasDetailedBudget = Number.isFinite(budget.real_today);
+			const budgetEl = document.getElementById('sb-budget');
+			budgetEl.textContent = hasDetailedBudget
+				? `真实 ${today}/${limit} · 模拟 ${budget.mock_today || 0} · 测试 ${budget.test_today || 0} · 未分类 ${budget.unknown_today || 0}`
+				: `今日告警 ${today}/${limit}`;
+			budgetEl.classList.toggle('warn', today >= 8 && today <= limit);
+			budgetEl.classList.toggle('danger', budget.real_over_budget === true || today > limit);
 
             const rel = relativeTime(data.latest_data_at);
             document.getElementById('sb-latest').textContent =

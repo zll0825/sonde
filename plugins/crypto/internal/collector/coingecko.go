@@ -12,6 +12,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"capital_observatory/pkg/model"
 	"capital_observatory/pkg/pluginrunner"
 )
 
@@ -69,12 +70,13 @@ func (r *RealCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 	} else {
 		fetchedAt := time.Now()
 		snaps = append(snaps, pluginrunner.Snapshot{
-			MetricID:  "btc.ass.price",
-			Value:     price,
-			Timestamp: fetchedAt,
-			FetchedAt: fetchedAt,
-			Provider:  providerCoinGecko,
-			Grade:     "delayed", // CoinGecko is ~1m delayed under normal load
+			MetricID:    "btc.ass.price",
+			Value:       price,
+			Timestamp:   fetchedAt,
+			FetchedAt:   fetchedAt,
+			Provider:    providerCoinGecko,
+			SourceClass: model.SourceClassReal,
+			Grade:       "delayed", // CoinGecko is ~1m delayed under normal load
 		})
 	}
 
@@ -84,12 +86,13 @@ func (r *RealCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 	} else {
 		fetchedAt := time.Now()
 		snaps = append(snaps, pluginrunner.Snapshot{
-			MetricID:  "btc.ass.hash_rate",
-			Value:     hr,
-			Timestamp: fetchedAt,
-			FetchedAt: fetchedAt,
-			Provider:  providerMempool,
-			Grade:     "delayed",
+			MetricID:    "btc.ass.hash_rate",
+			Value:       hr,
+			Timestamp:   fetchedAt,
+			FetchedAt:   fetchedAt,
+			Provider:    providerMempool,
+			SourceClass: model.SourceClassReal,
+			Grade:       "delayed",
 		})
 	}
 

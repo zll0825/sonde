@@ -129,6 +129,7 @@ COMMENT ON COLUMN observations.labels_hash IS '标签哈希，参与幂等唯一
 COMMENT ON COLUMN observations.source_plugin IS '来源插件名';
 COMMENT ON COLUMN observations.source_plugin_version IS '来源插件版本';
 COMMENT ON COLUMN observations.source_provider IS '数据提供方：yahoo / fred / coingecko / mempool_space / mock_*';
+COMMENT ON COLUMN observations.source_class IS '来源类别：real / mock / test / unknown；由每条 provider snapshot 显式声明';
 COMMENT ON COLUMN observations.source_fetched_at IS '插件从上游取数的时间';
 COMMENT ON COLUMN observations.quality_grade IS '质量等级：realtime（实时）/ delayed（延迟发布）/ estimated（估算或合成）';
 COMMENT ON COLUMN observations.quality_confidence IS '插件申报的置信度 0–1';
@@ -171,6 +172,10 @@ COMMENT ON COLUMN alerts.rule_version IS '触发时的规则版本（复盘时�
 COMMENT ON COLUMN alerts.rule_effective_from IS '触发时规则版本的生效时间';
 COMMENT ON COLUMN alerts.detector_name IS '产出触发的探测器';
 COMMENT ON COLUMN alerts.dedup_key IS '去重键（metric_id + rule_id 派生）；active 状态下唯一';
+COMMENT ON COLUMN alerts.source_provider IS '触发该告警的最新观测的数据提供方（冻结值）';
+COMMENT ON COLUMN alerts.source_class IS '触发该告警的最新观测来源类别（冻结值）';
+COMMENT ON COLUMN alerts.dedup_count IS 'active 告警被后续相同触发折叠的累计次数';
+COMMENT ON COLUMN alerts.last_deduplicated_at IS '最近一次 active 告警去重发生时间';
 COMMENT ON COLUMN alerts.window_start IS '评估窗口起点';
 COMMENT ON COLUMN alerts.window_end IS '评估窗口终点';
 COMMENT ON COLUMN alerts.evidence IS '触发证据（JSONB：metric_uid、观测值、阈值/分位等），研究组装从这里取 metric_uid';
