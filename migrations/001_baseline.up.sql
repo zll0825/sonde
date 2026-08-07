@@ -309,5 +309,14 @@ CREATE TABLE command_log (
     error           TEXT,
     requested_at    TIMESTAMPTZ DEFAULT NOW(),
     accepted_at     TIMESTAMPTZ,
-    completed_at    TIMESTAMPTZ
+    completed_at    TIMESTAMPTZ,
+    attempts        INT NOT NULL DEFAULT 0,
+    last_dispatched_at TIMESTAMPTZ,
+    lease_expires_at TIMESTAMPTZ,
+    last_error      TEXT,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX idx_command_log_dispatchable
+    ON command_log(status, lease_expires_at, requested_at)
+    WHERE status IN ('pending', 'dispatched');

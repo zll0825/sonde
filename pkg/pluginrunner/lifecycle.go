@@ -44,12 +44,16 @@ type Config struct {
 // Lifecycle owns the long-lived process: signal handling, reconnection loop,
 // gRPC dialing, registration, message dispatch, and the collection ticker.
 type Lifecycle struct {
-	cfg Config
+	cfg      Config
+	commands *commandLedger
 }
 
 // NewLifecycle creates a Lifecycle from the given config.
 func NewLifecycle(cfg Config) *Lifecycle {
-	return &Lifecycle{cfg: cfg}
+	return &Lifecycle{
+		cfg:      cfg,
+		commands: newCommandLedger(defaultCommandLedgerCapacity, defaultCommandLedgerTTL),
+	}
 }
 
 // Run blocks until the process is terminated (SIGINT/SIGTERM). It reconnects
@@ -127,41 +131,47 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 		return fmt.Errorf("setup collector: %w", err)
 	}
 
-	// Build the collect functions (current snapshot vs windowed).
-	collectOnce := func(commandID string) {
-		snaps, cerr := collector.GetSnapshots(ctx)
-		if cerr != nil {
-			log.Error().Err(cerr).Msg("collector failed to get snapshots")
+	// executeCommand single-flights duplicate command IDs and replays a cached
+	// successful snapshot set without calling the provider again.
+	executeCommand := func(commandID string, collect func() ([]Snapshot, error)) {
+		result := l.commands.execute(commandID, collect)
+		if result.err != nil {
+			log.Error().Err(result.err).Str("command_id", commandID).Msg("collector command failed")
 			if commandID != "" {
-				runner.SubmitCommandAck(commandID, "failed", cerr.Error(), 0, cerr.Error())
+				runner.SubmitCommandAck(commandID, "failed", result.err.Error(), 0, result.err.Error())
 			}
 			return
 		}
-		submitAndAck(runner, pluginID, commandID, snaps)
+		submitAndAck(runner, pluginID, commandID, result)
+	}
+
+	collectOnce := func(commandID string) {
+		executeCommand(commandID, func() ([]Snapshot, error) {
+			return collector.GetSnapshots(ctx)
+		})
 	}
 
 	// 窗口回填能力在此统一判定：实现了 WindowedProvider 的采集器自动获得
 	// Backfill 命令支持，未实现的在 collectWindowed 里退化为当前快照。
 	wColl, _ := collector.(WindowedProvider)
 	collectWindowed := func(commandID string, start, end time.Time) {
-		if wColl == nil {
-			log.Warn().Msg("collector does not implement WindowedProvider; falling back to current snapshot")
-			collectOnce(commandID)
-			return
-		}
-		snaps, cerr := wColl.GetSnapshotsForWindow(ctx, start, end)
-		if cerr != nil {
-			log.Error().Err(cerr).Msg("collector failed to get windowed snapshots")
-			runner.SubmitCommandAck(commandID, "failed", cerr.Error(), 0, cerr.Error())
-			return
-		}
-		log.Info().
-			Str("command_id", commandID).
-			Time("window_start", start).
-			Time("window_end", end).
-			Int("count", len(snaps)).
-			Msg("backfill window collected")
-		submitAndAck(runner, pluginID, commandID, snaps)
+		executeCommand(commandID, func() ([]Snapshot, error) {
+			if wColl == nil {
+				log.Warn().Msg("collector does not implement WindowedProvider; falling back to current snapshot")
+				return collector.GetSnapshots(ctx)
+			}
+			snaps, err := wColl.GetSnapshotsForWindow(ctx, start, end)
+			if err != nil {
+				return nil, err
+			}
+			log.Info().
+				Str("command_id", commandID).
+				Time("window_start", start).
+				Time("window_end", end).
+				Int("count", len(snaps)).
+				Msg("backfill window collected")
+			return snaps, nil
+		})
 	}
 
 	// Register core message handlers.
@@ -231,17 +241,27 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 
 // submitAndAck converts snapshots to proto, submits them, and acks the command
 // (if any) with the number of collected snapshots.
-func submitAndAck(runner *Runner, pluginID, commandID string, snaps []Snapshot) {
+func submitAndAck(runner *Runner, pluginID, commandID string, result commandExecutionResult) {
+	snaps := result.snapshots
 	protoSnaps := SnapshotsToProto(snaps, runner.version)
-	runner.SubmitSnapshots(pluginID, protoSnaps)
+	if err := runner.trySubmitSnapshots(pluginID, protoSnaps); err != nil {
+		log.Warn().Err(err).
+			Str("command_id", commandID).
+			Int("count", len(protoSnaps)).
+			Msg("snapshot enqueue failed")
+		if commandID != "" {
+			runner.SubmitCommandAck(commandID, "failed", err.Error(), 0, err.Error())
+		}
+		return
+	}
 	log.Info().
 		Str("command_id", commandID).
 		Int("count", len(protoSnaps)).
 		Msg("snapshots submitted")
 	if commandID != "" {
-		runner.SubmitCommandAck(commandID, "success",
+		runner.submitCommandAckAt(commandID, "success",
 			fmt.Sprintf("%d snapshots collected", len(protoSnaps)),
-			int32(len(protoSnaps)), "")
+			int32(len(protoSnaps)), "", result.ackTimestamp)
 	}
 }
 

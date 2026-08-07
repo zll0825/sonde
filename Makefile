@@ -35,7 +35,9 @@ proto: ## Generate Go code from proto files
 # ---- Database ----
 # Dockerized fallback when the migrate CLI is not installed on the host.
 # Runs on the compose network so `timescaledb` resolves.
-DB_URL_DOCKER ?= postgres://capital:capital_dev@timescaledb:5432/capital_observatory?sslmode=disable
+# Keep an explicit DB_URL override effective when the host migrate CLI is absent.
+# Containers reach the compose database by service name rather than localhost.
+DB_URL_DOCKER ?= $(subst @localhost:,@timescaledb:,$(DB_URL))
 MIGRATE_DOCKER = docker run --rm -v "$(CURDIR)/migrations:/migrations" --network deployments_default migrate/migrate -path=/migrations -database "$(DB_URL_DOCKER)"
 
 migrate-up: ## Apply all pending migrations

@@ -2,6 +2,7 @@ package pluginmgr
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -140,8 +141,8 @@ func (m *Manager) GetSession(pluginID string) *StreamSession {
 }
 
 // handleCommandAck updates command_log based on a plugin's CommandAck.
-// Success → MarkCompleted, failure → MarkFailed. Used by HandlePluginMessage
-// to close the control-plane loop started by CommandDispatcher.dispatch.
+// Success completes authoritatively, progress renews the active lease, and
+// failure releases the current attempt for bounded retry.
 func (m *Manager) handleCommandAck(ctx context.Context, ack *pb.CommandAck) error {
 	if ack == nil {
 		return nil
@@ -152,29 +153,56 @@ func (m *Manager) handleCommandAck(ctx context.Context, ack *pb.CommandAck) erro
 		Int32("collected", ack.CollectedCount).
 		Msg("command ack received")
 
-	// Success requires no error AND a non-failure status. Judging by
-	// `status=="success" || error==""` would mark a failed ack with an empty
-	// error message as completed.
-	isSuccess := ack.Error == "" && (ack.Status == "" || ack.Status == "success")
-	if isSuccess {
+	if ack.Error != "" {
+		return m.handleCommandAttemptFailure(ctx, ack.CommandId, ack.Error)
+	}
+
+	switch ack.Status {
+	case "", "success", "completed":
 		return m.commandStore.MarkCompleted(ctx, ack.CommandId, int(ack.CollectedCount))
+	case "accepted", "running":
+		return m.commandStore.RenewLease(ctx, ack.CommandId, store.CommandLeaseDuration)
+	case "failed":
+		errMsg := ack.Message
+		if errMsg == "" {
+			errMsg = "plugin reported failed status"
+		}
+		return m.handleCommandAttemptFailure(ctx, ack.CommandId, errMsg)
+	default:
+		return m.handleCommandAttemptFailure(ctx, ack.CommandId, "plugin reported status "+ack.Status)
 	}
-	errMsg := ack.Error
-	if errMsg == "" {
-		errMsg = "plugin reported status " + ack.Status
+}
+
+func (m *Manager) handleCommandAttemptFailure(ctx context.Context, commandID, errMsg string) error {
+	status, err := m.commandStore.MarkAttemptFailed(ctx, commandID, errMsg)
+	if errors.Is(err, store.ErrCommandNotDispatched) {
+		log.Debug().Str("command_id", commandID).Msg("duplicate command failure ack ignored")
+		return nil
 	}
-	return m.commandStore.MarkFailed(ctx, ack.CommandId, errMsg)
+	if err != nil {
+		return err
+	}
+	logEvent := log.Warn()
+	if status == store.CmdStatusFailed {
+		logEvent = log.Error()
+	}
+	logEvent.
+		Str("command_id", commandID).
+		Str("status", string(status)).
+		Str("error", errMsg).
+		Msg("command attempt failed")
+	return nil
 }
 
 // StartCommandDispatcher begins a background goroutine that polls the
-// command_log for pending commands and routes each to the target plugin's
-// stream via SendAsync.
+// command_log for dispatchable commands and routes each claimed lease to its
+// target plugin's stream via SendAsync.
 //
 // Loop:
-//  1. Poll commandStore.GetPendingCommands (blocked by 1s tick).
-//  2. For each command, find the active session for target_plugin.
-//  3. Send the corresponding CoreMessage (SyncCommand / BackfillCommand).
-//  4. Mark the row 'dispatched' so the next poll won't re-emit it.
+//  1. Snapshot the currently connected plugin sessions.
+//  2. Atomically claim a bounded batch only for those plugin IDs.
+//  3. Enqueue the corresponding CoreMessage (SyncCommand / BackfillCommand).
+//  4. Release enqueue failures immediately; otherwise wait for ACK or expiry.
 //
 // When the plugin responds with CommandAck, handleCommandAck transitions
 // the row to 'completed' or 'failed' — closing the control-plane loop.
@@ -195,25 +223,34 @@ func (m *Manager) StartCommandDispatcher(ctx context.Context, tickInterval time.
 	}
 }
 
-// dispatchOnce sends one round of pending commands to their target plugins.
+// dispatchOnce atomically claims one bounded round before enqueueing commands.
 func (m *Manager) dispatchOnce(ctx context.Context) error {
-	pending, err := m.commandStore.GetPendingCommands(ctx)
+	m.mu.RLock()
+	sessions := make(map[string]*StreamSession, len(m.sessions))
+	pluginIDs := make([]string, 0, len(m.sessions))
+	for pluginID, session := range m.sessions {
+		sessions[pluginID] = session
+		pluginIDs = append(pluginIDs, pluginID)
+	}
+	m.mu.RUnlock()
+
+	claimed, err := m.commandStore.ClaimDispatchable(
+		ctx,
+		pluginIDs,
+		store.CommandDispatchBatch,
+		store.CommandLeaseDuration,
+	)
 	if err != nil {
-		return fmt.Errorf("get pending commands: %w", err)
+		return fmt.Errorf("claim dispatchable commands: %w", err)
 	}
 
-	for _, cmd := range pending {
-		m.mu.RLock()
-		session := m.sessions[cmd.TargetPlugin]
-		m.mu.RUnlock()
-
+	var dispatchErr error
+	for _, cmd := range claimed {
+		session := sessions[cmd.TargetPlugin]
 		if session == nil {
-			// Debug, not warn: an offline target plugin is a normal transient
-			// state and this fires on every poll tick until it reconnects.
-			log.Debug().
-				Str("command_id", cmd.CommandID).
-				Str("plugin", cmd.TargetPlugin).
-				Msg("no connected session for pending command — will retry on next tick")
+			if err := m.releaseClaim(ctx, cmd, "plugin session disappeared after claim"); err != nil {
+				dispatchErr = errors.Join(dispatchErr, err)
+			}
 			continue
 		}
 
@@ -225,34 +262,53 @@ func (m *Manager) dispatchOnce(ctx context.Context) error {
 				Str("command_id", cmd.CommandID).
 				Str("type", string(cmd.CommandType)).
 				Msg("unknown command type, marking failed")
-			if ferr := m.commandStore.MarkFailed(ctx, cmd.CommandID, "unknown command type: "+string(cmd.CommandType)); ferr != nil {
+			if ferr := m.commandStore.MarkTerminalFailed(ctx, cmd.CommandID, "unknown command type: "+string(cmd.CommandType)); ferr != nil {
 				log.Error().Err(ferr).Str("command_id", cmd.CommandID).Msg("failed to mark unknown command failed")
 			}
 			continue
 		}
 		if serr := session.SendAsync(coreMsg); serr != nil {
-			log.Error().Err(serr).
-				Str("command_id", cmd.CommandID).
-				Str("plugin", cmd.TargetPlugin).
-				Msg("failed to send command to plugin")
+			if err := m.releaseClaim(ctx, cmd, "stream enqueue failed: "+serr.Error()); err != nil {
+				dispatchErr = errors.Join(dispatchErr, err)
+			}
 			continue
 		}
 
-		// Mark dispatched so the next poll skips this command.
-		if derr := m.commandStore.MarkDispatched(ctx, cmd.CommandID); derr != nil {
-			log.Error().Err(derr).
-				Str("command_id", cmd.CommandID).
-				Msg("failed to mark command dispatched")
+		logEvent := log.Info()
+		if cmd.Attempts > 1 {
+			logEvent = log.Warn()
 		}
-
-		log.Info().
+		logEvent.
 			Str("command_id", cmd.CommandID).
 			Str("type", string(cmd.CommandType)).
-			Str("plugin", cmd.TargetPlugin).
+			Str("plugin_id", cmd.TargetPlugin).
+			Int("attempts", cmd.Attempts).
 			Str("endpoint", cmdToStreamEndpoint(coreMsg)).
 			Msg("command dispatched to plugin")
 	}
 
+	return dispatchErr
+}
+
+func (m *Manager) releaseClaim(ctx context.Context, cmd store.Command, reason string) error {
+	status, err := m.commandStore.MarkAttemptFailed(ctx, cmd.CommandID, reason)
+	if errors.Is(err, store.ErrCommandNotDispatched) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("release command %s: %w", cmd.CommandID, err)
+	}
+	logEvent := log.Warn()
+	if status == store.CmdStatusFailed {
+		logEvent = log.Error()
+	}
+	logEvent.
+		Str("command_id", cmd.CommandID).
+		Str("plugin_id", cmd.TargetPlugin).
+		Int("attempts", cmd.Attempts).
+		Str("status", string(status)).
+		Str("error", reason).
+		Msg("command dispatch attempt released")
 	return nil
 }
 

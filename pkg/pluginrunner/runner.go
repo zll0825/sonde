@@ -138,9 +138,14 @@ func (r *Runner) Run(ctx context.Context, pluginID string) error {
 // Safe to call before Run: the batch is dropped with a warning rather than
 // dereferencing the not-yet-initialized session context.
 func (r *Runner) SubmitSnapshots(pluginID string, snapshots []*pb.MetricSnapshot) {
+	if err := r.trySubmitSnapshots(pluginID, snapshots); err != nil {
+		log.Warn().Err(err).Str("plugin", r.pluginName).Msg("dropping push")
+	}
+}
+
+func (r *Runner) trySubmitSnapshots(pluginID string, snapshots []*pb.MetricSnapshot) error {
 	if r.ctx == nil {
-		log.Warn().Str("plugin", r.pluginName).Msg("runner not started, dropping push")
-		return
+		return errors.New("runner not started")
 	}
 	select {
 	case r.sendCh <- &pb.PluginMessage{
@@ -151,10 +156,11 @@ func (r *Runner) SubmitSnapshots(pluginID string, snapshots []*pb.MetricSnapshot
 			},
 		},
 	}:
+		return nil
 	case <-r.ctx.Done():
-		log.Warn().Str("plugin", r.pluginName).Msg("runner closed, dropping push")
+		return errors.New("runner closed")
 	default:
-		log.Warn().Str("plugin", r.pluginName).Msg("sendCh full, dropping push")
+		return errors.New("runner send buffer full")
 	}
 }
 
@@ -189,6 +195,10 @@ func (r *Runner) OnCoreMessage(fn func(*pb.CoreMessage)) {
 // SyncCommand or BackfillCommand. The count of newly-observed samples
 // should match what Core's ingester reports via PushAck.
 func (r *Runner) SubmitCommandAck(commandID, status, message string, collectedCount int32, errMsg string) {
+	r.submitCommandAckAt(commandID, status, message, collectedCount, errMsg, time.Now().Unix())
+}
+
+func (r *Runner) submitCommandAckAt(commandID, status, message string, collectedCount int32, errMsg string, timestamp int64) {
 	if r.ctx == nil {
 		log.Warn().Str("command_id", commandID).Msg("runner not started, dropping command ack")
 		return
@@ -200,7 +210,7 @@ func (r *Runner) SubmitCommandAck(commandID, status, message string, collectedCo
 				CommandId:      commandID,
 				Status:         status,
 				Message:        message,
-				Timestamp:      time.Now().Unix(),
+				Timestamp:      timestamp,
 				CollectedCount: collectedCount,
 				Error:          errMsg,
 			},

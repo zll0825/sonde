@@ -391,7 +391,7 @@ CREATE TABLE command_log (
     command_type    TEXT NOT NULL,                   -- "sync" | "backfill"
     target_plugin   TEXT NOT NULL,
     requested_by    TEXT NOT NULL,                   -- "system" | "user:{id}"
-    status          TEXT DEFAULT 'pending',          -- pending | accepted | running | completed | failed | timeout
+    status          TEXT DEFAULT 'pending',          -- pending | dispatched | completed | failed
     reason          TEXT,
     metric_ids      JSONB DEFAULT '[]',
     window_start    TIMESTAMPTZ,
@@ -400,8 +400,17 @@ CREATE TABLE command_log (
     error           TEXT,
     requested_at    TIMESTAMPTZ DEFAULT NOW(),
     accepted_at     TIMESTAMPTZ,
-    completed_at    TIMESTAMPTZ
+    completed_at    TIMESTAMPTZ,
+    attempts        INT NOT NULL DEFAULT 0,          -- 原子领取次数，最多 5 次
+    last_dispatched_at TIMESTAMPTZ,                  -- 最近领取时间
+    lease_expires_at TIMESTAMPTZ,                    -- dispatched 租约截止时间
+    last_error      TEXT,                            -- 最近租约/派发/执行错误
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX idx_command_log_dispatchable
+    ON command_log(status, lease_expires_at, requested_at)
+    WHERE status IN ('pending', 'dispatched');
 ```
 
 ---
@@ -423,6 +432,7 @@ CREATE TABLE command_log (
 | observations | `idx_obs_source` | Composite | 数据源审计 |
 | observations | `idx_obs_idempotency` | Unique | 幂等保护 |
 | alerts | `idx_alerts_status` | Normal | 首页查询 |
+| command_log | `idx_command_log_dispatchable` | Partial | 待派发命令与过期租约领取 |
 | alerts | `idx_alerts_severity` | Normal | 按严重级过滤 |
 | alerts | `idx_alerts_triggered` | Normal | 时间排序 |
 | alerts | `idx_alerts_active_dedup` | Unique Partial | 活跃告警去重 |

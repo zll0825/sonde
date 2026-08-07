@@ -217,3 +217,8 @@ COMMENT ON COLUMN command_log.error IS '失败信息';
 COMMENT ON COLUMN command_log.requested_at IS '发起时间';
 COMMENT ON COLUMN command_log.accepted_at IS '插件接受时间';
 COMMENT ON COLUMN command_log.completed_at IS '完成时间';
+COMMENT ON COLUMN command_log.attempts IS '原子领取命令的累计次数；最多 5 次';
+COMMENT ON COLUMN command_log.last_dispatched_at IS '最近一次领取并准备派发的时间';
+COMMENT ON COLUMN command_log.lease_expires_at IS 'dispatched 状态的租约到期时间；到期可被重新领取';
+COMMENT ON COLUMN command_log.last_error IS '最近一次派发、租约或插件执行错误；完成后仍保留历史';
+COMMENT ON COLUMN command_log.updated_at IS '最近一次命令生命周期状态更新时间';
