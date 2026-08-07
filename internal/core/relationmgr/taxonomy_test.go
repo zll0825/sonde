@@ -29,6 +29,10 @@ func TestLayerOf(t *testing.T) {
 		// causal
 		{"causes", model.RelationLayerCausal, true},
 		{"depends_on_regime", model.RelationLayerCausal, true},
+		// Legacy pre-v1 spelling must stay outside the registry. It may be
+		// quarantined as a suggestion, but it must never be accepted as a
+		// canonical relation.
+		{"influences", "", false},
 		// unknown types are not in the registry
 		{"made_up_type", "", false},
 		{"", "", false},

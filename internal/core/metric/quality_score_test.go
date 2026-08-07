@@ -48,6 +48,24 @@ func TestFreshnessScore(t *testing.T) {
 	}
 }
 
+func TestFreshnessScoreUsesFetchTimeIndependentlyFromObservationTime(t *testing.T) {
+	observedAt := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	fetchedAt := time.Date(2026, 8, 6, 8, 30, 0, 0, time.UTC)
+
+	got := FreshnessScore(observedAt, fetchedAt)
+	if got < 0.1 || got > 0.2 {
+		t.Fatalf("FreshnessScore(%s, %s) = %v, want stale score near 0.1",
+			observedAt, fetchedAt, got)
+	}
+
+	// The same observation fetched near its event time should be materially
+	// fresher; this guards against deriving source_fetched_at from obs time.
+	nearFetch := observedAt.Add(30 * time.Second)
+	if fresh := FreshnessScore(observedAt, nearFetch); fresh <= got {
+		t.Fatalf("near-event fetch score = %v, want greater than historical fetch score %v", fresh, got)
+	}
+}
+
 func TestScore_HealthyPlugin(t *testing.T) {
 	now := time.Now()
 	qr := Score(now, now.Add(-1*time.Minute), pb.QualityGrade_QUALITY_GRADE_REALTIME, true)
