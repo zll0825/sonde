@@ -41,6 +41,59 @@ func TestRealCollector_ClassifiesEachProviderSnapshot(t *testing.T) {
 	}
 }
 
+func TestRealCollector_ProviderTimeoutDegradesAndRecovers(t *testing.T) {
+	r := NewRealCollector()
+	coinGeckoAttempts := 0
+	r.client = &http.Client{
+		Timeout: 20 * time.Millisecond,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Host, "coingecko") {
+				coinGeckoAttempts++
+				if coinGeckoAttempts == 1 {
+					<-req.Context().Done()
+					return nil, req.Context().Err()
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"bitcoin":{"usd":70000}}`)),
+					Header:     make(http.Header),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"currentHashrate":620000000000000000000}`)),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	first, err := r.GetSnapshots(context.Background())
+	if err != nil {
+		t.Fatalf("first GetSnapshots: %v", err)
+	}
+	firstMetrics := make(map[string]bool, len(first))
+	for _, snap := range first {
+		firstMetrics[snap.MetricID] = true
+	}
+	if firstMetrics["btc.ass.price"] {
+		t.Fatal("timed-out price snapshot was not dropped")
+	}
+	if !firstMetrics["btc.ass.hash_rate"] || !firstMetrics["btc.ass.exchange_balance"] {
+		t.Fatalf("partial collection metrics = %v, want hash rate and exchange balance", firstMetrics)
+	}
+
+	second, err := r.GetSnapshots(context.Background())
+	if err != nil {
+		t.Fatalf("recovery GetSnapshots: %v", err)
+	}
+	for _, snap := range second {
+		if snap.MetricID == "btc.ass.price" && snap.Provider == providerCoinGecko {
+			return
+		}
+	}
+	t.Fatal("CoinGecko price did not recover on the next collection")
+}
+
 func TestMockCollector_ClassifiesEverySnapshot(t *testing.T) {
 	snaps, err := (Mock{}).GetSnapshots(context.Background())
 	if err != nil {
