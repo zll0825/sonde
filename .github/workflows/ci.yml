@@ -30,7 +30,9 @@ jobs:
           fi
 
       - name: go vet
-        run: go vet ./...
+        run: |
+          go vet ./...
+          for m in plugins/etf plugins/crypto plugins/macro; do (cd "$m" && go vet ./...); done
 
       - name: buf lint
         uses: bufbuild/buf-setup-action@v1
@@ -79,6 +81,12 @@ jobs:
       # Integration tests (internal/core/ontology) gate on TEST_DATABASE_URL;
       # without it they skip and the TimescaleDB service above goes unused.
       TEST_DATABASE_URL: postgres://capital:capital_test@localhost:5432/capital_observatory_test?sslmode=disable
+      # Notification tests must be deterministic even when repository or runner
+      # environments provide credentials.
+      TELEGRAM_BOT_TOKEN: ""
+      TELEGRAM_CHAT_ID: ""
+      WEBHOOK_URL: ""
+      WEBHOOK_TOKEN: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -91,7 +99,10 @@ jobs:
           go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.17.1
           migrate -path ./migrations -database "$DATABASE_URL" up
 
-      - name: Run tests
+      - name: Run short tests
+        run: make test-short
+
+      - name: Run full tests and race gates
         run: |
           go test -v -race -count=1 ./...
           for m in plugins/etf plugins/crypto plugins/macro; do (cd "$m" && go test -v -race -count=1 ./...); done

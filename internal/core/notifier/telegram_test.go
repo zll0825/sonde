@@ -86,9 +86,37 @@ func TestFormatAlert_EscapesReservedInTitle(t *testing.T) {
 }
 
 func TestResolve_FallsBackToNop(t *testing.T) {
-	// No env vars set in test runner — should resolve to NopNotifier.
+	clearNotificationEnv(t)
 	n := Resolve()
 	if _, ok := n.(NopNotifier); !ok {
 		t.Errorf("expected NopNotifier without env creds, got %T", n)
+	}
+}
+
+func TestResolve_PrefersTelegramWhenConfigured(t *testing.T) {
+	clearNotificationEnv(t)
+	t.Setenv("TELEGRAM_BOT_TOKEN", "test-token")
+	t.Setenv("TELEGRAM_CHAT_ID", "test-chat")
+
+	n := Resolve()
+	if _, ok := n.(*Telegram); !ok {
+		t.Fatalf("expected Telegram with complete credentials, got %T", n)
+	}
+}
+
+func TestResolve_FallsBackToWebhookWhenTelegramMissing(t *testing.T) {
+	clearNotificationEnv(t)
+	t.Setenv("WEBHOOK_URL", "http://127.0.0.1/test")
+
+	n := Resolve()
+	if _, ok := n.(*Webhook); !ok {
+		t.Fatalf("expected Webhook when Telegram is unavailable, got %T", n)
+	}
+}
+
+func clearNotificationEnv(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{"TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "WEBHOOK_URL", "WEBHOOK_TOKEN"} {
+		t.Setenv(key, "")
 	}
 }
