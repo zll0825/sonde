@@ -9,27 +9,38 @@ import (
 	"time"
 
 	"capital_observatory/pkg/model"
+	"capital_observatory/pkg/provider"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
+// newTestRealCollector creates a RealCollector with mocked HTTP clients.
+func newTestRealCollector(coingeckoRT, mempoolRT, blockchainRT roundTripFunc) *RealCollector {
+	r := &RealCollector{
+		coingeckoClient: provider.NewSafeHTTPClientWithHTTPClient(provider.CoinGeckoConfig(), &http.Client{Transport: coingeckoRT}),
+		mempoolClient:   provider.NewSafeHTTPClientWithHTTPClient(provider.MempoolConfig(), &http.Client{Transport: mempoolRT}),
+		blockchainInfo:  &BlockchainInfoCollector{client: provider.NewSafeHTTPClientWithHTTPClient(provider.BlockchainInfoConfig(), &http.Client{Transport: blockchainRT})},
+	}
+	return r
+}
+
 func TestRealCollector_ClassifiesEachProviderSnapshot(t *testing.T) {
-	r := NewRealCollector()
-	r.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		body := `{"currentHashrate":620000000000000000000}`
-		if strings.Contains(req.URL.Host, "coingecko") {
-			body = `{"bitcoin":{"usd":70000}}`
-		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
-	})}
-	// Mock blockchain.com response
-	r.blockchainClient = NewBlockchainInfoCollector()
-	r.blockchainClient.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		body := `{"values":[{"x":1700000000,"y":350000}]}`
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
-	})}
+	r := newTestRealCollector(
+		// CoinGecko
+		roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"bitcoin":{"usd":70000}}`)), Header: make(http.Header)}, nil
+		}),
+		// Mempool
+		roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"currentHashrate":620000000000000000000}`)), Header: make(http.Header)}, nil
+		}),
+		// Blockchain.com
+		roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"values":[{"x":1700000000,"y":350000}]}`)), Header: make(http.Header)}, nil
+		}),
+	)
 
 	snaps, err := r.GetSnapshots(context.Background())
 	if err != nil {
@@ -56,36 +67,26 @@ func TestRealCollector_ClassifiesEachProviderSnapshot(t *testing.T) {
 }
 
 func TestRealCollector_ProviderTimeoutDegradesAndRecovers(t *testing.T) {
-	r := NewRealCollector()
 	coinGeckoAttempts := 0
-	r.client = &http.Client{
-		Timeout: 20 * time.Millisecond,
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			if strings.Contains(req.URL.Host, "coingecko") {
-				coinGeckoAttempts++
-				if coinGeckoAttempts == 1 {
-					<-req.Context().Done()
-					return nil, req.Context().Err()
-				}
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Body:       io.NopCloser(strings.NewReader(`{"bitcoin":{"usd":70000}}`)),
-					Header:     make(http.Header),
-				}, nil
+	r := newTestRealCollector(
+		// CoinGecko with initial failure then recovery
+		roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			coinGeckoAttempts++
+			if coinGeckoAttempts == 1 {
+				<-req.Context().Done()
+				return nil, req.Context().Err()
 			}
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(strings.NewReader(`{"currentHashrate":620000000000000000000}`)),
-				Header:     make(http.Header),
-			}, nil
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"bitcoin":{"usd":70000}}`)), Header: make(http.Header)}, nil
 		}),
-	}
-	// Mock blockchain.com
-	r.blockchainClient = NewBlockchainInfoCollector()
-	r.blockchainClient.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		body := `{"values":[{"x":1700000000,"y":350000}]}`
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
-	})}
+		// Mempool (always succeeds)
+		roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"currentHashrate":620000000000000000000}`)), Header: make(http.Header)}, nil
+		}),
+		// Blockchain.com (always succeeds)
+		roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"values":[{"x":1700000000,"y":350000}]}`)), Header: make(http.Header)}, nil
+		}),
+	)
 
 	first, err := r.GetSnapshots(context.Background())
 	if err != nil {
@@ -131,24 +132,25 @@ func TestMockCollector_ClassifiesEverySnapshot(t *testing.T) {
 }
 
 // TestRealCollectorWindow_ProducesRealHistory verifies that backfill uses
-// real historical data from mempool.space and blockchain.com, not fabricated
-// mock data. Exchange balance (retired) no longer appears in backfill.
+// real historical data, not mock. Exchange balance (retired) no longer appears.
 func TestRealCollectorWindow_ProducesRealHistory(t *testing.T) {
-	r := NewRealCollector()
 	end := time.Now()
 	start := end.AddDate(0, 0, -10)
 
-	// Mock mempool history
-	r.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		body := `{"hashrates":[{"timestamp":1700000000,"avgHashrate":620000000000000000000}]}`
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
-	})}
-	// Mock blockchain.com history
-	r.blockchainClient = NewBlockchainInfoCollector()
-	r.blockchainClient.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		body := `{"values":[{"x":1700000000,"y":350000},{"x":1700086400,"y":360000}]}`
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
-	})}
+	r := newTestRealCollector(
+		// CoinGecko - not used in window
+		roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"bitcoin":{"usd":70000}}`)), Header: make(http.Header)}, nil
+		}),
+		// Mempool history
+		roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"hashrates":[{"timestamp":1700000000,"avgHashrate":620000000000000000000}]}`)), Header: make(http.Header)}, nil
+		}),
+		// Blockchain.com history
+		roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"values":[{"x":1700000000,"y":350000},{"x":1700086400,"y":360000}]}`)), Header: make(http.Header)}, nil
+		}),
+	)
 
 	snaps, err := r.GetSnapshotsForWindow(context.Background(), start, end)
 	if err != nil {
@@ -158,11 +160,9 @@ func TestRealCollectorWindow_ProducesRealHistory(t *testing.T) {
 		t.Fatal("expected backfill data, got none")
 	}
 	for _, s := range snaps {
-		// No metric should have mock source class in backfill
 		if s.SourceClass == model.SourceClassMock {
 			t.Errorf("backfill for %q has mock source class — should be real", s.MetricID)
 		}
-		// exchange_balance should never appear
 		if s.MetricID == "btc.ass.exchange_balance" {
 			t.Error("retired metric btc.ass.exchange_balance should not appear in backfill")
 		}

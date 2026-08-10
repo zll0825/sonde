@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"capital_observatory/pkg/model"
+	"capital_observatory/pkg/provider"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -18,11 +19,11 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { re
 // returned by YahooCollector are sourced as real (no mock fallback).
 // Synthetic metrics (daily_flow) have been retired; only real-source metrics remain.
 func TestYahooCollector_ClassifiesAllSnapshotsAsReal(t *testing.T) {
-	y := NewYahooCollector()
-	y.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+	testClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		body := `{"chart":{"result":[{"meta":{"regularMarketPrice":215.5,"regularMarketVolume":5000000}}],"error":null}}`
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 	})}
+	y := &YahooCollector{client: provider.NewSafeHTTPClientWithHTTPClient(provider.YahooFinanceConfig(), testClient)}
 
 	snaps, err := y.GetSnapshots(context.Background())
 	if err != nil {

@@ -12,9 +12,6 @@ import (
 // Mock returns deterministic-looking but slightly jittered ETF data for
 // development and CI environments where Yahoo Finance may be unavailable.
 // Only provides data for real-source metrics (price, volume).
-//
-// Synthetic metrics (gld.ass.daily_flow, eth.ass.daily_flow) have been retired;
-// they are no longer part of the production inventory.
 type Mock struct{}
 
 func (Mock) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
@@ -41,8 +38,7 @@ func (Mock) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 	}, nil
 }
 
-// GetSnapshotsForWindow synthesizes a daily sample series spanning [start, end]
-// for real-source metrics only. Synthetic metric history is not generated.
+// GetSnapshotsForWindow synthesizes a daily sample series spanning [start, end] for real-source metrics only.
 func (Mock) GetSnapshotsForWindow(ctx context.Context, start, end time.Time) ([]pluginrunner.Snapshot, error) {
 	const day = 24 * time.Hour
 	if end.Before(start) {

@@ -1,4 +1,5 @@
 // Package collector 提供 macro 插件的数据采集器：FRED 真实源与离线 mock。
+// 使用 SafeHTTPClient 保护 API 访问，包括 FRED 的 per-key 配额。
 package collector
 
 import (
@@ -6,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,6 +17,7 @@ import (
 
 	"capital_observatory/pkg/model"
 	"capital_observatory/pkg/pluginrunner"
+	"capital_observatory/pkg/provider"
 )
 
 // providerFRED is the source_provider recorded on FRED-sourced observations.
@@ -30,31 +31,27 @@ type fredSeries struct {
 	Frequency string
 }
 
-// fredSeriesList gives a fixed iteration order so logs and snapshot slices
-// are deterministic. Includes all macro research dimensions: liquidity, rates,
-// dollar/FX, and inflation.
+// fredSeriesList gives a fixed iteration order so logs and snapshot slices are deterministic.
 var fredSeriesList = []struct {
 	MetricID string
 	fredSeries
 }{
-	{"fed.ins.balance_sheet", fredSeries{"WALCL", 1e6, "weekly"}},   // millions USD → USD
-	{"us.mkt.ten_year_yield", fredSeries{"DGS10", 1, "daily"}},      // percent, no scaling
-	{"us.mkt.dollar_index", fredSeries{"DTWEXBGS", 1, "daily"}},     // index, no scaling
-	{"us.mkt.usd_cny", fredSeries{"DEXCHUS", 1, "daily"}},           // CNY per USD, no scaling
-	{"us.mkt.cpi", fredSeries{"CPIAUCSL", 1, "monthly"}},            // CPI index level
-	{"us.mkt.inflation_yoy", fredSeries{"CPIAUCSL_PCH", 1, "monthly"}}, // YoY % change, native FRED unit
+	{"fed.ins.balance_sheet", fredSeries{"WALCL", 1e6, "weekly"}},
+	{"us.mkt.ten_year_yield", fredSeries{"DGS10", 1, "daily"}},
+	{"us.mkt.dollar_index", fredSeries{"DTWEXBGS", 1, "daily"}},
+	{"us.mkt.usd_cny", fredSeries{"DEXCHUS", 1, "daily"}},
+	{"us.mkt.cpi", fredSeries{"CPIAUCSL", 1, "monthly"}},
+	{"us.mkt.inflation_yoy", fredSeries{"CPIAUCSL_PCH", 1, "monthly"}},
 }
 
 // FREDCollector fetches real macro data from the Federal Reserve Economic Data
-// API (fred.stlouisfed.org). A free API key is required via FRED_API_KEY env.
+// API. A free API key is required via FRED_API_KEY env.
 type FREDCollector struct {
 	apiKey string
-	client *http.Client
+	client *provider.SafeHTTPClient
 }
 
-// NewFREDCollector creates a FRED collector. Fails fast when FRED_API_KEY is
-// missing — a macro plugin that cannot reach its only real source shouldn't
-// start and silently emit nothing.
+// NewFREDCollector creates a FRED collector. Fails fast when FRED_API_KEY is missing.
 func NewFREDCollector() (*FREDCollector, error) {
 	apiKey := os.Getenv("FRED_API_KEY")
 	if apiKey == "" {
@@ -62,12 +59,11 @@ func NewFREDCollector() (*FREDCollector, error) {
 	}
 	return &FREDCollector{
 		apiKey: apiKey,
-		client: &http.Client{Timeout: 15 * time.Second},
+		client: provider.NewSafeHTTPClient(provider.FREDConfig()),
 	}, nil
 }
 
-// fredObservationsResponse is the JSON payload returned by FRED's
-// series/observations endpoint.
+// fredObservationsResponse is the JSON payload returned by FRED's observations endpoint.
 type fredObservationsResponse struct {
 	Observations []struct {
 		Date  string `json:"date"`
@@ -75,13 +71,9 @@ type fredObservationsResponse struct {
 	} `json:"observations"`
 }
 
-// GetSnapshots returns the latest observation for each FRED series. If a series
-// fails to fetch, it is skipped with a warning; the method reports an error only
-// when ALL series fail (the whole source is down, not a single flaky series).
+// GetSnapshots returns the latest observation for each FRED series.
 func (f *FREDCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 	now := time.Now()
-	// FRED series are published with a lookback lag; fetch a 30-day window so
-	// we pick up the freshest release even if the most recent data just dropped.
 	end := now
 	start := end.AddDate(0, 0, -30)
 
@@ -91,11 +83,7 @@ func (f *FREDCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 	for _, entry := range fredSeriesList {
 		val, obsTime, err := f.fetchLatest(ctx, entry.SeriesID, entry.UnitScale, start, end)
 		if err != nil {
-			log.Warn().
-				Err(err).
-				Str("metric", entry.MetricID).
-				Str("series", entry.SeriesID).
-				Msg("FRED fetch failed; skipping metric")
+			logFetchSkip(entry.MetricID, entry.SeriesID, err)
 			failed++
 			continue
 		}
@@ -119,23 +107,17 @@ func (f *FREDCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 		return nil, fmt.Errorf("all %d FRED series fetches failed", len(fredSeriesList))
 	}
 	if failed > 0 {
-		log.Warn().
-			Int("succeeded", len(snaps)).
-			Int("failed", failed).
-			Msg("partial FRED fetch — some metrics updated from stale data")
+		providerLogPartial(len(snaps), failed)
 	}
 	return snaps, nil
 }
 
 // GetSnapshotsForWindow serves the backfill path using FRED's native
-// observation_start/observation_end parameters. Observations with missing
-// values (".") are skipped.
+// observation_start/observation_end parameters.
 func (f *FREDCollector) GetSnapshotsForWindow(ctx context.Context, start, end time.Time) ([]pluginrunner.Snapshot, error) {
 	if end.Before(start) {
 		end = start
 	}
-	// Cap window to 90 days per series per call to stay under FRED's default
-	// 100k-observation cap. Macro monthly series have low density so this is safe.
 	const maxWindow = 90 * 24 * time.Hour
 	if end.Sub(start) > maxWindow {
 		start = end.Add(-maxWindow)
@@ -145,17 +127,13 @@ func (f *FREDCollector) GetSnapshotsForWindow(ctx context.Context, start, end ti
 	for _, entry := range fredSeriesList {
 		times, vals, err := f.fetchRange(ctx, entry.SeriesID, entry.UnitScale, start, end)
 		if err != nil {
-			log.Warn().
-				Err(err).
-				Str("metric", entry.MetricID).
-				Str("series", entry.SeriesID).
-				Msg("FRED window fetch failed; skipping metric")
+			logFetchSkip(entry.MetricID, entry.SeriesID, err)
 			continue
 		}
 		fetchedAt := time.Now()
 		for i, ts := range times {
 			if vals[i] == nil {
-				continue // missing observation (holiday, etc.)
+				continue
 			}
 			snaps = append(snaps, pluginrunner.Snapshot{
 				MetricID:    entry.MetricID,
@@ -224,7 +202,6 @@ func (f *FREDCollector) fetchRange(ctx context.Context, seriesID string, scale f
 }
 
 // observationsURL builds the FRED observations endpoint URL.
-// limit=0 lets FRED use its default (100k); sortOrder is asc or desc.
 func (f *FREDCollector) observationsURL(seriesID string, start, end time.Time, sortOrder string, limit int) string {
 	reqURL := fmt.Sprintf(
 		"https://api.stlouisfed.org/fred/series/observations?series_id=%s&api_key=%s&file_type=json&observation_start=%s&observation_end=%s&sort_order=%s",
@@ -236,17 +213,17 @@ func (f *FREDCollector) observationsURL(seriesID string, start, end time.Time, s
 	return reqURL
 }
 
-// doGet performs HTTP GET and returns the response body.
+// doGet performs HTTP GET using SafeHTTPClient, strips API key from errors.
 func (f *FREDCollector) doGet(ctx context.Context, reqURL string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "capital-observatory/0.1.0")
+
 	resp, err := f.client.Do(req)
 	if err != nil {
-		// url.Error embeds the full request URL, which contains api_key as a
-		// query param — strip it so the key never reaches logs.
+		// Strip API key from url.Error
 		var uerr *url.Error
 		if errors.As(err, &uerr) {
 			err = uerr.Err
@@ -254,11 +231,12 @@ func (f *FREDCollector) doGet(ctx context.Context, reqURL string) ([]byte, error
 		return nil, fmt.Errorf("http GET %s: %w", req.URL.Path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		body, _ := provider.ReadAll(resp, 512)
 		return nil, fmt.Errorf("FRED returned %d: %s", resp.StatusCode, string(body))
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return provider.ReadAll(resp, 1<<20)
 }
 
 // parseFREDValue converts a FRED string value to a scaled float64.
@@ -272,4 +250,14 @@ func parseFREDValue(s string, scale float64) (float64, bool) {
 		return 0, false
 	}
 	return v * scale, true
+}
+
+// logFetchSkip logs a skipped FRED metric.
+func logFetchSkip(metric, series string, err error) {
+	log.Warn().Err(err).Str("metric", metric).Str("series", series).Msg("FRED fetch failed; skipping metric")
+}
+
+// providerLogPartial logs partial FRED fetch results.
+func providerLogPartial(succeeded, failed int) {
+	log.Warn().Int("succeeded", succeeded).Int("failed", failed).Msg("partial FRED fetch")
 }

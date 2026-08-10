@@ -1,12 +1,11 @@
 // Package collector 提供 crypto 插件的数据采集器：CoinGecko / mempool.space /
-// blockchain.com 真实源与离线 mock。
+// blockchain.com 真实源与离线 mock。使用 SafeHTTPClient 进行 API 保护。
 package collector
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -14,38 +13,35 @@ import (
 
 	"capital_observatory/pkg/model"
 	"capital_observatory/pkg/pluginrunner"
+	"capital_observatory/pkg/provider"
 )
 
-// source labels — distinct from mock so downstream can filter by trust boundary.
 const (
 	providerCoinGecko      = "coingecko"
 	providerMempool        = "mempool_space"
 	providerBlockchainInfo = "blockchain_com"
 )
 
-// priceURLCoinGecko is the /simple/price endpoint (no key needed, free tier
-// tolerates small polling cadences ~1 req / few seconds per IP).
+// priceURLCoinGecko is the /simple/price endpoint.
 const priceURLCoinGecko = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
 
-// mempoolHashrateURL returns the latest network hash rate in H/s (difficulty
-// adjustment projection + latest block timing). The /3d projection includes a
-// rolling 2016-block estimate in its latest window.
+// mempoolHashrateURL returns the latest network hash rate in H/s.
 const mempoolHashrateURL = "https://mempool.space/api/v1/mining/hashrate/3d"
 
 // RealCollector pulls price, hash-rate, and on-chain activity from free public
-// sources. Exchange balance (btc.ass.exchange_balance) has been retired — no
-// trustworthy free source exists.
+// sources with rate limiting and circuit breaker protection.
 type RealCollector struct {
-	client           *http.Client
-	blockchainClient *BlockchainInfoCollector
+	coingeckoClient *provider.SafeHTTPClient
+	mempoolClient   *provider.SafeHTTPClient
+	blockchainInfo  *BlockchainInfoCollector
 }
 
-// NewRealCollector creates a crypto collector that uses real public sources.
-// No API keys are required for the free endpoints.
+// NewRealCollector creates a crypto collector with safe HTTP clients.
 func NewRealCollector() *RealCollector {
 	return &RealCollector{
-		client:           &http.Client{Timeout: 10 * time.Second},
-		blockchainClient: NewBlockchainInfoCollector(),
+		coingeckoClient: provider.NewSafeHTTPClient(provider.CoinGeckoConfig()),
+		mempoolClient:   provider.NewSafeHTTPClient(provider.MempoolConfig()),
+		blockchainInfo:  NewBlockchainInfoCollector(),
 	}
 }
 
@@ -61,10 +57,15 @@ type mempoolHashrateResponse struct {
 	CurrentHashrate float64 `json:"currentHashrate"`
 }
 
+// mempoolHashrateHistoryResponse for historical hashrate data.
+type mempoolHashrateHistoryResponse struct {
+	Hashrates []struct {
+		Timestamp   float64 `json:"timestamp"`
+		AvgHashrate float64 `json:"avgHashrate"`
+	} `json:"hashrates"`
+}
+
 // GetSnapshots fetches real price + hash rate + transaction count.
-// A failed real fetch for one metric does not abort the others —
-// it is reflected in the returned Snapshot (omitted) so the caller sees a
-// partial but coherent view.
 func (r *RealCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 	snaps := make([]pluginrunner.Snapshot, 0, 3)
 
@@ -101,7 +102,7 @@ func (r *RealCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 	}
 
 	// Real transaction count from blockchain.com
-	if txCount, txTime, err := r.blockchainClient.GetTransactionCount(ctx); err != nil {
+	if txCount, txTime, err := r.blockchainInfo.GetTransactionCount(ctx); err != nil {
 		log.Warn().Err(err).Msg("blockchain.com tx_count fetch failed; dropping btc.ass.tx_count")
 	} else {
 		fetchedAt := time.Now()
@@ -122,23 +123,17 @@ func (r *RealCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 	return snaps, nil
 }
 
-// GetSnapshotsForWindow serves the backfill for price, hash-rate, and tx_count.
-// All history comes from their respective real sources.
+// GetSnapshotsForWindow serves the backfill for hash-rate and tx_count.
 func (r *RealCollector) GetSnapshotsForWindow(ctx context.Context, start, end time.Time) ([]pluginrunner.Snapshot, error) {
 	if end.Before(start) {
 		end = start
 	}
 	snaps := make([]pluginrunner.Snapshot, 0, 90)
 
-	// Price history from CoinGecko (not implemented here yet — documented as follow-up)
-	//
-	// CoinGecko /coins/{id}/market_chart/range provides historical prices.
-	// Implementation deferred to a follow-up commit.
-
 	// Hash rate history from mempool.space
 	hashTimes, hashValues, err := r.fetchHashRateHistory(ctx, start, end)
 	if err != nil {
-		log.Warn().Err(err).Msg("mempool.hashrate history fetch failed")
+		log.Warn().Err(err).Msg("mempool hashrate history fetch failed")
 	} else {
 		fetchedAt := time.Now()
 		for i, ts := range hashTimes {
@@ -158,7 +153,7 @@ func (r *RealCollector) GetSnapshotsForWindow(ctx context.Context, start, end ti
 	}
 
 	// Transaction count history from blockchain.com
-	txTimes, txValues, err := r.blockchainClient.GetTransactionHistory(ctx, start, end)
+	txTimes, txValues, err := r.blockchainInfo.GetTransactionHistory(ctx, start, end)
 	if err != nil {
 		log.Warn().Err(err).Msg("blockchain.com tx_count history failed")
 	} else {
@@ -180,96 +175,122 @@ func (r *RealCollector) GetSnapshotsForWindow(ctx context.Context, start, end ti
 	}
 
 	if len(snaps) == 0 {
-		return nil, fmt.Errorf("all crypto history sources failed for window [%s, %s]", start.Format("2006-01-02"), end.Format("2006-01-02"))
+		return nil, fmt.Errorf("all crypto history sources failed for window [%s, %s]",
+			start.Format("2006-01-02"), end.Format("2006-01-02"))
 	}
 	return snaps, nil
 }
 
 // fetchPrice queries CoinGecko /simple/price for the current BTC/USD spot.
 func (r *RealCollector) fetchPrice(ctx context.Context) (float64, error) {
-	body, err := r.doGet(ctx, priceURLCoinGecko)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, priceURLCoinGecko, nil)
 	if err != nil {
 		return 0, err
 	}
-	var resp priceResponseCoinGecko
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return 0, fmt.Errorf("decode coingecko response: %w", err)
-	}
-	if resp.Bitcoin.USD == 0 {
-		return 0, fmt.Errorf("zero price in coingecko response")
-	}
-	return resp.Bitcoin.USD, nil
-}
-
-// fetchHashRate queries mempool.space for the current network hash rate in H/s
-// and converts to EH/s (1 EH/s = 1e18 H/s).
-func (r *RealCollector) fetchHashRate(ctx context.Context) (float64, error) {
-	body, err := r.doGet(ctx, mempoolHashrateURL)
-	if err != nil {
-		return 0, err
-	}
-	var resp mempoolHashrateResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return 0, fmt.Errorf("decode mempool response: %w", err)
-	}
-	if resp.CurrentHashrate == 0 {
-		return 0, fmt.Errorf("zero hashrate in mempool response")
-	}
-	return resp.CurrentHashrate / 1e18, nil
-}
-
-// fetchHashRateHistory queries mempool.space hashrate endpoint for historical data.
-func (r *RealCollector) fetchHashRateHistory(ctx context.Context, start, end time.Time) ([]time.Time, []float64, error) {
-	url := fmt.Sprintf(
-		"https://mempool.space/api/v1/mining/hashrate/%s?start=%s&end=%s",
-		"1m",
-		start.Format("2006-01-02"),
-		end.Format("2006-01-02"),
-	)
-	body, err := r.doGet(ctx, url)
-	if err != nil {
-		return nil, nil, err
-	}
-	var resp struct {
-		Hashrates []struct {
-			Timestamp float64 `json:"timestamp"` // unix seconds
-			AvgHashrate float64 `json:"avgHashrate"`
-		} `json:"hashrates"`
-	}
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, nil, fmt.Errorf("decode mempool hashrate history: %w", err)
-	}
-	times := make([]time.Time, 0, len(resp.Hashrates))
-	values := make([]float64, 0, len(resp.Hashrates))
-	for _, h := range resp.Hashrates {
-		if h.AvgHashrate == 0 {
-			continue
-		}
-		times = append(times, time.Unix(int64(h.Timestamp), 0))
-		values = append(values, h.AvgHashrate/1e18) // H/s to EH/s
-	}
-	return times, values, nil
-}
-
-// doGet performs an HTTP GET and returns the response body, with a
-// CoinGecko-compatible User-Agent.
-func (r *RealCollector) doGet(ctx context.Context, url string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "capital-observatory/0.1.0")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := r.client.Do(req)
+	resp, err := r.coingeckoClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("http GET: %w", err)
+		return 0, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("crypto endpoint returned %d: %s", resp.StatusCode, string(body))
+		body, _ := provider.ReadAll(resp, 512)
+		return 0, fmt.Errorf("coingecko returned %d: %s", resp.StatusCode, string(body))
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+
+	body, err := provider.ReadAll(resp, 1<<20)
+	if err != nil {
+		return 0, err
+	}
+
+	var p priceResponseCoinGecko
+	if err := json.Unmarshal(body, &p); err != nil {
+		return 0, fmt.Errorf("decode coingecko: %w", err)
+	}
+	if p.Bitcoin.USD == 0 {
+		return 0, fmt.Errorf("zero price")
+	}
+	return p.Bitcoin.USD, nil
+}
+
+// fetchHashRate queries mempool.space for current network hash rate in EH/s.
+func (r *RealCollector) fetchHashRate(ctx context.Context) (float64, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, mempoolHashrateURL, nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := r.mempoolClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := provider.ReadAll(resp, 512)
+		return 0, fmt.Errorf("mempool returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := provider.ReadAll(resp, 1<<20)
+	if err != nil {
+		return 0, err
+	}
+
+	var h mempoolHashrateResponse
+	if err := json.Unmarshal(body, &h); err != nil {
+		return 0, fmt.Errorf("decode mempool: %w", err)
+	}
+	if h.CurrentHashrate == 0 {
+		return 0, fmt.Errorf("zero hashrate")
+	}
+	return h.CurrentHashrate / 1e18, nil
+}
+
+// fetchHashRateHistory queries mempool.space for historical hashrate data.
+func (r *RealCollector) fetchHashRateHistory(ctx context.Context, start, end time.Time) ([]time.Time, []float64, error) {
+	url := fmt.Sprintf(
+		"https://mempool.space/api/v1/mining/hashrate/1m?start=%s&end=%s",
+		start.Format("2006-01-02"),
+		end.Format("2006-01-02"),
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := r.mempoolClient.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := provider.ReadAll(resp, 512)
+		return nil, nil, fmt.Errorf("mempool history returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := provider.ReadAll(resp, 1<<20)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var h mempoolHashrateHistoryResponse
+	if err := json.Unmarshal(body, &h); err != nil {
+		return nil, nil, fmt.Errorf("decode mempool history: %w", err)
+	}
+
+	times := make([]time.Time, 0, len(h.Hashrates))
+	values := make([]float64, 0, len(h.Hashrates))
+	for _, entry := range h.Hashrates {
+		if entry.AvgHashrate == 0 {
+			continue
+		}
+		times = append(times, time.Unix(int64(entry.Timestamp), 0))
+		values = append(values, entry.AvgHashrate/1e18)
+	}
+	return times, values, nil
 }

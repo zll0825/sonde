@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"capital_observatory/pkg/model"
+	"capital_observatory/pkg/provider"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -15,12 +17,23 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
 func TestFREDCollector_ClassifiesUpstreamSnapshotsAsReal(t *testing.T) {
+	testClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		body := `{"observations":[{"date":"2026-08-01","value":"4.2"}]}`
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
+	// Use test-friendly config with high RPS to avoid rate limit delays in tests
+	testCfg := provider.Config{
+		ProviderName: "fred-test",
+		Timeout:      5 * time.Second,
+		RPS:          100, // high RPS for testing
+		Burst:        10,
+		MaxRetries:   1,
+		BaseDelay:    10 * time.Millisecond,
+		MaxDelay:     50 * time.Millisecond,
+	}
 	f := &FREDCollector{
 		apiKey: "test",
-		client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-			body := `{"observations":[{"date":"2026-08-01","value":"4.2"}]}`
-			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
-		})},
+		client: provider.NewSafeHTTPClientWithHTTPClient(testCfg, testClient),
 	}
 	snaps, err := f.GetSnapshots(context.Background())
 	if err != nil {
@@ -105,8 +118,7 @@ func TestFREDSeriesListOrder(t *testing.T) {
 }
 
 func TestWALCLUnitsAreUSD(t *testing.T) {
-	// Sanity: WALCL scale must be 1e6 (millions -> USD), since the metric is declared
-	// as USD in the FREDCollector registration.
+	// Sanity: WALCL scale must be 1e6 (millions -> USD).
 	for _, entry := range fredSeriesList {
 		if entry.MetricID == "fed.ins.balance_sheet" && entry.UnitScale != 1e6 {
 			t.Errorf("WALCL UnitScale = %v, want 1e6 (FRED reports in MILLIONS of USD)", entry.UnitScale)

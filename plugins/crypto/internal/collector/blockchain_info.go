@@ -1,12 +1,11 @@
 // Package collector 子模块：blockchain.com public chart API 采集 BTC 链上指标。
-// 提供交易数量等链上活跃度数据，无需 API key。
+// 提供交易数量等链上活跃度数据，无需 API key。使用 SafeHTTPClient 保护。
 package collector
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -14,8 +13,21 @@ import (
 
 	"capital_observatory/pkg/model"
 	"capital_observatory/pkg/pluginrunner"
+	"capital_observatory/pkg/provider"
 )
 
+// BlockchainInfoCollector fetches on-chain metrics from blockchain.com's
+// public chart API. No API key required. Includes safety mechanisms.
+type BlockchainInfoCollector struct {
+	client *provider.SafeHTTPClient
+}
+
+// NewBlockchainInfoCollector creates a blockchain.com collector with safety defaults.
+func NewBlockchainInfoCollector() *BlockchainInfoCollector {
+	return &BlockchainInfoCollector{
+		client: provider.NewSafeHTTPClient(provider.BlockchainInfoConfig()),
+	}
+}
 
 // blockchainInfoChartResponse represents the chart API response for n-transactions.
 type blockchainInfoChartResponse struct {
@@ -25,20 +37,8 @@ type blockchainInfoChartResponse struct {
 	} `json:"values"`
 }
 
-// BlockchainInfoCollector fetches on-chain metrics from blockchain.com's
-// public chart API. No API key required. Conservative polling recommended.
-type BlockchainInfoCollector struct {
-	client *http.Client
-}
-
-// NewBlockchainInfoCollector creates a blockchain.com collector.
-func NewBlockchainInfoCollector() *BlockchainInfoCollector {
-	return &BlockchainInfoCollector{client: &http.Client{Timeout: 15 * time.Second}}
-}
-
 // GetTransactionCount returns the latest daily transaction count for BTC.
 func (b *BlockchainInfoCollector) GetTransactionCount(ctx context.Context) (float64, time.Time, error) {
-	// Fetch the most recent 30 days to find the latest non-zero value
 	end := time.Now()
 	start := end.AddDate(0, 0, -30)
 	url := fmt.Sprintf(
@@ -66,7 +66,7 @@ func (b *BlockchainInfoCollector) GetTransactionCount(ctx context.Context) (floa
 
 // GetTransactionHistory returns daily transaction counts across [start, end].
 func (b *BlockchainInfoCollector) GetTransactionHistory(ctx context.Context, start, end time.Time) ([]time.Time, []float64, error) {
-	// blockchain.info allows long timespans; cap at 365 days for stability
+	// Cap at 365 days for API stability
 	maxWindow := 365 * 24 * time.Hour
 	if end.Sub(start) > maxWindow {
 		start = end.Add(-maxWindow)
@@ -96,9 +96,9 @@ func (b *BlockchainInfoCollector) GetTransactionHistory(ctx context.Context, sta
 	return times, values, nil
 }
 
-// doGet performs an HTTP GET and returns the response body.
-func (b *BlockchainInfoCollector) doGet(ctx context.Context, url string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+// doGet performs an HTTP GET using the SafeHTTPClient.
+func (b *BlockchainInfoCollector) doGet(ctx context.Context, urlStr string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -107,20 +107,19 @@ func (b *BlockchainInfoCollector) doGet(ctx context.Context, url string) ([]byte
 
 	resp, err := b.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("http GET: %w", err)
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		body, _ := provider.ReadAll(resp, 512)
 		return nil, fmt.Errorf("blockchain.info returned %d: %s", resp.StatusCode, string(body))
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return provider.ReadAll(resp, 1<<20)
 }
 
-
 // FormatTxSnapshots converts time/values to plugin snapshots.
-func FormatTxSnapshots(times []time.Time, values []float64, fetchedAt time.Time, provider string) []pluginrunner.Snapshot {
+func FormatTxSnapshots(times []time.Time, values []float64, fetchedAt time.Time, providerName string) []pluginrunner.Snapshot {
 	snaps := make([]pluginrunner.Snapshot, 0, len(times))
 	for i, ts := range times {
 		if values[i] == 0 {
@@ -131,7 +130,7 @@ func FormatTxSnapshots(times []time.Time, values []float64, fetchedAt time.Time,
 			Value:       values[i],
 			Timestamp:   ts,
 			FetchedAt:   fetchedAt,
-			Provider:    provider,
+			Provider:    providerName,
 			SourceClass: model.SourceClassReal,
 			Grade:       "delayed",
 		})
@@ -139,7 +138,7 @@ func FormatTxSnapshots(times []time.Time, values []float64, fetchedAt time.Time,
 	return snaps
 }
 
-// LogTxError logs a transaction count fetch error.
-func LogTxError(err error) {
-	log.Warn().Err(err).Msg("blockchain.info tx_count fetch failed")
+// logWarn logs a warning for blockchain.info fetch failures.
+func logWarn(err error, msg string) {
+	log.Warn().Err(err).Msg(msg)
 }

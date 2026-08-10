@@ -1,49 +1,45 @@
 // Package collector 提供 etf 插件的数据采集器：Yahoo Finance 真实数据源。
-// 采集 GLD 的价格、交易量和资产管理规模(AUM)指标。
+// 采集 GLD 的价格、交易量指标，使用 provider safety 包保护 API 访问。
 package collector
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
-	"github.com/rs/zerolog/log"
-
 	"capital_observatory/pkg/model"
 	"capital_observatory/pkg/pluginrunner"
+	"capital_observatory/pkg/provider"
 )
 
 // providerYahoo is the source_provider recorded on Yahoo-sourced observations.
-// It is part of the observation idempotency key — renaming it would orphan
-// previously ingested rows under the old name.
 const providerYahoo = "yahoo_finance"
 
 // YahooCollector fetches real GLD data from Yahoo Finance's public chart API
-// (no API key required). Real metrics include price, trading volume, and
-// assets-under-management proxy from the same chart response meta.
+// with rate limiting and circuit breaker protection.
 type YahooCollector struct {
-	client *http.Client
+	client *provider.SafeHTTPClient
 }
 
-// NewYahooCollector creates a Yahoo Finance collector with a default HTTP client.
+// NewYahooCollector creates a Yahoo Finance collector with safety mechanisms.
 func NewYahooCollector() *YahooCollector {
-	return &YahooCollector{client: &http.Client{Timeout: 15 * time.Second}}
+	return &YahooCollector{
+		client: provider.NewSafeHTTPClient(provider.YahooFinanceConfig()),
+	}
 }
 
 // yahooChartResponse is the subset of the v8/finance/chart JSON we care about.
-// Includes price, volume, and AUM/nav data from meta + historical close series.
 type yahooChartResponse struct {
 	Chart struct {
 		Result []struct {
 			Meta struct {
-				RegularMarketPrice float64 `json:"regularMarketPrice"`
-				PreviousClose      float64 `json:"previousClose"`
-				Symbol             string  `json:"symbol"`
-				RegularMarketVolume int64   `json:"regularMarketVolume"`
-				AverageDailyVolume3Month int64 `json:"averageDailyVolume3Month"`
+				RegularMarketPrice       float64 `json:"regularMarketPrice"`
+				PreviousClose            float64 `json:"previousClose"`
+				Symbol                   string  `json:"symbol"`
+				RegularMarketVolume      int64   `json:"regularMarketVolume"`
+				AverageDailyVolume3Month int64   `json:"averageDailyVolume3Month"`
 			} `json:"meta"`
 			Timestamp  []int64 `json:"timestamp"`
 			Indicators struct {
@@ -60,21 +56,15 @@ type yahooChartResponse struct {
 	} `json:"chart"`
 }
 
-// GetSnapshots returns real observations for gld.ass.price, gld.ass.volume.
-// AUM requires a separate call and is denoted where available.
-//
-// Error handling: if Yahoo Finance is unreachable, the error is logged and
-// the collector returns an error; it does NOT fall back to mock data.
-// The plugin should detect source failure and surface it via health reporting.
+// GetSnapshots returns real observations for gld.ass.price and gld.ass.volume.
 func (y *YahooCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 	price, volume, err := y.fetchLatestPriceAndVolume(ctx, "GLD")
 	if err != nil {
-		log.Warn().Err(err).Msg("Yahoo Finance unavailable; ETF real-source snapshot failed")
 		return nil, err
 	}
 	fetchedAt := time.Now()
 
-	snapshots := []pluginrunner.Snapshot{
+	return []pluginrunner.Snapshot{
 		{
 			MetricID:    "gld.ass.price",
 			Value:       price,
@@ -93,12 +83,11 @@ func (y *YahooCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snaps
 			SourceClass: model.SourceClassReal,
 			Grade:       "delayed",
 		},
-	}
-	return snapshots, nil
+	}, nil
 }
 
 // GetSnapshotsForWindow serves the backfill path with REAL Yahoo daily closes
-// and volumes for gld.ass.price and gld.ass.volume across [start, end].
+// and volumes for [start, end].
 func (y *YahooCollector) GetSnapshotsForWindow(ctx context.Context, start, end time.Time) ([]pluginrunner.Snapshot, error) {
 	if end.Before(start) {
 		end = start
@@ -106,7 +95,6 @@ func (y *YahooCollector) GetSnapshotsForWindow(ctx context.Context, start, end t
 
 	times, closes, volumes, err := y.fetchDailyClosesAndVolumes(ctx, "GLD", start, end)
 	if err != nil {
-		log.Warn().Err(err).Msg("Yahoo Finance history unavailable")
 		return nil, err
 	}
 	fetchedAt := time.Now()
@@ -114,7 +102,7 @@ func (y *YahooCollector) GetSnapshotsForWindow(ctx context.Context, start, end t
 	snapshots := make([]pluginrunner.Snapshot, 0, len(times)*2)
 	for i, ts := range times {
 		if closes[i] == nil {
-			continue // market holiday / missing bar
+			continue
 		}
 		snapshots = append(snapshots, pluginrunner.Snapshot{
 			MetricID:    "gld.ass.price",
@@ -148,8 +136,7 @@ func (y *YahooCollector) fetchLatestPriceAndVolume(ctx context.Context, symbol s
 		return 0, 0, err
 	}
 
-	result := yc.Chart.Result[0]
-	meta := result.Meta
+	meta := yc.Chart.Result[0].Meta
 	var price float64
 	if meta.RegularMarketPrice != 0 {
 		price = meta.RegularMarketPrice
@@ -196,28 +183,33 @@ func (y *YahooCollector) fetchDailyClosesAndVolumes(ctx context.Context, symbol 
 	return times, closes, volumes, nil
 }
 
-// fetchChart performs the HTTP GET and decodes/validates the chart envelope.
+// fetchChart performs the HTTP GET with safety mechanisms and decodes the response.
 func (y *YahooCollector) fetchChart(ctx context.Context, url, symbol string) (*yahooChartResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	// Yahoo blocks non-browser User-Agents; present a realistic one.
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := y.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("http GET %s: %w", symbol, err)
+		return nil, fmt.Errorf("yahoo %s: %w", symbol, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		body, _ := provider.ReadAll(resp, 512)
 		return nil, fmt.Errorf("yahoo %s returned %d: %s", symbol, resp.StatusCode, string(body))
 	}
 
+	body, err := provider.ReadAll(resp, 1<<20)
+	if err != nil {
+		return nil, fmt.Errorf("read yahoo %s: %w", symbol, err)
+	}
+
 	var yc yahooChartResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&yc); err != nil {
+	if err := json.Unmarshal(body, &yc); err != nil {
 		return nil, fmt.Errorf("decode yahoo response for %s: %w", symbol, err)
 	}
 	if yc.Chart.Error != nil {
