@@ -31,15 +31,18 @@ type fredSeries struct {
 }
 
 // fredSeriesList gives a fixed iteration order so logs and snapshot slices
-// are deterministic.
+// are deterministic. Includes all macro research dimensions: liquidity, rates,
+// dollar/FX, and inflation.
 var fredSeriesList = []struct {
 	MetricID string
 	fredSeries
 }{
-	{"fed.ins.balance_sheet", fredSeries{"WALCL", 1e6, "weekly"}}, // millions USD → USD
-	{"us.mkt.ten_year_yield", fredSeries{"DGS10", 1, "daily"}},    // percent, no scaling
-	{"us.mkt.dollar_index", fredSeries{"DTWEXBGS", 1, "daily"}},   // index, no scaling
-	{"us.mkt.usd_cny", fredSeries{"DEXCHUS", 1, "daily"}},         // CNY per USD, no scaling
+	{"fed.ins.balance_sheet", fredSeries{"WALCL", 1e6, "weekly"}},   // millions USD → USD
+	{"us.mkt.ten_year_yield", fredSeries{"DGS10", 1, "daily"}},      // percent, no scaling
+	{"us.mkt.dollar_index", fredSeries{"DTWEXBGS", 1, "daily"}},     // index, no scaling
+	{"us.mkt.usd_cny", fredSeries{"DEXCHUS", 1, "daily"}},           // CNY per USD, no scaling
+	{"us.mkt.cpi", fredSeries{"CPIAUCSL", 1, "monthly"}},            // CPI index level
+	{"us.mkt.inflation_yoy", fredSeries{"CPIAUCSL_PCH", 1, "monthly"}}, // YoY % change, native FRED unit
 }
 
 // FREDCollector fetches real macro data from the Federal Reserve Economic Data
@@ -77,10 +80,10 @@ type fredObservationsResponse struct {
 // when ALL series fail (the whole source is down, not a single flaky series).
 func (f *FREDCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 	now := time.Now()
-	// FRED series are published with a lookback lag; fetch a 14-day window so
-	// we pick up the freshest release even if last week's data just dropped.
+	// FRED series are published with a lookback lag; fetch a 30-day window so
+	// we pick up the freshest release even if the most recent data just dropped.
 	end := now
-	start := end.AddDate(0, 0, -14)
+	start := end.AddDate(0, 0, -30)
 
 	snaps := make([]pluginrunner.Snapshot, 0, len(fredSeriesList))
 	failed := 0
@@ -108,7 +111,7 @@ func (f *FREDCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 			FetchedAt:   fetchedAt,
 			Provider:    providerFRED,
 			SourceClass: model.SourceClassReal,
-			Grade:       "delayed", // FRED publishes with 1..7 day lag; not realtime-grade
+			Grade:       "delayed",
 		})
 	}
 
@@ -126,13 +129,13 @@ func (f *FREDCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 
 // GetSnapshotsForWindow serves the backfill path using FRED's native
 // observation_start/observation_end parameters. Observations with missing
-// values (".") are emitted as nil closes so the caller can decide whether to
-// skip or interpolate.
+// values (".") are skipped.
 func (f *FREDCollector) GetSnapshotsForWindow(ctx context.Context, start, end time.Time) ([]pluginrunner.Snapshot, error) {
 	if end.Before(start) {
 		end = start
 	}
-	// Cap window to 90 days to stay under FRED's default 100k-observation cap.
+	// Cap window to 90 days per series per call to stay under FRED's default
+	// 100k-observation cap. Macro monthly series have low density so this is safe.
 	const maxWindow = 90 * 24 * time.Hour
 	if end.Sub(start) > maxWindow {
 		start = end.Add(-maxWindow)

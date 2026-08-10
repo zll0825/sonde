@@ -1,5 +1,7 @@
-// crypto 插件：BTC 价格（CoinGecko）、全网算力（mempool.space）、交易所
-// 余额（mock，无免费真实源），小时级轮询。
+// crypto 插件：BTC 价格（CoinGecko）、全网算力（mempool.space）、
+// 链上交易数（blockchain.com），小时级轮询。
+// 退役指标: btc.ass.exchange_balance (无免费可信数据源)
+// 新增指标: btc.ass.tx_count (真实链上活跃度指标)
 package main
 
 import (
@@ -13,14 +15,14 @@ import (
 )
 
 const (
-	pluginVersion = "0.1.1"
+	pluginVersion = "0.2.0"
 )
 
 func main() {
 	pluginrunner.NewLifecycle(pluginrunner.Config{
 		PluginName:        "crypto",
 		Version:           pluginVersion,
-		DefaultInterval:   1 * time.Hour, // CoinGecko free tier + hourly collection cadence
+		DefaultInterval:   1 * time.Hour, // free-tier cadence for multiple sources
 		BuildRegistration: buildRegistration,
 		SetupCollector: func(ctx context.Context) (pluginrunner.Provider, error) {
 			if os.Getenv("PROVIDER") == "mock" {
@@ -31,7 +33,7 @@ func main() {
 	}).Run()
 }
 
-// compile-time assertion: RealCollector implements both interfaces.
+// compile-time assertions
 var _ pluginrunner.Provider = (*collector.RealCollector)(nil)
 var _ pluginrunner.WindowedProvider = (*collector.RealCollector)(nil)
 
@@ -40,7 +42,7 @@ func buildRegistration() *pb.RegisterPluginRequest {
 		Info: &pb.PluginInfo{
 			Name:        "crypto",
 			Version:     pluginVersion,
-			Description: "BTC on-chain & exchange balance tracker",
+			Description: "BTC price, network hash rate, and on-chain activity tracker",
 		},
 		Entities: []*pb.EntityDeclaration{
 			{
@@ -53,10 +55,10 @@ func buildRegistration() *pb.RegisterPluginRequest {
 		},
 		Metrics: []*pb.MetricDeclaration{
 			{
-				Id:          "btc.ass.exchange_balance",
-				Name:        "BTC Exchange Balance",
-				Description: "Total BTC held across major exchanges",
-				Unit:        "BTC",
+				Id:          "btc.ass.price",
+				Name:        "BTC Price (USD)",
+				Description: "Current BTC spot price in USD",
+				Unit:        "USD",
 				Frequency:   "hourly",
 				EntityId:    "BTC",
 			},
@@ -69,24 +71,16 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				EntityId:    "BTC",
 			},
 			{
-				Id:          "btc.ass.price",
-				Name:        "BTC Price (USD)",
-				Description: "Current BTC spot price in USD",
-				Unit:        "USD",
-				Frequency:   "hourly",
+				Id:          "btc.ass.tx_count",
+				Name:        "BTC Daily Transaction Count",
+				Description: "Number of Bitcoin transactions per day; on-chain activity proxy for network usage",
+				Unit:        "transactions",
+				Frequency:   "daily",
 				EntityId:    "BTC",
 			},
 		},
 		Relations: []*pb.RelationSuggestion{},
 		Rules: []*pb.RuleSuggestion{
-			{
-				Name:         "btc_exchange_drop",
-				MetricId:     "btc.ass.exchange_balance",
-				DetectorName: "threshold",
-				Severity:     pb.Severity_SEVERITY_CRITICAL,
-				Config:       []byte(`{"operator":"lt","value":1800000,"consecutive":2}`),
-				Description:  "BTC exchange balance drops below 1.8M for 2+ hourly observations",
-			},
 			{
 				Name:         "btc_price_change",
 				MetricId:     "btc.ass.price",
@@ -96,14 +90,22 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Description:  "BTC price exceeds 95th percentile of recent history",
 			},
 			{
-				Name:         "btc_outflow_trend",
-				MetricId:     "btc.ass.exchange_balance",
+				Name:         "btc_hashrate_drop",
+				MetricId:     "btc.ass.hash_rate",
 				DetectorName: "trend",
 				Severity:     pb.Severity_SEVERITY_WARNING,
-				Config:       []byte(`{"direction":"down","consecutive":7}`),
-				Description:  "BTC exchange balance declining for 7+ consecutive hourly observations",
+				Config:       []byte(`{"direction":"down","consecutive":3}`),
+				Description:  "BTC hash rate declining for 3+ consecutive observations (network security concern)",
+			},
+			{
+				Name:         "btc_tx_surge",
+				MetricId:     "btc.ass.tx_count",
+				DetectorName: "percentile",
+				Severity:     pb.Severity_SEVERITY_INFO,
+				Config:       []byte(`{"percentile":90,"consecutive":1}`),
+				Description:  "BTC daily transaction count above 90th percentile (high network activity)",
 			},
 		},
-		ChangeLog: "Hourly metric cadence and provider fetch timestamps; CoinGecko + mempool.space real sources, exchange_balance still mock",
+		ChangeLog: "Retired btc.ass.exchange_balance (no free source); added btc.ass.tx_count (blockchain.com real source); new rules: btc_hashrate_drop, btc_tx_surge",
 	}
 }

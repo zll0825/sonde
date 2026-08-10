@@ -1,5 +1,6 @@
-// macro 插件：美联储资产负债表、美债十年期收益率、美元指数、美元兑人民币，
-// 数据源为 FRED（需 FRED_API_KEY），小时级轮询。
+// macro 插件：美联储资产负债表、美债十年期收益率、美元指数、美元兑人民币、
+// CPI指数、同比通胀率，数据源为 FRED（需 FRED_API_KEY），小时级轮询。
+// 新增指标: us.mkt.cpi (CPI指数), us.mkt.inflation_yoy (同比通胀率)
 package main
 
 import (
@@ -13,7 +14,7 @@ import (
 )
 
 const (
-	pluginVersion = "0.1.1"
+	pluginVersion = "0.2.0"
 )
 
 func main() {
@@ -46,7 +47,7 @@ func buildRegistration() *pb.RegisterPluginRequest {
 		Info: &pb.PluginInfo{
 			Name:        "macro",
 			Version:     pluginVersion,
-			Description: "Fed balance sheet, US yields, USD index & USDCNY tracker",
+			Description: "Fed balance sheet, US yields, USD index, USDCNY, CPI & inflation tracker",
 		},
 		Entities: []*pb.EntityDeclaration{
 			{
@@ -97,6 +98,22 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Frequency:   "daily",
 				EntityId:    "US",
 			},
+			{
+				Id:          "us.mkt.cpi",
+				Name:        "US Consumer Price Index",
+				Description: "Consumer Price Index for All Urban Consumers (CPI-U), seasonally adjusted",
+				Unit:        "index",
+				Frequency:   "monthly",
+				EntityId:    "US",
+			},
+			{
+				Id:          "us.mkt.inflation_yoy",
+				Name:        "US YoY Inflation Rate (%)",
+				Description: "CPI-based year-over-year percent change in consumer prices",
+				Unit:        "%",
+				Frequency:   "monthly",
+				EntityId:    "US",
+			},
 		},
 		Relations: []*pb.RelationSuggestion{
 			{
@@ -132,7 +149,15 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Config:       []byte(`{"operator":"gt","value":105}`),
 				Description:  "DXY above 105",
 			},
+			{
+				Name:         "inflation_above_target",
+				MetricId:     "us.mkt.inflation_yoy",
+				DetectorName: "threshold",
+				Severity:     pb.Severity_SEVERITY_WARNING,
+				Config:       []byte(`{"operator":"gt","value":3.0,"consecutive":2}`),
+				Description:  "YoY inflation above 3% for 2+ consecutive months (above Fed target)",
+			},
 		},
-		ChangeLog: "Canonical causes relation taxonomy and provider fetch timestamps; FRED real-data source, default interval 1h",
+		ChangeLog: "Added CPI (us.mkt.cpi) and YoY inflation (us.mkt.inflation_yoy) metrics; added inflation_above_target rule",
 	}
 }

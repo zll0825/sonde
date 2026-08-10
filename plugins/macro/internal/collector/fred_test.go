@@ -85,11 +85,14 @@ func TestParseFREDValue_LargeInteger(t *testing.T) {
 
 func TestFREDSeriesListOrder(t *testing.T) {
 	// The series list should match the order the registration declares metrics in.
+	// Includes liquidity, rates, dollar/FX, and inflation dimensions.
 	want := []string{
 		"fed.ins.balance_sheet",
 		"us.mkt.ten_year_yield",
 		"us.mkt.dollar_index",
 		"us.mkt.usd_cny",
+		"us.mkt.cpi",
+		"us.mkt.inflation_yoy",
 	}
 	if len(fredSeriesList) != len(want) {
 		t.Fatalf("fredSeriesList has %d entries, want %d", len(fredSeriesList), len(want))

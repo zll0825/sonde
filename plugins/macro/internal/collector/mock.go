@@ -10,9 +10,8 @@ import (
 	"capital_observatory/pkg/pluginrunner"
 )
 
-// Mock returns deterministic-looking but jittered macro series. Real sources
-// (FRED, Treasury, BIS) are wired as separate Provider implementations when
-// credentials are configured via env.
+// Mock returns deterministic-looking but jittered macro series for all real-source
+// metrics: balance_sheet, ten_year_yield, dollar_index, usd_cny, cpi, inflation_yoy.
 type Mock struct{}
 
 func (Mock) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
@@ -54,11 +53,29 @@ func (Mock) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 			SourceClass: model.SourceClassMock,
 			Grade:       "delayed",
 		},
+		{
+			MetricID:    "us.mkt.cpi",
+			Value:       300 + rand.Float64()*5, // CPI index level ~300
+			Timestamp:   now,
+			FetchedAt:   now,
+			Provider:    "mock_macro",
+			SourceClass: model.SourceClassMock,
+			Grade:       "delayed",
+		},
+		{
+			MetricID:    "us.mkt.inflation_yoy",
+			Value:       3.0 + rand.Float64()*0.5, // ~3.0% YoY
+			Timestamp:   now,
+			FetchedAt:   now,
+			Provider:    "mock_macro",
+			SourceClass: model.SourceClassMock,
+			Grade:       "delayed",
+		},
 	}, nil
 }
 
 // GetSnapshotsForWindow synthesizes a daily macro series across [start, end]
-// using bounded random walk drift, tagging every sample as "estimated".
+// using bounded random walk drift for all real-source metrics.
 func (Mock) GetSnapshotsForWindow(ctx context.Context, start, end time.Time) ([]pluginrunner.Snapshot, error) {
 	const day = 24 * time.Hour
 	if end.Before(start) {
@@ -66,7 +83,7 @@ func (Mock) GetSnapshotsForWindow(ctx context.Context, start, end time.Time) ([]
 	}
 	const maxSamples = 60
 	fetchedAt := time.Now()
-	out := make([]pluginrunner.Snapshot, 0, maxSamples*4)
+	out := make([]pluginrunner.Snapshot, 0, maxSamples*6)
 	for d, n := start, 0; !d.After(end) && n < maxSamples; d, n = d.Add(day), n+1 {
 		seeded := rand.New(rand.NewSource(d.Unix() / 86400))
 		drift := 1.0 + (seeded.Float64()-0.5)*0.005 // tighter drift — macro moves slower
@@ -76,6 +93,8 @@ func (Mock) GetSnapshotsForWindow(ctx context.Context, start, end time.Time) ([]
 			pluginrunner.Snapshot{MetricID: "us.mkt.ten_year_yield", Value: 4.2 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", SourceClass: model.SourceClassMock, Grade: "estimated"},
 			pluginrunner.Snapshot{MetricID: "us.mkt.dollar_index", Value: 103.0 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", SourceClass: model.SourceClassMock, Grade: "estimated"},
 			pluginrunner.Snapshot{MetricID: "us.mkt.usd_cny", Value: 7.2 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", SourceClass: model.SourceClassMock, Grade: "estimated"},
+			pluginrunner.Snapshot{MetricID: "us.mkt.cpi", Value: 300 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", SourceClass: model.SourceClassMock, Grade: "estimated"},
+			pluginrunner.Snapshot{MetricID: "us.mkt.inflation_yoy", Value: 3.0 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_macro", SourceClass: model.SourceClassMock, Grade: "estimated"},
 		)
 	}
 	return out, nil

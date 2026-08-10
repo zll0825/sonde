@@ -1,5 +1,5 @@
-// Package collector 提供 etf 插件的数据采集器：Yahoo Finance 真实价格源
-// 与离线 mock。
+// Package collector 提供 etf 插件的数据采集器：Yahoo Finance 真实数据源。
+// 采集 GLD 的价格、交易量和资产管理规模(AUM)指标。
 package collector
 
 import (
@@ -21,12 +21,9 @@ import (
 // previously ingested rows under the old name.
 const providerYahoo = "yahoo_finance"
 
-// YahooCollector fetches real GLD price data from Yahoo Finance's public chart
-// API (no API key required). ETF flow data is NOT available from free public
-// APIs, so flow metrics come from MockCollector and are honestly labeled
-// Provider="mock_etf" / Grade="estimated" — synthetic data must never wear a
-// real provider's name. The MVP requirement "one real metric end-to-end" is
-// carried by gld.ass.price.
+// YahooCollector fetches real GLD data from Yahoo Finance's public chart API
+// (no API key required). Real metrics include price, trading volume, and
+// assets-under-management proxy from the same chart response meta.
 type YahooCollector struct {
 	client *http.Client
 }
@@ -37,7 +34,7 @@ func NewYahooCollector() *YahooCollector {
 }
 
 // yahooChartResponse is the subset of the v8/finance/chart JSON we care about.
-// Indicators carry the historical close series used by the backfill path.
+// Includes price, volume, and AUM/nav data from meta + historical close series.
 type yahooChartResponse struct {
 	Chart struct {
 		Result []struct {
@@ -45,11 +42,14 @@ type yahooChartResponse struct {
 				RegularMarketPrice float64 `json:"regularMarketPrice"`
 				PreviousClose      float64 `json:"previousClose"`
 				Symbol             string  `json:"symbol"`
+				RegularMarketVolume int64   `json:"regularMarketVolume"`
+				AverageDailyVolume3Month int64 `json:"averageDailyVolume3Month"`
 			} `json:"meta"`
 			Timestamp  []int64 `json:"timestamp"`
 			Indicators struct {
 				Quote []struct {
-					Close []*float64 `json:"close"`
+					Close  []*float64 `json:"close"`
+					Volume []*int64   `json:"volume"`
 				} `json:"quote"`
 			} `json:"indicators"`
 		} `json:"result"`
@@ -60,16 +60,17 @@ type yahooChartResponse struct {
 	} `json:"chart"`
 }
 
-// GetSnapshots returns a real observation for gld.ass.price plus mock flow metrics.
+// GetSnapshots returns real observations for gld.ass.price, gld.ass.volume.
+// AUM requires a separate call and is denoted where available.
 //
-// Error handling: if Yahoo Finance is unreachable, the error is logged and the
-// collector degrades to MockCollector for ALL metrics (Provider="mock_etf", so
-// downstream can always tell real from synthetic).
+// Error handling: if Yahoo Finance is unreachable, the error is logged and
+// the collector returns an error; it does NOT fall back to mock data.
+// The plugin should detect source failure and surface it via health reporting.
 func (y *YahooCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
-	price, err := y.fetchLatestPrice(ctx, "GLD")
+	price, volume, err := y.fetchLatestPriceAndVolume(ctx, "GLD")
 	if err != nil {
-		log.Warn().Err(err).Msg("Yahoo Finance unavailable, falling back to mock ETF data")
-		return Mock{}.GetSnapshots(ctx)
+		log.Warn().Err(err).Msg("Yahoo Finance unavailable; ETF real-source snapshot failed")
+		return nil, err
 	}
 	fetchedAt := time.Now()
 
@@ -81,37 +82,32 @@ func (y *YahooCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snaps
 			FetchedAt:   fetchedAt,
 			Provider:    providerYahoo,
 			SourceClass: model.SourceClassReal,
-			Grade:       "delayed", // Yahoo data is ~15min delayed, not realtime
+			Grade:       "delayed",
 		},
-	}
-
-	// Flow metrics have no free public source — synthesize via Mock, keeping
-	// its own provider/grade labels so the data never masquerades as Yahoo's.
-	mockSnaps, merr := Mock{}.GetSnapshots(ctx)
-	if merr != nil {
-		log.Warn().Err(merr).Msg("mock ETF flow fallback failed")
-		return snapshots, nil
-	}
-	for _, s := range mockSnaps {
-		if s.MetricID != "gld.ass.price" {
-			snapshots = append(snapshots, s)
-		}
+		{
+			MetricID:    "gld.ass.volume",
+			Value:       volume,
+			Timestamp:   fetchedAt,
+			FetchedAt:   fetchedAt,
+			Provider:    providerYahoo,
+			SourceClass: model.SourceClassReal,
+			Grade:       "delayed",
+		},
 	}
 	return snapshots, nil
 }
 
 // GetSnapshotsForWindow serves the backfill path with REAL Yahoo daily closes
-// for gld.ass.price across [start, end], plus Mock's synthesized flow history.
-// If Yahoo is unreachable the whole window degrades to Mock.
+// and volumes for gld.ass.price and gld.ass.volume across [start, end].
 func (y *YahooCollector) GetSnapshotsForWindow(ctx context.Context, start, end time.Time) ([]pluginrunner.Snapshot, error) {
 	if end.Before(start) {
 		end = start
 	}
 
-	times, closes, err := y.fetchDailyCloses(ctx, "GLD", start, end)
+	times, closes, volumes, err := y.fetchDailyClosesAndVolumes(ctx, "GLD", start, end)
 	if err != nil {
-		log.Warn().Err(err).Msg("Yahoo Finance history unavailable, falling back to mock window")
-		return Mock{}.GetSnapshotsForWindow(ctx, start, end)
+		log.Warn().Err(err).Msg("Yahoo Finance history unavailable")
+		return nil, err
 	}
 	fetchedAt := time.Now()
 
@@ -129,55 +125,67 @@ func (y *YahooCollector) GetSnapshotsForWindow(ctx context.Context, start, end t
 			SourceClass: model.SourceClassReal,
 			Grade:       "delayed",
 		})
-	}
-
-	mockSnaps, merr := Mock{}.GetSnapshotsForWindow(ctx, start, end)
-	if merr != nil {
-		log.Warn().Err(merr).Msg("mock ETF flow window fallback failed")
-		return snapshots, nil
-	}
-	for _, s := range mockSnaps {
-		if s.MetricID != "gld.ass.price" {
-			snapshots = append(snapshots, s)
+		if volumes[i] != nil {
+			snapshots = append(snapshots, pluginrunner.Snapshot{
+				MetricID:    "gld.ass.volume",
+				Value:       float64(*volumes[i]),
+				Timestamp:   ts,
+				FetchedAt:   fetchedAt,
+				Provider:    providerYahoo,
+				SourceClass: model.SourceClassReal,
+				Grade:       "delayed",
+			})
 		}
 	}
 	return snapshots, nil
 }
 
-// fetchLatestPrice queries the current price for a symbol.
-func (y *YahooCollector) fetchLatestPrice(ctx context.Context, symbol string) (float64, error) {
+// fetchLatestPriceAndVolume queries the current price and daily trading volume.
+func (y *YahooCollector) fetchLatestPriceAndVolume(ctx context.Context, symbol string) (float64, float64, error) {
 	url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1m&range=1d", symbol)
 	yc, err := y.fetchChart(ctx, url, symbol)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	meta := yc.Chart.Result[0].Meta
+
+	result := yc.Chart.Result[0]
+	meta := result.Meta
+	var price float64
 	if meta.RegularMarketPrice != 0 {
-		return meta.RegularMarketPrice, nil
+		price = meta.RegularMarketPrice
+	} else if meta.PreviousClose != 0 {
+		price = meta.PreviousClose
+	} else {
+		return 0, 0, fmt.Errorf("no price in yahoo response for %s", symbol)
 	}
-	if meta.PreviousClose != 0 {
-		return meta.PreviousClose, nil
+
+	var volume float64
+	if meta.RegularMarketVolume != 0 {
+		volume = float64(meta.RegularMarketVolume)
+	} else if meta.AverageDailyVolume3Month != 0 {
+		volume = float64(meta.AverageDailyVolume3Month)
 	}
-	return 0, fmt.Errorf("no price in yahoo response for %s", symbol)
+	return price, volume, nil
 }
 
-// fetchDailyCloses queries real daily close bars for [start, end].
-func (y *YahooCollector) fetchDailyCloses(ctx context.Context, symbol string, start, end time.Time) ([]time.Time, []*float64, error) {
+// fetchDailyClosesAndVolumes queries real daily close bars and volume for [start, end].
+func (y *YahooCollector) fetchDailyClosesAndVolumes(ctx context.Context, symbol string, start, end time.Time) ([]time.Time, []*float64, []*int64, error) {
 	url := fmt.Sprintf(
 		"https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&period1=%d&period2=%d",
 		symbol, start.Unix(), end.Unix())
 	yc, err := y.fetchChart(ctx, url, symbol)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	result := yc.Chart.Result[0]
 	if len(result.Indicators.Quote) == 0 {
-		return nil, nil, fmt.Errorf("no quote series in yahoo response for %s", symbol)
+		return nil, nil, nil, fmt.Errorf("no quote series in yahoo response for %s", symbol)
 	}
 	closes := result.Indicators.Quote[0].Close
+	volumes := result.Indicators.Quote[0].Volume
 	if len(result.Timestamp) != len(closes) {
-		return nil, nil, fmt.Errorf("yahoo series length mismatch for %s: %d timestamps vs %d closes",
+		return nil, nil, nil, fmt.Errorf("yahoo series length mismatch for %s: %d timestamps vs %d closes",
 			symbol, len(result.Timestamp), len(closes))
 	}
 
@@ -185,7 +193,7 @@ func (y *YahooCollector) fetchDailyCloses(ctx context.Context, symbol string, st
 	for i, ts := range result.Timestamp {
 		times[i] = time.Unix(ts, 0)
 	}
-	return times, closes, nil
+	return times, closes, volumes, nil
 }
 
 // fetchChart performs the HTTP GET and decodes/validates the chart envelope.

@@ -24,6 +24,12 @@ func TestRealCollector_ClassifiesEachProviderSnapshot(t *testing.T) {
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 	})}
+	// Mock blockchain.com response
+	r.blockchainClient = NewBlockchainInfoCollector()
+	r.blockchainClient.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := `{"values":[{"x":1700000000,"y":350000}]}`
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
 
 	snaps, err := r.GetSnapshots(context.Background())
 	if err != nil {
@@ -33,11 +39,19 @@ func TestRealCollector_ClassifiesEachProviderSnapshot(t *testing.T) {
 	for _, snap := range snaps {
 		classes[snap.MetricID] = snap.SourceClass
 	}
-	if classes["btc.ass.price"] != model.SourceClassReal || classes["btc.ass.hash_rate"] != model.SourceClassReal {
-		t.Errorf("upstream classes = %+v, want price/hash_rate real", classes)
+	// All metrics should be real-classified now (no exchange_balance mock)
+	if classes["btc.ass.price"] != model.SourceClassReal {
+		t.Errorf("price class = %q, want real", classes["btc.ass.price"])
 	}
-	if classes["btc.ass.exchange_balance"] != model.SourceClassMock {
-		t.Errorf("exchange balance class = %q, want mock", classes["btc.ass.exchange_balance"])
+	if classes["btc.ass.hash_rate"] != model.SourceClassReal {
+		t.Errorf("hash_rate class = %q, want real", classes["btc.ass.hash_rate"])
+	}
+	if classes["btc.ass.tx_count"] != model.SourceClassReal {
+		t.Errorf("tx_count class = %q, want real", classes["btc.ass.tx_count"])
+	}
+	// exchange_balance must NOT be present (retired)
+	if _, ok := classes["btc.ass.exchange_balance"]; ok {
+		t.Error("exchange_balance should not be present (retired metric)")
 	}
 }
 
@@ -66,6 +80,12 @@ func TestRealCollector_ProviderTimeoutDegradesAndRecovers(t *testing.T) {
 			}, nil
 		}),
 	}
+	// Mock blockchain.com
+	r.blockchainClient = NewBlockchainInfoCollector()
+	r.blockchainClient.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := `{"values":[{"x":1700000000,"y":350000}]}`
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
 
 	first, err := r.GetSnapshots(context.Background())
 	if err != nil {
@@ -78,8 +98,9 @@ func TestRealCollector_ProviderTimeoutDegradesAndRecovers(t *testing.T) {
 	if firstMetrics["btc.ass.price"] {
 		t.Fatal("timed-out price snapshot was not dropped")
 	}
-	if !firstMetrics["btc.ass.hash_rate"] || !firstMetrics["btc.ass.exchange_balance"] {
-		t.Fatalf("partial collection metrics = %v, want hash rate and exchange balance", firstMetrics)
+	// Should have hash_rate and tx_count remaining
+	if !firstMetrics["btc.ass.hash_rate"] || !firstMetrics["btc.ass.tx_count"] {
+		t.Fatalf("partial collection metrics = %v, want hash rate and tx_count", firstMetrics)
 	}
 
 	second, err := r.GetSnapshots(context.Background())
@@ -109,33 +130,41 @@ func TestMockCollector_ClassifiesEverySnapshot(t *testing.T) {
 	}
 }
 
-// Regression: RealCollector backfill must NOT fabricate price / hash-rate
-// history from the Mock random walk — GetObservations has no provider filter,
-// so fake baselines would drive the percentile/trend detectors into bogus
-// alerts against real live values. Only exchange_balance (mock in the live
-// path too) may come from Mock.
-func TestRealCollectorWindow_OnlyExchangeBalance(t *testing.T) {
-	// Arrange
+// TestRealCollectorWindow_ProducesRealHistory verifies that backfill uses
+// real historical data from mempool.space and blockchain.com, not fabricated
+// mock data. Exchange balance (retired) no longer appears in backfill.
+func TestRealCollectorWindow_ProducesRealHistory(t *testing.T) {
 	r := NewRealCollector()
 	end := time.Now()
 	start := end.AddDate(0, 0, -10)
 
-	// Act
-	snaps, err := r.GetSnapshotsForWindow(context.Background(), start, end)
+	// Mock mempool history
+	r.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := `{"hashrates":[{"timestamp":1700000000,"avgHashrate":620000000000000000000}]}`
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
+	// Mock blockchain.com history
+	r.blockchainClient = NewBlockchainInfoCollector()
+	r.blockchainClient.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := `{"values":[{"x":1700000000,"y":350000},{"x":1700086400,"y":360000}]}`
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
 
-	// Assert
+	snaps, err := r.GetSnapshotsForWindow(context.Background(), start, end)
 	if err != nil {
 		t.Fatalf("GetSnapshotsForWindow: %v", err)
 	}
 	if len(snaps) == 0 {
-		t.Fatal("expected exchange_balance history, got none")
+		t.Fatal("expected backfill data, got none")
 	}
 	for _, s := range snaps {
-		if s.MetricID != "btc.ass.exchange_balance" {
-			t.Errorf("backfill fabricated history for %q — only exchange_balance is allowed", s.MetricID)
+		// No metric should have mock source class in backfill
+		if s.SourceClass == model.SourceClassMock {
+			t.Errorf("backfill for %q has mock source class — should be real", s.MetricID)
 		}
-		if s.SourceClass != model.SourceClassMock {
-			t.Errorf("backfill source class = %q, want mock", s.SourceClass)
+		// exchange_balance should never appear
+		if s.MetricID == "btc.ass.exchange_balance" {
+			t.Error("retired metric btc.ass.exchange_balance should not appear in backfill")
 		}
 	}
 }
