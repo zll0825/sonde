@@ -143,6 +143,83 @@
             stroke: #2a3450; stroke-width: 1; stroke-dasharray: 4 3;
             vector-effect: non-scaling-stroke;
         }
+
+        /* ── Tab bar ── */
+        .tab-bar {
+            display: flex;
+            gap: 0;
+            padding: 0 2rem;
+            background: #0d1220;
+            border-bottom: 1px solid #1a2340;
+        }
+        .tab-btn {
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: #8892b0;
+            padding: 0.7rem 1.2rem;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: color 0.2s, border-color 0.2s;
+        }
+        .tab-btn:hover { color: #e0e6f0; }
+        .tab-btn.active { color: #64ffda; border-bottom-color: #64ffda; }
+        .tab-content { display: none; padding-top: 1.5rem; }
+        .tab-content.active { display: block; }
+
+        /* ── Cluster / Ontology / Signal table styles ── */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+            margin-top: 0.5rem;
+        }
+        .data-table th, .data-table td {
+            text-align: left;
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid #1a2340;
+        }
+        .data-table th { color: #64ffda; font-weight: 500; }
+        .data-table tr:hover td { background: #1a2340; }
+
+        /* ── Ontology form ── */
+        .ontology-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr auto;
+            gap: 0.75rem;
+            align-items: end;
+            margin-bottom: 1.5rem;
+        }
+        .ontology-form label {
+            display: block;
+            font-size: 0.72rem;
+            color: #8892b0;
+            margin-bottom: 0.25rem;
+        }
+        .ontology-form input, .ontology-form select {
+            background: #1a2340;
+            border: 1px solid #2a3450;
+            color: #e0e6f0;
+            padding: 0.45rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .ontology-form button {
+            background: #64ffda;
+            color: #0a0e1a;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .ontology-form button:hover { background: #4dd4b0; }
+
+        /* ── Signal quality sparkline area ── */
+        #signal-quality-chart { width: 100%; height: 200px; }
     </style>
 </head>
 <body>
@@ -164,8 +241,18 @@
         <span id="sb-latest">—</span>
     </div>
     <div id="plugin-detail" class="hidden"></div>
+    <!-- Tab bar -->
+    <nav class="tab-bar">
+        <button class="tab-btn active" data-tab="alerts">Alerts</button>
+        <button class="tab-btn" data-tab="clusters">Clusters</button>
+        <button class="tab-btn" data-tab="research">Research</button>
+        <button class="tab-btn" data-tab="ontology">Ontology</button>
+        <button class="tab-btn" data-tab="signal">Signal Quality</button>
+    </nav>
+
     <main>
-        <div id="alerts-view">
+        <!-- Alerts tab (existing content) -->
+        <div id="alerts-tab" class="tab-content active">
             <div class="grid">
                 <div class="card">
                     <h2>Active Alerts</h2>
@@ -186,12 +273,92 @@
                     </div>
                 </div>
             </div>
+            <!-- R2: Metric Pulse cards below the alerts block -->
+            <section id="pulse-section">
+                <h2>Metric Pulse</h2>
+                <div id="pulse-grid"></div>
+            </section>
         </div>
-        <!-- R2: Metric Pulse cards below the alerts block -->
-        <section id="pulse-section">
-            <h2>Metric Pulse</h2>
-            <div id="pulse-grid"></div>
-        </section>
+
+        <!-- Clusters tab -->
+        <div id="clusters-tab" class="tab-content">
+            <div class="card">
+                <h2>Event Clusters</h2>
+                <div id="clusters-list">
+                    <div class="empty">Loading clusters...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Research tab -->
+        <div id="research-tab" class="tab-content">
+            <div class="grid">
+                <div class="card">
+                    <h2>Research Timeline</h2>
+                    <div id="research-list">
+                        <div class="empty">Enter an alert ID to view research context.</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h2>Research Detail</h2>
+                    <div id="research-detail">
+                        <div class="empty">Select a research entry to see details.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ontology tab -->
+        <div id="ontology-tab" class="tab-content">
+            <div class="card">
+                <h2>Manage Relations</h2>
+                <form class="ontology-form" id="ontology-form">
+                    <div>
+                        <label for="ont-source-id">Source Entity</label>
+                        <input type="text" id="ont-source-id" placeholder="e.g. btc" required>
+                    </div>
+                    <div>
+                        <label for="ont-target-id">Target Entity</label>
+                        <input type="text" id="ont-target-id" placeholder="e.g. gld" required>
+                    </div>
+                    <div>
+                        <label for="ont-relation-type">Relation Type</label>
+                        <select id="ont-relation-type" required>
+                            <option value="structural">structural</option>
+                            <option value="semantic">semantic</option>
+                            <option value="statistical">statistical</option>
+                            <option value="causal">causal</option>
+                        </select>
+                    </div>
+                    <div>
+                        <button type="submit">Add Relation</button>
+                    </div>
+                </form>
+                <div id="ontology-list">
+                    <div class="empty">Loading relations...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Signal Quality tab -->
+        <div id="signal-tab" class="tab-content">
+            <div class="grid">
+                <div class="card">
+                    <h2>Signal Quality Timeline</h2>
+                    <label for="signal-metric-uid" style="font-size:0.78rem; color:#8892b0;">Metric UID</label>
+                    <input type="text" id="signal-metric-uid" placeholder="e.g. fed_bs_total_assets"
+                           style="background:#1a2340; border:1px solid #2a3450; color:#e0e6f0; padding:0.45rem 0.6rem; border-radius:6px; font-size:0.82rem; width:100%; max-width:320px; box-sizing:border-box; margin-top:0.25rem;">
+                    <button onclick="loadSignalQuality()" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer; margin-top:0.5rem;">Load</button>
+                    <div id="signal-quality-chart" style="margin-top:1rem;"></div>
+                </div>
+                <div class="card">
+                    <h2>Quality Data Points</h2>
+                    <div id="signal-quality-list">
+                        <div class="empty">Enter a metric UID and click Load.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </main>
 
     <script>
@@ -531,6 +698,207 @@
             return svg;
         }
 
+        // ── Tab switching ────────────────────────────────────────────────────
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                const tabId = btn.dataset.tab + '-tab';
+                document.getElementById(tabId).classList.add('active');
+                // Lazy-load tab content on first activation.
+                if (btn.dataset.tab === 'clusters') loadClusters();
+                if (btn.dataset.tab === 'ontology') loadOntology();
+            });
+        });
+
+        // ── Clusters tab ─────────────────────────────────────────────────────
+        let clustersLoaded = false;
+        async function loadClusters() {
+            if (clustersLoaded) return;
+            clustersLoaded = true;
+            const list = document.getElementById('clusters-list');
+            try {
+                const resp = await fetch(`${API_BASE}/api/clusters/`);
+                const clusters = await resp.json();
+                if (!clusters || clusters.length === 0) {
+                    list.innerHTML = '<div class="empty">No clusters yet. Clusters form when alerts fire within the time window.</div>';
+                    return;
+                }
+                list.innerHTML = `
+                    <table class="data-table">
+                        <thead><tr><th>Entity</th><th>Severity</th><th>Members</th><th>Coalesced</th><th>Priority</th><th>Last Triggered</th></tr></thead>
+                        <tbody>${clusters.map(c => `
+                            <tr>
+                                <td>${esc(c.primary_entity)}</td>
+                                <td>${esc(c.severity)}</td>
+                                <td>${c.member_count}</td>
+                                <td>${c.coalesced ? 'yes' : 'no'}</td>
+                                <td>${c.priority != null ? c.priority.toFixed(1) : '—'}</td>
+                                <td>${c.last_triggered ? new Date(c.last_triggered).toLocaleString() : '—'}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>`;
+            } catch (err) {
+                list.innerHTML = '<div class="empty">Cannot reach API</div>';
+            }
+        }
+
+        // ── Ontology tab ─────────────────────────────────────────────────────
+        let ontologyLoaded = false;
+        async function loadOntology() {
+            const list = document.getElementById('ontology-list');
+            if (!ontologyLoaded) {
+                ontologyLoaded = true;
+                try {
+                    const resp = await fetch(`${API_BASE}/api/ontology/relations/`);
+                    const rels = await resp.json();
+                    renderOntologyTable(rels);
+                } catch (err) {
+                    list.innerHTML = '<div class="empty">Cannot reach API</div>';
+                }
+            }
+        }
+
+        function renderOntologyTable(rels) {
+            const list = document.getElementById('ontology-list');
+            if (!rels || rels.length === 0) {
+                list.innerHTML = '<div class="empty">No relations defined. Use the form above to add one.</div>';
+                return;
+            }
+            list.innerHTML = `
+                <table class="data-table">
+                    <thead><tr><th>Relation ID</th><th>Source</th><th>Target</th><th>Type</th><th>Direction</th><th>Created</th></tr></thead>
+                    <tbody>${rels.map(r => `
+                        <tr>
+                            <td>${esc(r.relation_id)}</td>
+                            <td>${esc(r.source_id)}</td>
+                            <td>${esc(r.target_id)}</td>
+                            <td>${esc(r.relation_type)}</td>
+                            <td>${esc(r.direction)}</td>
+                            <td>${r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table>`;
+        }
+
+        document.getElementById('ontology-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const sourceID = document.getElementById('ont-source-id').value.trim();
+            const targetID = document.getElementById('ont-target-id').value.trim();
+            const relationType = document.getElementById('ont-relation-type').value;
+            try {
+                const resp = await fetch(`${API_BASE}/api/ontology/relations/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source_id: sourceID, target_id: targetID, relation_type: relationType })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    alert('Error: ' + (err.error || 'unknown'));
+                    return;
+                }
+                document.getElementById('ontology-form').reset();
+                ontologyLoaded = false;
+                await loadOntology();
+            } catch (err) {
+                alert('Network error: ' + err.message);
+            }
+        });
+
+        // ── Research tab (quick lookup) ──────────────────────────────────────
+        async function lookupResearch() {
+            const alertID = prompt('Enter alert ID:');
+            if (!alertID) return;
+            const detail = document.getElementById('research-detail');
+            detail.innerHTML = '<div class="empty">Loading...</div>';
+            try {
+                const resp = await fetch(`${API_BASE}/api/research/${encodeURIComponent(alertID)}`);
+                if (!resp.ok) {
+                    detail.innerHTML = '<div class="empty">Research not found for this alert.</div>';
+                    return;
+                }
+                const rc = await resp.json();
+                detail.innerHTML = `<p style="font-weight:600; margin-bottom:0.5rem;">${esc(rc.alert_id)}</p>
+                    <p style="font-size:0.85rem; color:#8892b0;">${esc(rc.metric_name || rc.metric_id)} — current: ${rc.current_value ?? 'N/A'}, threshold: ${rc.threshold ?? 'N/A'}</p>`;
+            } catch (err) {
+                detail.innerHTML = '<div class="empty">Error loading research.</div>';
+            }
+        }
+
+        // Add a lookup button to the research tab
+        document.getElementById('research-list').innerHTML = `
+            <div class="empty" style="margin-bottom:1rem;">Enter an alert ID to view its research context.</div>
+            <button onclick="lookupResearch()" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;">Lookup Alert</button>
+        `;
+
+        // ── Signal Quality tab ───────────────────────────────────────────────
+        let signalChart = null;
+        async function loadSignalQuality() {
+            const metricUID = document.getElementById('signal-metric-uid').value.trim();
+            if (!metricUID) { alert('Please enter a metric UID'); return; }
+            const list = document.getElementById('signal-quality-list');
+            try {
+                const resp = await fetch(`${API_BASE}/api/signal/quality/${encodeURIComponent(metricUID)}`);
+                if (!resp.ok) {
+                    list.innerHTML = '<div class="empty">Signal quality data not available.</div>';
+                    return;
+                }
+                const points = await resp.json();
+                if (!points || points.length === 0) {
+                    list.innerHTML = '<div class="empty">No observations for this metric.</div>';
+                    return;
+                }
+                // Render table.
+                list.innerHTML = `
+                    <table class="data-table" style="font-size:0.75rem;">
+                        <thead><tr><th>Time</th><th>Source</th><th>Grade</th><th>Quality</th></tr></thead>
+                        <tbody>${points.slice(0, 20).map(p => `
+                            <tr>
+                                <td>${new Date(p.time).toLocaleString()}</td>
+                                <td>${esc(p.source_class)}</td>
+                                <td>${esc(p.grade)}</td>
+                                <td>${p.quality_score != null ? p.quality_score.toFixed(1) : '—'}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>`;
+                // Render chart.
+                renderSignalChart(points);
+            } catch (err) {
+                list.innerHTML = '<div class="empty">Cannot reach API</div>';
+            }
+        }
+
+        function renderSignalChart(points) {
+            const el = document.getElementById('signal-quality-chart');
+            if (signalChart) { signalChart.dispose(); signalChart = null; }
+            el.innerHTML = '';
+            signalChart = echarts.init(el);
+            signalChart.setOption({
+                backgroundColor: 'transparent',
+                grid: { top: 20, right: 20, bottom: 30, left: 50 },
+                xAxis: {
+                    type: 'time',
+                    axisLine: { lineStyle: { color: '#2a3450' } },
+                    axisLabel: { color: '#8892b0', fontSize: 10 }
+                },
+                yAxis: {
+                    type: 'value', min: 0, max: 100,
+                    axisLine: { lineStyle: { color: '#2a3450' } },
+                    axisLabel: { color: '#8892b0', fontSize: 10 },
+                    splitLine: { lineStyle: { color: '#1a2340' } }
+                },
+                series: [{
+                    type: 'line',
+                    data: points.map(p => [new Date(p.time), p.quality_score]),
+                    smooth: true,
+                    lineStyle: { color: '#64ffda', width: 2 },
+                    areaStyle: { color: 'rgba(100,255,218,0.1)' },
+                    symbol: 'none'
+                }]
+            });
+        }
+
         // ── polling ──────────────────────────────────────────────────────────
         // Initial load + refresh every 30s (same cadence as alerts).
         loadAlerts();
@@ -541,6 +909,7 @@
         // Responsive chart.
         window.addEventListener('resize', () => {
             if (trendChart) trendChart.resize();
+            if (signalChart) signalChart.resize();
         });
     </script>
 </body>
