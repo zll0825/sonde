@@ -36,6 +36,11 @@ type PendingSuggestion struct {
 // when the row has already been resolved (no longer 'pending').
 var ErrSuggestionNotPending = errors.New("suggestion is not pending review")
 
+// ErrAlreadyReviewed is returned by AcceptSuggestionByCandidate when the
+// relation_suggestions row was reviewed by someone else first (concurrent
+// accept — the UPDATE affected zero rows).
+var ErrAlreadyReviewed = errors.New("suggestion already reviewed")
+
 // ListPendingSuggestions returns all relation_suggestions rows still awaiting
 // review (status = 'pending'). Ordered by id ASC for stable paging.
 func (s *Store) ListPendingSuggestions(ctx context.Context) ([]PendingSuggestion, error) {
@@ -109,17 +114,52 @@ func scanPendingSuggestion(row pgx.Row) (*PendingSuggestion, error) {
 }
 
 // AcceptSuggestionByCandidate promotes a pending suggestion into a
-// user-confirmed ManualRelation. It constructs a Candidate-shaped input that
-// RelationManager.AcceptCandidate can consume.
+// user-confirmed ManualRelation. Both the manual_relation insert and the
+// relation_suggestions status flip run in a single transaction so a crash can
+// never leave a row accepted without a relation or vice-versa.
 func (rm *RelationManager) AcceptSuggestionByCandidate(ctx context.Context, suggestion PendingSuggestion, userID string) (*ManualRelation, error) {
-	candidate := Candidate{
+	tx, err := rm.store.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	candidate := candidateFromSuggestion(suggestion)
+	rel, err := rm.txAcceptCandidate(ctx, tx, candidate, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	tag, err := tx.Exec(ctx, `
+		UPDATE relation_suggestions
+		SET reviewed_at = NOW(), reviewed_by = $1, decision = 'accepted'
+		WHERE id = $2 AND decision = 'pending'
+	`, userID, suggestion.ID)
+	if err != nil {
+		return nil, fmt.Errorf("mark accepted: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, ErrAlreadyReviewed
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+	return rel, nil
+}
+
+// candidateFromSuggestion converts a PendingSuggestion into the Candidate
+// shape RelationManager expects. The suggestion's Direction is preserved as-is
+// (typically "forward" because the candidate discovery pipeline always infers
+// forward directionality).
+func candidateFromSuggestion(suggestion PendingSuggestion) Candidate {
+	return Candidate{
 		SourceID:     suggestion.SourceID,
 		TargetID:     suggestion.TargetID,
 		RelationType: suggestion.RelationType,
 		Direction:    suggestion.Direction,
 		Confidence:   suggestion.Confidence,
 	}
-	return rm.AcceptCandidate(ctx, candidate, userID)
 }
 
 // AcceptSuggestion marks a pending suggestion as accepted directly in the

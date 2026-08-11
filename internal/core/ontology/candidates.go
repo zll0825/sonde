@@ -1,4 +1,10 @@
-// Package ontology 扩展：证据支持的统计关系候选。
+// Package ontology extends: evidence-backed statistical relation candidates.
+//
+// Candidate discovery always infers a "forward" direction because a lead/lag
+// relationship is inherently directional — the correlations here come from
+// time-series where source may precede target. The "undirected" option remains
+// valid for user-submitted relations (API, manual_relations) but is never
+// auto-assigned by the statistical pipeline.
 package ontology
 
 import (
@@ -13,7 +19,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// CandidateConfig 候选发现配置。
+// CandidateConfig configures the candidate discovery behaviour.
 type CandidateConfig struct {
 	MinCorrelation  float64
 	MinObservations int
@@ -21,7 +27,7 @@ type CandidateConfig struct {
 	Lookback        time.Duration
 }
 
-// DefaultCandidateConfig 返回保守默认配置。
+// DefaultCandidateConfig returns a conservative default configuration.
 func DefaultCandidateConfig() CandidateConfig {
 	return CandidateConfig{
 		MinCorrelation:  0.6,
@@ -31,7 +37,10 @@ func DefaultCandidateConfig() CandidateConfig {
 	}
 }
 
-// Candidate 统计关系候选。
+// Candidate is a statistical relation candidate. Direction is always "forward"
+// — the lag search establishes source-leads-target ordering; sign of the
+// correlation (not the direction) distinguishes "correlates" from
+// "inversely_correlates".
 type Candidate struct {
 	SourceID      string    `json:"source_id"`
 	TargetID      string    `json:"target_id"`
@@ -39,11 +48,13 @@ type Candidate struct {
 	Direction     string    `json:"direction"`
 	Correlation   float64   `json:"correlation"`
 	Lag           Duration  `json:"lag"`
+	TypicalLag    string    `json:"typical_lag"`
 	PVale         float64   `json:"p_value"`
 	Observations  int       `json:"observations"`
 	Confidence    float64   `json:"confidence"`
 	FirstObserved time.Time `json:"first_observed"`
 	LastObserved  time.Time `json:"last_observed"`
+	Evidence      string    `json:"evidence,omitempty"`
 	EvidenceKey   string    `json:"evidence_key"`
 }
 
@@ -69,7 +80,7 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// ObservationPoint is a single observation.
+// ObservationPoint is a single (time, value) observation.
 type ObservationPoint struct {
 	Time  time.Time
 	Value float64
@@ -80,14 +91,24 @@ type ObservationAPI struct {
 	Fetch func(ctx context.Context, metricUID string, since, until time.Time, limit int) ([]ObservationPoint, error)
 }
 
-// CandidateFinder discovers statistical candidate relations.
-type CandidateFinder struct {
-	store  *Store
-	config CandidateConfig
-	api    ObservationAPI
+// EntityResolver maps an entity id to its most-commonly-queried metric UID.
+// Implementations may return found=false to signal "no metric known"; the
+// finder falls back to using the raw entity id as the metric UID.
+type EntityResolver interface {
+	MetricUIDForEntity(ctx context.Context, entityID string) (metricUID string, found bool, err error)
 }
 
-// NewCandidateFinder creates a finder.
+// CandidateFinder discovers statistical candidate relations between entities.
+type CandidateFinder struct {
+	store    *Store
+	config   CandidateConfig
+	api      ObservationAPI
+	resolver EntityResolver
+}
+
+// NewCandidateFinder creates a finder. The resolver may be nil — in that case
+// entity ids are passed through to the observation API as-is (existing test
+// path compatibility).
 func NewCandidateFinder(store *Store, cfg CandidateConfig) *CandidateFinder {
 	return &CandidateFinder{
 		store:  store,
@@ -100,9 +121,22 @@ func (cf *CandidateFinder) SetAPI(api ObservationAPI) {
 	cf.api = api
 }
 
+// SetEntityResolver sets the optional entity → metric UID resolver. Passing
+// nil disables resolution (entity ids are used directly as metric UIDs).
+func (cf *CandidateFinder) SetEntityResolver(r EntityResolver) {
+	cf.resolver = r
+}
+
 // FindBetween finds candidate relations between two entities.
 //
-// 超时序对齐：先按时间戳配对（容差 < 1 天），再做相关性计算。
+// Metric UID resolution: when an EntityResolver is configured, entity ids are
+// resolved to their most-commonly-queried metric UIDs before fetching the
+// observation series. Without a resolver the entity ids are used verbatim as
+// metric UIDs (backwards compatible).
+//
+// Time-series alignment pairs observations by timestamp (tolerance = 12 h,
+// i.e. half the 24 h lag step). The lag search then tries source-leads-target
+// lags from 0 to MaxLag and keeps the one with the highest |r|.
 func (cf *CandidateFinder) FindBetween(ctx context.Context, sourceID, targetID string) ([]Candidate, error) {
 	if cf.api.Fetch == nil {
 		return nil, fmt.Errorf("observation API not set")
@@ -111,11 +145,16 @@ func (cf *CandidateFinder) FindBetween(ctx context.Context, sourceID, targetID s
 	until := time.Now()
 	since := until.Add(-cf.config.Lookback)
 
-	sourceObs, err := cf.api.Fetch(ctx, sourceID, since, until, 1000)
+	sourceMetricUID, targetMetricUID, err := cf.resolveMetricUIDs(ctx, sourceID, targetID)
+	if err != nil {
+		return nil, err
+	}
+
+	sourceObs, err := cf.api.Fetch(ctx, sourceMetricUID, since, until, 1000)
 	if err != nil {
 		return nil, fmt.Errorf("fetch source observations: %w", err)
 	}
-	targetObs, err := cf.api.Fetch(ctx, targetID, since, until, 1000)
+	targetObs, err := cf.api.Fetch(ctx, targetMetricUID, since, until, 1000)
 	if err != nil {
 		return nil, fmt.Errorf("fetch target observations: %w", err)
 	}
@@ -124,23 +163,37 @@ func (cf *CandidateFinder) FindBetween(ctx context.Context, sourceID, targetID s
 		return nil, nil
 	}
 
-	// 超时序对齐：按时间戳配对（容差 < MaxLag 或 1 天，取较小值）
-	tolerance := 24 * time.Hour
-	if cf.config.MaxLag > 0 && cf.config.MaxLag < tolerance {
-		tolerance = cf.config.MaxLag
-	}
-	alignedSrc, alignedTgt := alignTimeSeries(sourceObs, targetObs, tolerance)
-	if len(alignedSrc) < cf.config.MinObservations {
-		return nil, nil
-	}
+	return cf.computeCandidates(sourceID, targetID, sourceObs, targetObs), nil
+}
 
-	return cf.computeCandidates(sourceID, targetID, alignedSrc, alignedTgt), nil
+// resolveMetricUIDs maps the given entity ids to metric UIDs. When no resolver
+// is configured the ids are returned as-is.
+func (cf *CandidateFinder) resolveMetricUIDs(ctx context.Context, sourceID, targetID string) (string, string, error) {
+	sourceUID, targetUID := sourceID, targetID
+	if cf.resolver != nil {
+		s, found, err := cf.resolver.MetricUIDForEntity(ctx, sourceID)
+		if err != nil {
+			return "", "", fmt.Errorf("resolve source metric UID for %q: %w", sourceID, err)
+		}
+		if found {
+			sourceUID = s
+		}
+		t, found, err := cf.resolver.MetricUIDForEntity(ctx, targetID)
+		if err != nil {
+			return "", "", fmt.Errorf("resolve target metric UID for %q: %w", targetID, err)
+		}
+		if found {
+			targetUID = t
+		}
+	}
+	return sourceUID, targetUID, nil
 }
 
 // Discover scans entity pairs for candidate relations.
 //
-// 返回 []Candidate + error；error 是所有 pair 错误的聚合。
-// 对每个失败的 pair 打印一条 Warn 日志后继续，不会静默吞错。
+// Returns []Candidate + error; error aggregates per-pair failures. Each failed
+// pair is logged at Warn level and skipped — errors are never silently
+// swallowed.
 func (cf *CandidateFinder) Discover(ctx context.Context, entityPairs [][2]string) ([]Candidate, error) {
 	var all []Candidate
 	var aggErrs []error
@@ -167,34 +220,96 @@ func (cf *CandidateFinder) Discover(ctx context.Context, entityPairs [][2]string
 	return all, nil
 }
 
-// computeCandidates 基于已对齐的时间序列计算候选关系。
+// computeCandidates runs a lag search on the raw series and produces up to one
+// Candidate when the best |r| clears MinCorrelation. Direction is always
+// "forward" — the lag itself encodes the directional relationship (source
+// leads target).
 func (cf *CandidateFinder) computeCandidates(sourceID, targetID string, sourceObs, targetObs []ObservationPoint) []Candidate {
-	var candidates []Candidate
+	bestLag, bestR, bestP := maxLagSearch(sourceObs, targetObs, cf.config.MaxLag, cf.config.MinObservations)
 
-	corr := pearsonCorrelation(sourceObs, targetObs)
-	if math.Abs(corr) >= cf.config.MinCorrelation {
-		relType := "correlates"
-		if corr < 0 {
-			relType = "inversely_correlates"
-		}
-		pVal := pearsonPValue(corr, len(sourceObs))
-		firstObs, lastObs := timeBounds(sourceObs)
-		candidates = append(candidates, Candidate{
-			SourceID:      sourceID,
-			TargetID:      targetID,
-			RelationType:  relType,
-			Direction:     "undirected",
-			Correlation:   corr,
-			Lag:           Duration{0},
-			PVale:         pVal,
-			Observations:  len(sourceObs),
-			Confidence:    math.Abs(corr),
-			FirstObserved: firstObs,
-			LastObserved:  lastObs,
-		})
+	if math.Abs(bestR) < cf.config.MinCorrelation {
+		return nil
 	}
 
-	return candidates
+	// Align at bestLag to get observation bounds and final count. maxLagSearch
+	// already used lagTolerance internally per lag step, so the alignment is
+	// deterministic.
+	shifted := shiftSeries(sourceObs, bestLag)
+	alignedSrc, _ := alignTimeSeries(shifted, targetObs, lagTolerance())
+	observations := len(alignedSrc)
+
+	relType := "correlates"
+	if bestR < 0 {
+		relType = "inversely_correlates"
+	}
+
+	firstObs, lastObs := timeBounds(alignedSrc)
+	evidence := map[string]interface{}{
+		"p_value":       bestP,
+		"sample_size":   observations,
+		"lookback_days": int(cf.config.Lookback.Hours() / 24),
+		"method":        "pearson",
+	}
+	evidenceJSON, _ := json.Marshal(evidence)
+
+	return []Candidate{{
+		SourceID:      sourceID,
+		TargetID:      targetID,
+		RelationType:  relType,
+		Direction:     "forward",
+		Correlation:   bestR,
+		Lag:           Duration{bestLag},
+		TypicalLag:    bestLag.String(),
+		PVale:         bestP,
+		Observations:  observations,
+		Confidence:    math.Abs(bestR),
+		FirstObserved: firstObs,
+		LastObserved:  lastObs,
+		Evidence:      string(evidenceJSON),
+	}}
+}
+
+// maxLagSearch tries lagging the source series by lag=[0, MaxLag] in 24h step.
+// Returns the lag producing the highest |r|, along with r and its p-value at
+// that lag. A candidate must yield at least minObservations aligned points.
+func maxLagSearch(source, target []ObservationPoint, maxLag time.Duration, minObservations int) (bestLag time.Duration, bestR float64, bestP float64) {
+	step := 24 * time.Hour
+	if maxLag <= 0 {
+		maxLag = 7 * 24 * time.Hour
+	}
+	bestR = 0
+	bestP = 1
+	for lag := time.Duration(0); lag <= maxLag; lag += step {
+		shifted := shiftSeries(source, lag)
+		alignedSource, alignedTarget := alignTimeSeries(shifted, target, lagTolerance())
+		if len(alignedSource) < minObservations {
+			continue
+		}
+		r := pearsonCorrelation(alignedSource, alignedTarget)
+		p := pearsonPValue(r, len(alignedSource))
+		if math.Abs(r) > math.Abs(bestR) {
+			bestR = r
+			bestP = p
+			bestLag = lag
+		}
+	}
+	return
+}
+
+// shiftSeries shifts every observation timestamp forward by lag. Models the
+// source leading the target: source[t] is compared against target[t+lag].
+func shiftSeries(obs []ObservationPoint, lag time.Duration) []ObservationPoint {
+	shifted := make([]ObservationPoint, len(obs))
+	for i, p := range obs {
+		shifted[i] = ObservationPoint{Time: p.Time.Add(lag), Value: p.Value}
+	}
+	return shifted
+}
+
+// lagTolerance is the half-step tolerance used when aligning series inside
+// the lag search (12 h = half of the 24 h step).
+func lagTolerance() time.Duration {
+	return 12 * time.Hour
 }
 
 // pearsonCorrelation computes Pearson's r for aligned (same-length, same-order) series.
@@ -223,12 +338,13 @@ func pearsonCorrelation(a, b []ObservationPoint) float64 {
 	return numerator / denominator
 }
 
-// pearsonPValue 通过 t 分布近似计算 Pearson 相关系数的双边 p-value。
-// 使用 math.Erf 近似正态 CDF（t >= 20 后近似很准）。
+// pearsonPValue computes a two-sided p-value from Pearson's r via normal
+// approximation (math.Erf).
 //
-//	t = r * sqrt((n-2)/(1 - r^2))
-//	df = n-2
-//	p = 2 * (1 - 0.5*(1 + erf(|t|/sqrt(2))))   // 小样本保守近似
+//	t = |r| * sqrt((n-2)/(1 - r^2))
+//	p = 2 * (1 - Phi(|t|)), Phi via erf
+//
+// Conservative for small n; df=n-2.
 func pearsonPValue(r float64, n int) float64 {
 	if n < 3 {
 		return 1.0
@@ -249,11 +365,11 @@ func pearsonPValue(r float64, n int) float64 {
 	return p
 }
 
-// alignTimeSeries 按时间戳配对两条序列。对于 a 中每个点，在 b 中找最近的点，
-// 若时间差 <= tolerance 则配成一对；未匹配的点被丢弃。
-// 返回的两条序列等长且时间顺序对齐。
+// alignTimeSeries pairs two series by nearest timestamp within tolerance. For
+// each point in a, the closest point in b is chosen; the pair is kept when
+// their timestamp delta is <= tolerance. Unmatched points are dropped. Both
+// returned slices are equal-length and time-ordered.
 func alignTimeSeries(a, b []ObservationPoint, tolerance time.Duration) ([]ObservationPoint, []ObservationPoint) {
-	// 为加速查找，建 b 按时间戳映射（最近的那个保留）
 	bByTime := make(map[int64]float64, len(b))
 	for _, p := range b {
 		bByTime[p.Time.Unix()] = p.Value
@@ -283,7 +399,7 @@ func alignTimeSeries(a, b []ObservationPoint, tolerance time.Duration) ([]Observ
 	return alignA, alignB
 }
 
-// timeBounds 返回序列的首尾观测时间。
+// timeBounds returns the first and last observation timestamps.
 func timeBounds(obs []ObservationPoint) (first, last time.Time) {
 	if len(obs) == 0 {
 		return

@@ -71,7 +71,7 @@ func (rm *RelationManager) Create(ctx context.Context, input RelationInput) (*Ma
 		Active:       true,
 	}
 
-	if err := rm.insertManualRelation(ctx, relation); err != nil {
+	if err := insertManualRelation(ctx, rm.store.db, relation); err != nil {
 		return nil, fmt.Errorf("insert manual relation: %w", err)
 	}
 	return relation, nil
@@ -164,7 +164,8 @@ func (rm *RelationManager) List(ctx context.Context, entityID string, activeOnly
 	return result, nil
 }
 
-// AcceptCandidate 把候选关系（经用户确认后）提升为真实 ManualRelation。
+// AcceptCandidate promotes a vetted candidate to a real ManualRelation.
+// It validates entities then inserts the row via the store DB.
 func (rm *RelationManager) AcceptCandidate(ctx context.Context, candidate Candidate, userID string) (*ManualRelation, error) {
 	input := RelationInput{
 		SourceID:     candidate.SourceID,
@@ -175,6 +176,30 @@ func (rm *RelationManager) AcceptCandidate(ctx context.Context, candidate Candid
 		UserID:       userID,
 	}
 	return rm.Create(ctx, input)
+}
+
+// txAcceptCandidate is the transactional variant of AcceptCandidate. It
+// inserts the manual_relation row using the supplied pgx.Tx and skips entity
+// validation (the candidate was already validated upstream when the
+// PendingSuggestion was created). Used by AcceptSuggestionByCandidate which
+// writes the manual_relation and the suggestion review row atomically.
+func (rm *RelationManager) txAcceptCandidate(ctx context.Context, tx pgx.Tx, candidate Candidate, userID string) (*ManualRelation, error) {
+	rel := &ManualRelation{
+		RelationID:    generateRelationID(),
+		SourceID:      candidate.SourceID,
+		TargetID:      candidate.TargetID,
+		RelationType:  candidate.RelationType,
+		Direction:     candidate.Direction,
+		Weight:        clampWeight(candidate.Confidence),
+		UserID:        userID,
+		CreatedAt:     time.Now(),
+		Active:        true,
+		LastUpdatedAt: time.Now(),
+	}
+	if err := insertManualRelation(ctx, tx, rel); err != nil {
+		return nil, fmt.Errorf("insert manual relation in tx: %w", err)
+	}
+	return rel, nil
 }
 
 // RejectCandidate 记录候选被拒绝的原因。
@@ -217,8 +242,11 @@ func (rm *RelationManager) validateEntities(ctx context.Context, sourceID, targe
 	return nil
 }
 
-func (rm *RelationManager) insertManualRelation(ctx context.Context, r *ManualRelation) error {
-	_, err := rm.store.db.Exec(ctx, `
+// insertManualRelation writes a manual_relations row via the supplied
+// DB-compatible executor. Both *pgxpool.Pool and pgx.Tx satisfy DB, so this
+// helper works inside and outside of transactions.
+func insertManualRelation(ctx context.Context, db DB, r *ManualRelation) error {
+	_, err := db.Exec(ctx, `
 		INSERT INTO manual_relations (
 			relation_id, source_id, target_id, relation_type, direction,
 			description, weight, user_id, created_at, active, evidence, last_updated_at
