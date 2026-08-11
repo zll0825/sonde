@@ -13,6 +13,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
+
+	coreevent "capital_observatory/internal/core/event"
 )
 
 func main() {
@@ -58,6 +60,29 @@ func main() {
 	// Manual Sync / Backfill (control endpoint).
 	mux.HandleFunc("/api/control/sync", syncHandler(db))
 	mux.HandleFunc("/api/control/backfill", backfillHandler(db))
+
+	// B: signal quality timeline (GET, read-only, public for dashboards).
+	mux.HandleFunc("GET /api/signal/quality/{metric_uid}", signalQualityHandler(db))
+
+	// C: ontology Phase 2 — manual relations CRUD (Go 1.22 method+path patterns).
+	ont := newOntologyStore(db)
+	mux.HandleFunc("GET /api/ontology/relations/", ont.ontologyRelationsHandler)
+	mux.HandleFunc("POST /api/ontology/relations/", ont.ontologyRelationsHandler)
+	mux.HandleFunc("GET /api/ontology/relations/{id}", ont.ontologyRelationByIDHandler)
+	mux.HandleFunc("PUT /api/ontology/relations/{id}", ont.ontologyRelationByIDHandler)
+	mux.HandleFunc("DELETE /api/ontology/relations/{id}", ont.ontologyRelationByIDHandler)
+
+	// C: ontology Phase 2 — relation-suggestion candidate accept / reject.
+	mux.HandleFunc("GET /api/ontology/candidates/", ont.ontologyCandidatesHandler)
+	mux.HandleFunc("GET /api/ontology/candidates/{id}", ont.ontologyCandidatesHandler)
+	mux.HandleFunc("POST /api/ontology/candidates/{id}/accept", ont.ontologyCandidateActionHandler)
+	mux.HandleFunc("POST /api/ontology/candidates/{id}/reject", ont.ontologyCandidateActionHandler)
+
+	// A: event cluster snapshots ring buffer (read-only GET). The API process
+	// owns its own ring; core writes cluster_event outbox rows that reconcile
+	// into this ring. For now the ring starts empty.
+	clusterRing := coreevent.NewClusterRing(200)
+	mux.HandleFunc("GET /api/clusters/", clusterHandler(clusterRing))
 
 	// Static frontend: mounts web/ at "/" so the frontend can be served by the
 	// API server (fixes the file:// → fetch failure — M5 acceptance #5).

@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"google.golang.org/grpc"
 
 	"capital_observatory/internal/core/alert"
+	"capital_observatory/internal/core/classification"
 	"capital_observatory/internal/core/detector"
 	coreevent "capital_observatory/internal/core/event"
 	"capital_observatory/internal/core/noise"
@@ -73,6 +75,15 @@ func main() {
 	// belongs to the outbox worker — if Notify fails we return the error and let
 	// MarkFailed/redelivery take over.
 	n := notifier.Resolve()
+
+	// ── A: classification event clustering ─────────────────────────────────────
+	// Ring buffer holds the most recent N EventCluster snapshots for the API
+	// endpoint /api/clusters/. The clusterer itself tracks open clusters in
+	// memory; the ring buffer only records completed/recent snapshots.
+	clusterer := classification.NewClusterer(classification.DefaultClusteringConfig())
+	clusterRing := coreevent.NewClusterRing(100)
+	var clusterMu sync.Mutex
+
 	outboxWorker.RegisterHandler(alert.EventTypeAlertTriggered, func(ctx context.Context, ev alert.OutboxEvent) error {
 		var parsed notifier.AlertInfo
 		if uerr := json.Unmarshal(ev.Payload, &parsed); uerr != nil {
@@ -93,6 +104,39 @@ func main() {
 
 		// 记入噪音预算（仅统计，不影响派发结果）。
 		budgetTracker.Record(ctx, parsed.RuleID, parsed.Title, time.Now())
+
+		// Non-blocking classification — clustering must never delay the
+		// critical notification path. We snapshot the needed fields because
+		// parsed will go out of scope when the handler returns.
+		go func(alertID, metricID, sev string, ruleID int, triggeredAt time.Time) {
+			ca := model.Alert{
+				ID:          alertID,
+				MetricID:    metricID,
+				RuleID:      ruleID,
+				Severity:    model.Severity(sev),
+				TriggeredAt: triggeredAt,
+			}
+			cluster := clusterer.Receive(context.Background(), ca)
+			if cluster == nil {
+				return
+			}
+			clusterMu.Lock()
+			defer clusterMu.Unlock()
+			clusterRing.Push(coreevent.ClusterSnapshot{
+				ClusterID:     cluster.ID,
+				PrimaryEntity: cluster.PrimaryEntity,
+				MemberCount:   len(cluster.Alerts),
+				Severity:      cluster.MaxSeverity,
+				LastTriggered: cluster.LastTriggered,
+				Coalesced:     cluster.Coalesced,
+			})
+			log.Debug().
+				Str("cluster_id", cluster.ID).
+				Str("entity", cluster.PrimaryEntity).
+				Int("size", len(cluster.Alerts)).
+				Bool("coalesced", cluster.Coalesced).
+				Msg("alert clustered")
+		}(parsed.AlertID, parsed.MetricID, parsed.Severity, parsed.RuleID, parsed.TriggeredAt)
 
 		// Send via the configured notifier. Errors propagate to the outbox worker,
 		// which owns redelivery (retry-after backoff, terminal-failure threshold).
