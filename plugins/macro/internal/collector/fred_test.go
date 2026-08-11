@@ -1,9 +1,13 @@
 package collector
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -117,11 +121,139 @@ func TestFREDSeriesListOrder(t *testing.T) {
 	}
 }
 
+func TestMacroCollectorFetchURL_UnitsCPI_PCH(t *testing.T) {
+	// Verify that CPIAUCSL_PCH requests include &units=pc1.
+	testClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		q := req.URL.Query()
+		if q.Get("series_id") == "CPIAUCSL_PCH" {
+			if q.Get("units") != "pc1" {
+				t.Errorf("CPIAUCSL_PCH units param = %q, want %q", q.Get("units"), "pc1")
+			}
+		}
+		body := `{"observations":[{"date":"2026-08-01","value":"3.2"}]}`
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
+	cfg := provider.Config{
+		ProviderName: "fred-test-units",
+		Timeout:      5 * time.Second,
+		RPS:          100,
+		Burst:        10,
+		MaxRetries:   1,
+		BaseDelay:    10 * time.Millisecond,
+		MaxDelay:     50 * time.Millisecond,
+	}
+	f := &FREDCollector{
+		apiKey: "test",
+		client: provider.NewSafeHTTPClientWithHTTPClient(cfg, testClient),
+	}
+	_, err := f.GetSnapshots(context.Background())
+	if err != nil {
+		t.Fatalf("GetSnapshots: %v", err)
+	}
+}
+
 func TestWALCLUnitsAreUSD(t *testing.T) {
 	// Sanity: WALCL scale must be 1e6 (millions -> USD).
 	for _, entry := range fredSeriesList {
 		if entry.MetricID == "fed.ins.balance_sheet" && entry.UnitScale != 1e6 {
 			t.Errorf("WALCL UnitScale = %v, want 1e6 (FRED reports in MILLIONS of USD)", entry.UnitScale)
 		}
+	}
+}
+
+// TestFetchSeriesWindowPaging verifies that GetSnapshotsForWindow requests
+// paginated observations when the series data spans more than one FRED page.
+// It checks that offset parameters appear in subsequent requests.
+func TestFetchSeriesWindowPaging(t *testing.T) {
+	requestCount := 0
+	var offsets []int
+
+	testClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+		q := req.URL.Query()
+		offsetStr := q.Get("offset")
+		off, _ := strconv.Atoi(offsetStr)
+		offsets = append(offsets, off)
+
+		// First page returns maxFREDPerPage observations; second page returns 0 (end)
+		var observations []map[string]string
+		if off == 0 {
+			// Simulate a full page
+			observations = make([]map[string]string, maxFREDPerPage)
+			for i := 0; i < maxFREDPerPage; i++ {
+				observations[i] = map[string]string{
+					"date":  fmt.Sprintf("2020-01-%02d", (i%28)+1),
+					"value": "4.2",
+				}
+			}
+		} else {
+			// Empty second page signals end
+			observations = []map[string]string{}
+		}
+
+		// Marshal observations inline
+		type obs struct {
+			Date  string `json:"date"`
+			Value string `json:"value"`
+		}
+		obsList := make([]obs, 0, len(observations))
+		for _, o := range observations {
+			obsList = append(obsList, obs{Date: o["date"], Value: o["value"]})
+		}
+		bodyBytes, _ := json.Marshal(map[string]interface{}{"observations": obsList})
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(bodyBytes)), Header: make(http.Header)}, nil
+	})}
+
+	cfg := provider.Config{
+		ProviderName: "fred-test-paging",
+		Timeout:      5 * time.Second,
+		RPS:          100,
+		Burst:        10,
+		MaxRetries:   0,
+		BaseDelay:    time.Millisecond,
+		MaxDelay:     time.Millisecond,
+	}
+	f := &FREDCollector{
+		apiKey: "test",
+		client: provider.NewSafeHTTPClientWithHTTPClient(cfg, testClient),
+	}
+
+	// Request a window > 90 days to trigger the paged path (but < MaxHistoricalWindow)
+	end := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	start := end.AddDate(-1, 0, 0) // 1 year
+
+	snaps, err := f.GetSnapshotsForWindow(context.Background(), start, end)
+	if err != nil {
+		t.Fatalf("GetSnapshotsForWindow: %v", err)
+	}
+
+	// Multiple series are queried; we should see at least 2 requests for DGS10 (daily series)
+	// since it returns maxFREDPerPage + empty page.
+	if requestCount < 2 {
+		t.Fatalf("expected at least 2 HTTP requests (paged), got %d", requestCount)
+	}
+
+	// Verify offset parameter was used
+	hasOffset := false
+	for _, off := range offsets {
+		if off > 0 {
+			hasOffset = true
+			break
+		}
+	}
+	if !hasOffset {
+		t.Errorf("expected some requests with offset > 0 for paged results, got offsets: %v", offsets)
+	}
+
+	if len(snaps) == 0 {
+		t.Fatal("expected at least some snapshots from paged fetch")
+	}
+}
+
+// TestMaxHistoricalWindow verifies the exported constant is 10 years.
+func TestMaxHistoricalWindow(t *testing.T) {
+	expected := 3650 * 24 * time.Hour
+	if MaxHistoricalWindow != expected {
+		t.Errorf("MaxHistoricalWindow = %v, want %v", MaxHistoricalWindow, expected)
 	}
 }

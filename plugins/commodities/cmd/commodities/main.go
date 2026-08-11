@@ -1,8 +1,8 @@
-// commodities 插件：覆盖三大商品维度——能源（WTI 原油）、工业金属（COMEX 铜）、
+// commodities 插件：覆盖三大商品维度——能源（WTI 原油）、工业金属（IMF 初级铜价）、
 // 贵金属（PM 黄金现货）。数据源统一来自 FRED（需 FRED_API_KEY），小时级轮询。
 // 与现有 ETF / Crypto / Macro 形成互补的研究视图：
 //   - 油价→全球增长与通胀压力
-//   - 铜价→工业需求与全球 PMI 代理
+//   - 铜价→工业需求与全球 PMI 代理（月度 IMF 初级商品价）
 //   - 黄金→避险情绪与实际利率
 package main
 
@@ -48,7 +48,7 @@ func buildRegistration() *pb.RegisterPluginRequest {
 		Info: &pb.PluginInfo{
 			Name:        "commodities",
 			Version:     pluginVersion,
-			Description: "WTI oil, COMEX copper, PM gold spot—global growth, industrial demand, safe-haven proxy",
+			Description: "WTI oil, IMF primary copper, PM gold spot—global growth, industrial demand, safe-haven proxy",
 		},
 		Entities: []*pb.EntityDeclaration{
 			{
@@ -60,7 +60,7 @@ func buildRegistration() *pb.RegisterPluginRequest {
 			},
 			{
 				Id:         "COPPER",
-				Name:       "Copper (COMEX)",
+				Name:       "Copper (IMF Primary)",
 				Namespace:  "commodity",
 				EntityType: pb.EntityType_ENTITY_TYPE_INSTRUMENT,
 				Tags:       []string{"industrial_metal", "copper", "pmi_proxy"},
@@ -84,10 +84,10 @@ func buildRegistration() *pb.RegisterPluginRequest {
 			},
 			{
 				Id:          "metal.industrial.copper",
-				Name:        "COMEX Copper Spot (¢/lb)",
-				Description: "COMEX copper spot price in US cents per pound",
-				Unit:        "¢/lb",
-				Frequency:   "daily",
+				Name:        "COMEX Copper (IMF Primary, USD/mt)",
+				Description: "Copper price from IMF Primary Commodity Prices (PCOPPUSDM), USD per metric ton, monthly",
+				Unit:        "USD/mt",
+				Frequency:   "monthly",
 				EntityId:    "COPPER",
 			},
 			{
@@ -103,14 +103,14 @@ func buildRegistration() *pb.RegisterPluginRequest {
 			{
 				SourceId:     "OIL",
 				TargetId:     "GOLD",
-				RelationType: "correlates_with",
+				RelationType: "correlates",
 				Direction:    pb.Direction_DIRECTION_FORWARD,
 				Description:  "Surging oil prices often coincide with safe-haven gold demand (inflation signal)",
 			},
 			{
 				SourceId:     "COPPER",
 				TargetId:     "GOLD",
-				RelationType: "diverges_from",
+				RelationType: "correlates",
 				Direction:    pb.Direction_DIRECTION_FORWARD,
 				Description:  "Copper-gold ratio is a classic growth-vs-safe-haven regime indicator",
 			},
@@ -141,6 +141,6 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Description:  "Copper declining 5+ days—potential industrial slowdown signal",
 			},
 		},
-		ChangeLog: "Initial commodities domain: WTI oil, COMEX copper, PM gold spot from FRED",
+		ChangeLog: "Initial commodities domain: WTI oil, IMF primary copper (monthly USD/mt), PM gold spot from FRED",
 	}
 }

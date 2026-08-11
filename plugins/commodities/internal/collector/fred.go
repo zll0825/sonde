@@ -1,5 +1,5 @@
 // Package collector 提供 commodities 插件的数据采集器：FRED 真实源与离线 mock。
-// WTI 原油、COMEX 铜、LBMA 下午金——统一通过 FRED series 接口获取。
+// WTI 原油、IMF 初级铜价（月度）、LBMA 下午金——统一通过 FRED series 接口获取。
 package collector
 
 import (
@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"time"
 
@@ -22,6 +23,18 @@ import (
 
 // providerFRED is the source_provider recorded on FRED-sourced observations.
 const providerFRED = "fred"
+
+// MaxHistoricalWindow is the maximum time span GetSnapshotsForWindow will honor
+// without truncating. FRED itself supports decades of data; 10 years is a reasonable
+// default that covers most backfill needs without overloading the API.
+const MaxHistoricalWindow = 3650 * 24 * time.Hour
+
+// maxFREDPerPage is the maximum number of observations to request per API call.
+// FRED's default limit is 1000; the documented maximum is 10000.
+const maxFREDPerPage = 10000
+
+// maxFREDTotal is a safety cap on total observations fetched per series per call.
+const maxFREDTotal = 100000
 
 // fredSeries defines the FRED data for one commodity metric, including any unit
 // scaling needed to match the metric's declared unit.
@@ -37,7 +50,7 @@ var fredSeriesList = []struct {
 	fredSeries
 }{
 	{"oil.energy.wti", fredSeries{"DCOILWTICO", 1, "daily"}},
-	{"metal.industrial.copper", fredSeries{"PCOPPUSDM", 1, "daily"}},
+	{"metal.industrial.copper", fredSeries{"PCOPPUSDM", 1, "monthly"}},
 	{"metal.precious.gold", fredSeries{"GOLDAMGBD228NLBM", 1, "daily"}},
 }
 
@@ -56,7 +69,7 @@ func NewFREDCollector() (*FREDCollector, error) {
 	}
 	return &FREDCollector{
 		apiKey: apiKey,
-		client: provider.NewSafeHTTPClient(provider.FREDConfig()),
+		client: provider.SharedFREDClient(),
 	}, nil
 }
 
@@ -111,28 +124,33 @@ func (f *FREDCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 
 // GetSnapshotsForWindow serves the backfill path using FRED's native
 // observation_start/observation_end parameters.
+//
+// Unlike the previous 90-day cap, this implementation allows spans up to
+// MaxHistoricalWindow (~10 years) and paginates through results using FRED's
+// offset parameter so that full historical backfill is possible.
 func (f *FREDCollector) GetSnapshotsForWindow(ctx context.Context, start, end time.Time) ([]pluginrunner.Snapshot, error) {
 	if end.Before(start) {
 		end = start
 	}
-	const maxWindow = 90 * 24 * time.Hour
-	if end.Sub(start) > maxWindow {
-		start = end.Add(-maxWindow)
+	if end.Sub(start) > MaxHistoricalWindow {
+		start = end.Add(-MaxHistoricalWindow)
 	}
 
 	snaps := make([]pluginrunner.Snapshot, 0, len(fredSeriesList)*60)
 	for _, entry := range fredSeriesList {
-		times, vals, err := f.fetchRange(ctx, entry.SeriesID, entry.UnitScale, start, end)
+		times, vals, err := f.fetchRangePaged(ctx, entry.SeriesID, entry.UnitScale, start, end)
 		if err != nil {
 			logFetchSkip(entry.MetricID, entry.SeriesID, err)
 			continue
 		}
+
+		seriesSnaps := make([]pluginrunner.Snapshot, 0, len(times))
 		fetchedAt := time.Now()
 		for i, ts := range times {
 			if vals[i] == nil {
 				continue
 			}
-			snaps = append(snaps, pluginrunner.Snapshot{
+			seriesSnaps = append(seriesSnaps, pluginrunner.Snapshot{
 				MetricID:    entry.MetricID,
 				Value:       *vals[i],
 				Timestamp:   ts,
@@ -142,13 +160,15 @@ func (f *FREDCollector) GetSnapshotsForWindow(ctx context.Context, start, end ti
 				Grade:       "delayed",
 			})
 		}
+		detectFREDGaps(entry.MetricID, entry.Frequency, seriesSnaps, start, end)
+		snaps = append(snaps, seriesSnaps...)
 	}
 	return snaps, nil
 }
 
 // fetchLatest returns the most recent observation within [windowStart, windowEnd].
 func (f *FREDCollector) fetchLatest(ctx context.Context, seriesID string, scale float64, windowStart, windowEnd time.Time) (*float64, time.Time, error) {
-	reqURL := f.observationsURL(seriesID, windowStart, windowEnd, "desc", 1)
+	reqURL := f.observationsURL(seriesID, windowStart, windowEnd, "desc", 1, 0)
 	body, err := f.doGet(ctx, reqURL)
 	if err != nil {
 		return nil, time.Time{}, err
@@ -169,43 +189,70 @@ func (f *FREDCollector) fetchLatest(ctx context.Context, seriesID string, scale 
 	return &val, ts, nil
 }
 
-// fetchRange returns all observations within [start, end] in ascending date order.
-func (f *FREDCollector) fetchRange(ctx context.Context, seriesID string, scale float64, start, end time.Time) ([]time.Time, []*float64, error) {
-	reqURL := f.observationsURL(seriesID, start, end, "asc", 0)
-	body, err := f.doGet(ctx, reqURL)
-	if err != nil {
-		return nil, nil, err
-	}
-	var resp fredObservationsResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, nil, fmt.Errorf("decode FRED response: %w", err)
-	}
-	times := make([]time.Time, 0, len(resp.Observations))
-	vals := make([]*float64, 0, len(resp.Observations))
-	for _, obs := range resp.Observations {
-		ts, err := time.Parse("2006-01-02", obs.Date)
+// fetchRangePaged returns all observations within [start, end] in ascending date order,
+// automatically paginating via FRED's offset parameter when more than maxFREDPerPage
+// results exist.
+func (f *FREDCollector) fetchRangePaged(ctx context.Context, seriesID string, scale float64, start, end time.Time) ([]time.Time, []*float64, error) {
+	var allTimes []time.Time
+	var allVals []*float64
+
+	offset := 0
+	for {
+		reqURL := f.observationsURL(seriesID, start, end, "asc", maxFREDPerPage, offset)
+		body, err := f.doGet(ctx, reqURL)
 		if err != nil {
-			continue
+			return nil, nil, err
 		}
-		v, ok := parseFREDValue(obs.Value, scale)
-		if !ok {
-			vals = append(vals, nil)
-		} else {
-			vals = append(vals, &v)
+		var resp fredObservationsResponse
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, nil, fmt.Errorf("decode FRED response: %w", err)
 		}
-		times = append(times, ts)
+		if len(resp.Observations) == 0 {
+			break
+		}
+		for _, obs := range resp.Observations {
+			ts, err := time.Parse("2006-01-02", obs.Date)
+			if err != nil {
+				continue
+			}
+			v, ok := parseFREDValue(obs.Value, scale)
+			if !ok {
+				allVals = append(allVals, nil)
+			} else {
+				allVals = append(allVals, &v)
+			}
+			allTimes = append(allTimes, ts)
+		}
+		if len(resp.Observations) < maxFREDPerPage {
+			break
+		}
+		offset += len(resp.Observations)
+		if offset >= maxFREDTotal {
+			log.Warn().Str("series", seriesID).Int("offset", offset).
+				Msg("FRED commodity backfill hit safety cap; some observations may be missing")
+			break
+		}
+		// Respect context cancellation between pages
+		select {
+		case <-ctx.Done():
+			return allTimes, allVals, ctx.Err()
+		default:
+		}
 	}
-	return times, vals, nil
+	return allTimes, allVals, nil
 }
 
 // observationsURL builds the FRED observations endpoint URL.
-func (f *FREDCollector) observationsURL(seriesID string, start, end time.Time, sortOrder string, limit int) string {
+func (f *FREDCollector) observationsURL(seriesID string, start, end time.Time, sortOrder string, limit, offset int) string {
 	reqURL := fmt.Sprintf(
 		"https://api.stlouisfed.org/fred/series/observations?series_id=%s&api_key=%s&file_type=json&observation_start=%s&observation_end=%s&sort_order=%s",
 		seriesID, f.apiKey, start.Format("2006-01-02"), end.Format("2006-01-02"), sortOrder,
 	)
 	if limit > 0 {
 		reqURL += fmt.Sprintf("&limit=%d", limit)
+	}
+	if offset > 0 {
+		reqURL += fmt.Sprintf("&offset=%d", offset)
 	}
 	return reqURL
 }
@@ -246,6 +293,65 @@ func parseFREDValue(s string, scale float64) (float64, bool) {
 		return 0, false
 	}
 	return v * scale, true
+}
+
+// detectFREDGaps checks a FRED backfill result for significant timeline gaps
+// and logs warnings to support operational monitoring.
+func detectFREDGaps(metricID, frequency string, snaps []pluginrunner.Snapshot, reqStart, reqEnd time.Time) {
+	if len(snaps) == 0 {
+		log.Warn().Str("metric", metricID).
+			Str("requested_start", reqStart.Format("2006-01-02")).
+			Str("requested_end", reqEnd.Format("2006-01-02")).
+			Msg("FRED backfill returned zero samples")
+		return
+	}
+
+	// Determine expected gap threshold based on frequency
+	var maxGap time.Duration
+	switch frequency {
+	case "daily":
+		maxGap = 7 * 24 * time.Hour
+	case "weekly":
+		maxGap = 4 * 7 * 24 * time.Hour
+	case "monthly":
+		maxGap = 6 * 30 * 24 * time.Hour
+	default:
+		maxGap = 30 * 24 * time.Hour
+	}
+
+	// Sort ascending
+	sort.Slice(snaps, func(i, j int) bool {
+		return snaps[i].Timestamp.Before(snaps[j].Timestamp)
+	})
+
+	// Coverage boundaries
+	coverageStart := snaps[0].Timestamp
+	coverageEnd := snaps[len(snaps)-1].Timestamp
+	if coverageStart.After(reqStart.Add(maxGap)) {
+		log.Warn().Str("metric", metricID).
+			Str("requested_start", reqStart.Format("2006-01-02")).
+			Str("actual_start", coverageStart.Format("2006-01-02")).
+			Msg("FRED backfill misses early data at window start")
+	}
+	if coverageEnd.Before(reqEnd.Add(-maxGap)) {
+		log.Warn().Str("metric", metricID).
+			Str("requested_end", reqEnd.Format("2006-01-02")).
+			Str("actual_end", coverageEnd.Format("2006-01-02")).
+			Msg("FRED backfill misses recent data at window end")
+	}
+
+	// Internal gaps
+	for i := 1; i < len(snaps); i++ {
+		gap := snaps[i].Timestamp.Sub(snaps[i-1].Timestamp)
+		if gap > maxGap {
+			log.Warn().Str("metric", metricID).
+				Str("gap_start", snaps[i-1].Timestamp.Format("2006-01-02")).
+				Str("gap_end", snaps[i].Timestamp.Format("2006-01-02")).
+				Dur("gap_duration", gap).
+				Int("total_samples", len(snaps)).
+				Msg("FRED backfill timeline gap detected")
+		}
+	}
 }
 
 func logFetchSkip(metric, series string, err error) {
