@@ -2,7 +2,8 @@ go 1.22
 
 use (
 	.
-	./plugins/etf
+	./plugins/commodities
 	./plugins/crypto
+	./plugins/etf
 	./plugins/macro
 )
