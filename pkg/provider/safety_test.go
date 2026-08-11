@@ -30,6 +30,44 @@ func TestSafeHTTPClient_Success(t *testing.T) {
 	}
 }
 
+func TestNewSafeHTTPClientWithHTTPClient_PreservesConfiguredTimeout(t *testing.T) {
+	cfg := DefaultConfig("test")
+	cfg.Timeout = 20 * time.Millisecond
+	cfg.MaxRetries = 0
+
+	safe := NewSafeHTTPClientWithHTTPClient(cfg, &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			<-req.Context().Done()
+			return nil, req.Context().Err()
+		}),
+	})
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://test.example/data", nil)
+
+	started := time.Now()
+	if _, err := safe.Do(req); err == nil {
+		t.Fatal("Do returned nil error for a request that exceeded the configured timeout")
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("configured timeout was not applied; request took %s", elapsed)
+	}
+}
+
+func TestCircuitBreaker_HalfOpenRequestLimitIncludesFirstProbe(t *testing.T) {
+	breaker := NewCircuitBreaker(CircuitBreakerConfig{
+		FailureThreshold:    1,
+		OpenDuration:        time.Nanosecond,
+		HalfOpenMaxRequests: 1,
+	})
+	breaker.RecordFailure()
+
+	if !breaker.Allow() {
+		t.Fatal("first half-open probe was rejected")
+	}
+	if breaker.Allow() {
+		t.Fatal("second half-open probe exceeded HalfOpenMaxRequests")
+	}
+}
+
 // TestSafeHTTPClient_429Retry verifies Retry-After handling on 429 responses.
 func TestSafeHTTPClient_429Retry(t *testing.T) {
 	safe := NewSafeHTTPClient(DefaultConfig("test"))

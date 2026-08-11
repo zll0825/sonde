@@ -26,7 +26,8 @@ type SafeHTTPClient struct {
 	maxRetries  int
 	baseDelay   time.Duration
 	maxDelay    time.Duration
-	jitterRatio float64 // 0.0-1.0, fraction of delay to randomize
+	jitterRatio float64       // 0.0-1.0, fraction of delay to randomize
+	semaphore   chan struct{} // concurrency limiter; nil when MaxConcurrent<=0
 
 	mu       sync.Mutex
 	provider string // for logging context
@@ -52,6 +53,9 @@ type Config struct {
 	// JitterRatio adds randomization to backoff to avoid thundering herd.
 	// Defaults to 0.25 (25% jitter). Max 0.5.
 	JitterRatio float64
+	// MaxConcurrent bounds the number of in-flight requests. Default 1.
+	// Use 0 to disable (not recommended in production).
+	MaxConcurrent int
 	// CircuitBreaker configures the failure circuit.
 	Circuit CircuitBreakerConfig
 }
@@ -71,8 +75,8 @@ func DefaultConfig(provider string) Config {
 	return Config{
 		ProviderName: provider,
 		Timeout:      15 * time.Second,
-		RPS:          0.5,              // 1 request per 2 seconds default
-		Burst:        2,                // allow small bursts
+		RPS:          0.5, // 1 request per 2 seconds default
+		Burst:        2,   // allow small bursts
 		MaxRetries:   3,
 		BaseDelay:    1 * time.Second,
 		MaxDelay:     30 * time.Second,
@@ -89,6 +93,12 @@ func DefaultConfig(provider string) Config {
 // underlying http.Client. Useful for testing with custom RoundTripper.
 func NewSafeHTTPClientWithHTTPClient(cfg Config, httpClient *http.Client) *SafeHTTPClient {
 	s := NewSafeHTTPClient(cfg)
+	if httpClient == nil {
+		return s
+	}
+	if httpClient.Timeout == 0 {
+		httpClient.Timeout = s.client.Timeout
+	}
 	s.client = httpClient
 	return s
 }
@@ -104,6 +114,9 @@ func NewSafeHTTPClient(cfg Config) *SafeHTTPClient {
 	if cfg.JitterRatio > 0.5 {
 		cfg.JitterRatio = 0.5
 	}
+	if cfg.MaxConcurrent == 0 {
+		cfg.MaxConcurrent = 1
+	}
 
 	s := &SafeHTTPClient{
 		client:      &http.Client{Timeout: cfg.Timeout},
@@ -112,6 +125,7 @@ func NewSafeHTTPClient(cfg Config) *SafeHTTPClient {
 		maxDelay:    cfg.MaxDelay,
 		jitterRatio: cfg.JitterRatio,
 		provider:    cfg.ProviderName,
+		semaphore:   make(chan struct{}, cfg.MaxConcurrent),
 	}
 	if cfg.RPS > 0 {
 		s.limiter = NewTokenBucket(cfg.RPS, cfg.Burst)
@@ -126,6 +140,14 @@ func NewSafeHTTPClient(cfg Config) *SafeHTTPClient {
 // 3. Retry with exponential backoff and jitter on transient failures
 // 4. 429/Retry-After handling
 func (s *SafeHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	// Step 0: concurrency limit
+	select {
+	case s.semaphore <- struct{}{}:
+		defer func() { <-s.semaphore }()
+	case <-req.Context().Done():
+		return nil, req.Context().Err()
+	}
+
 	var lastErr error
 
 	for attempt := 0; attempt <= s.maxRetries; attempt++ {
