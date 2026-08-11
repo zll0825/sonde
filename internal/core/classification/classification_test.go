@@ -1,6 +1,7 @@
 package classification
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 
 func TestClusterer_SameEntityWithinWindow(t *testing.T) {
 	c := NewClusterer(DefaultClusteringConfig())
+	ctx := context.Background()
 	cluster := NewCluster(model.Alert{
 		ID:          "a1",
 		MetricID:    "gld.ass.price",
@@ -17,7 +19,7 @@ func TestClusterer_SameEntityWithinWindow(t *testing.T) {
 	})
 
 	// Same entity, within 1h window
-	ok := c.CanCoalesce(cluster, model.Alert{
+	ok := c.CanCoalesce(ctx, cluster, model.Alert{
 		MetricID:    "gld.ass.volume",
 		TriggeredAt: time.Now().Add(30 * time.Minute),
 	}, nil)
@@ -28,6 +30,7 @@ func TestClusterer_SameEntityWithinWindow(t *testing.T) {
 
 func TestClusterer_SameEntityOutsideWindow(t *testing.T) {
 	c := NewClusterer(DefaultClusteringConfig())
+	ctx := context.Background()
 	cluster := NewCluster(model.Alert{
 		ID:          "a1",
 		MetricID:    "gld.ass.price",
@@ -36,7 +39,7 @@ func TestClusterer_SameEntityOutsideWindow(t *testing.T) {
 	})
 
 	// Same entity, outside 1h window
-	ok := c.CanCoalesce(cluster, model.Alert{
+	ok := c.CanCoalesce(ctx, cluster, model.Alert{
 		MetricID:    "gld.ass.volume",
 		TriggeredAt: time.Now(),
 	}, nil)
@@ -47,6 +50,7 @@ func TestClusterer_SameEntityOutsideWindow(t *testing.T) {
 
 func TestClusterer_CrossEntityCooccurrence(t *testing.T) {
 	c := NewClusterer(DefaultClusteringConfig())
+	ctx := context.Background()
 	cluster := NewCluster(model.Alert{
 		ID:          "a1",
 		MetricID:    "gld.ass.price",
@@ -54,8 +58,8 @@ func TestClusterer_CrossEntityCooccurrence(t *testing.T) {
 		TriggeredAt: time.Now(),
 	})
 
-	// Different entity, within co-occurrence window
-	ok := c.CanCoalesce(cluster, model.Alert{
+	// Different entity, within co-occurrence window (legacy path: relatedEntities list)
+	ok := c.CanCoalesce(ctx, cluster, model.Alert{
 		MetricID:    "btc.ass.price",
 		TriggeredAt: time.Now().Add(2 * time.Hour),
 	}, []string{"btc"})
@@ -66,6 +70,7 @@ func TestClusterer_CrossEntityCooccurrence(t *testing.T) {
 
 func TestClusterer_CapacityLimit(t *testing.T) {
 	c := NewClusterer(DefaultClusteringConfig())
+	ctx := context.Background()
 	cluster := NewCluster(model.Alert{
 		ID:          "a1",
 		MetricID:    "gld.ass.price",
@@ -78,7 +83,7 @@ func TestClusterer_CapacityLimit(t *testing.T) {
 		cluster.Alerts = append(cluster.Alerts, "fill")
 	}
 
-	ok := c.CanCoalesce(cluster, model.Alert{
+	ok := c.CanCoalesce(ctx, cluster, model.Alert{
 		MetricID:    "gld.ass.volume",
 		TriggeredAt: time.Now().Add(5 * time.Minute),
 	}, nil)
@@ -89,6 +94,7 @@ func TestClusterer_CapacityLimit(t *testing.T) {
 
 func TestAddAlertToCluster_UpdatesSeverity(t *testing.T) {
 	c := NewClusterer(DefaultClusteringConfig())
+	ctx := context.Background()
 	cluster := NewCluster(model.Alert{
 		ID:          "a1",
 		MetricID:    "gld.ass.price",
@@ -96,7 +102,7 @@ func TestAddAlertToCluster_UpdatesSeverity(t *testing.T) {
 		TriggeredAt: time.Now(),
 	})
 
-	c.AddAlertToCluster(&cluster, model.Alert{
+	c.AddAlertToCluster(ctx, &cluster, model.Alert{
 		ID:          "a2",
 		MetricID:    "gld.ass.volume",
 		Severity:    model.SeverityWarning,
@@ -111,6 +117,9 @@ func TestAddAlertToCluster_UpdatesSeverity(t *testing.T) {
 	}
 	if cluster.TriggerCount != 2 {
 		t.Errorf("expected trigger count 2, got %d", cluster.TriggerCount)
+	}
+	if len(cluster.MergeLog) != 1 {
+		t.Errorf("expected 1 merge log entry, got %d", len(cluster.MergeLog))
 	}
 }
 
@@ -279,5 +288,210 @@ func TestSortClustersBySeverity(t *testing.T) {
 		if c.ID != expected[i] {
 			t.Errorf("position %d: got %s, want %s", i, c.ID, expected[i])
 		}
+	}
+}
+
+// ---- New tests for tightened clustering logic ----
+
+func TestClusterer_RejectsOutOfOrderAlert(t *testing.T) {
+	c := NewClusterer(DefaultClusteringConfig())
+	ctx := context.Background()
+	base := time.Now()
+	cluster := NewCluster(model.Alert{
+		ID:          "a1",
+		MetricID:    "gld.ass.price",
+		Severity:    model.SeverityWarning,
+		TriggeredAt: base,
+	})
+
+	// Same cluster's last triggered is at base; candidate triggered BEFORE that.
+	ok := c.CanCoalesce(ctx, cluster, model.Alert{
+		ID:          "a0",
+		MetricID:    "gld.ass.volume",
+		TriggeredAt: base.Add(-1 * time.Minute),
+	}, nil)
+	if ok {
+		t.Error("expected out-of-order alert (before cluster last) to be rejected")
+	}
+}
+
+func TestClusterer_RejectsNegativeTimeDelta(t *testing.T) {
+	c := NewClusterer(DefaultClusteringConfig())
+	ctx := context.Background()
+	base := time.Now()
+	cluster := NewCluster(model.Alert{
+		ID:          "a1",
+		MetricID:    "gld.ass.price",
+		Severity:    model.SeverityWarning,
+		TriggeredAt: base,
+	})
+
+	// Candidate triggered before the cluster's first trigger
+	ok := c.CanCoalesce(ctx, cluster, model.Alert{
+		ID:          "a0",
+		MetricID:    "gld.ass.volume",
+		TriggeredAt: base.Add(-2 * time.Hour),
+	}, nil)
+	if ok {
+		t.Error("expected alert triggered before cluster FIRST to be rejected (negative delta)")
+	}
+}
+
+func TestMergeEntry_RecordedOnCoalesce(t *testing.T) {
+	c := NewClusterer(DefaultClusteringConfig())
+	ctx := context.Background()
+	cluster := NewCluster(model.Alert{
+		ID:          "a1",
+		MetricID:    "gld.ass.price",
+		Severity:    model.SeverityInfo,
+		TriggeredAt: time.Now(),
+	})
+
+	c.AddAlertToCluster(ctx, &cluster, model.Alert{
+		ID:          "a2",
+		MetricID:    "gld.ass.volume",
+		Severity:    model.SeverityInfo,
+		TriggeredAt: time.Now().Add(5 * time.Minute),
+	})
+
+	if len(cluster.MergeLog) != 1 {
+		t.Fatalf("expected 1 merge log entry, got %d", len(cluster.MergeLog))
+	}
+	entry := cluster.MergeLog[0]
+	if entry.AlertID != "a2" {
+		t.Errorf("merge log alert ID = %q, want a2", entry.AlertID)
+	}
+	if entry.Reason == "" {
+		t.Error("merge log reason should not be empty")
+	}
+	if !entry.TriggeredAt.Equal(cluster.MergeLog[0].TriggeredAt) {
+		t.Error("merge log triggered_at mismatch")
+	}
+}
+
+// in-memory RelationReader mock for testing
+type mockRelationReader struct {
+	rels map[string]bool // key: "src->tgt"
+}
+
+func (m *mockRelationReader) HasAcceptedRelation(_ context.Context, src, tgt string) (bool, error) {
+	return m.rels[src+"->"+tgt], nil
+}
+
+// in-memory EntityResolver mock for testing
+type mockEntityResolver struct {
+	metricToEntity map[string]string
+}
+
+func (m *mockEntityResolver) MetricToEntity(_ context.Context, metricID string) (string, bool, error) {
+	eid, ok := m.metricToEntity[metricID]
+	return eid, ok, nil
+}
+
+func TestClusterer_CrossEntityRequiresRelation(t *testing.T) {
+	resolver := &mockEntityResolver{
+		metricToEntity: map[string]string{
+			"gld.ass.price": "gld",
+			"btc.ass.price": "btc",
+		},
+	}
+	relReader := &mockRelationReader{
+		rels: map[string]bool{"gld->btc": true},
+	}
+
+	cfg := DefaultClusteringConfig()
+	cfg.EntityResolver = resolver
+	cfg.RelationReader = relReader
+	c := NewClusterer(cfg)
+	ctx := context.Background()
+
+	cluster := NewClusterWithContext(ctx, model.Alert{
+		ID:          "a1",
+		MetricID:    "gld.ass.price",
+		Severity:    model.SeverityWarning,
+		TriggeredAt: time.Now(),
+	}, resolver)
+
+	// Cross-entity with accepted relation
+	ok := c.CanCoalesce(ctx, cluster, model.Alert{
+		ID:          "a2",
+		MetricID:    "btc.ass.price",
+		TriggeredAt: time.Now().Add(2 * time.Hour),
+	}, nil)
+	if !ok {
+		t.Error("expected cross-entity alert WITH accepted relation to coalesce")
+	}
+
+	// Cross-entity without accepted relation
+	relReaderNoMatch := &mockRelationReader{
+		rels: map[string]bool{}, // no relations
+	}
+	cfg2 := DefaultClusteringConfig()
+	cfg2.EntityResolver = resolver
+	cfg2.RelationReader = relReaderNoMatch
+	c2 := NewClusterer(cfg2)
+	ok2 := c2.CanCoalesce(ctx, cluster, model.Alert{
+		ID:          "a3",
+		MetricID:    "btc.ass.price",
+		TriggeredAt: time.Now().Add(2 * time.Hour),
+	}, nil)
+	if ok2 {
+		t.Error("expected cross-entity alert WITHOUT accepted relation to be rejected")
+	}
+}
+
+func TestNewClusterWithContext_ResolverOverridesHeuristic(t *testing.T) {
+	ctx := context.Background()
+	resolver := &mockEntityResolver{
+		metricToEntity: map[string]string{
+			"gld.ass.price": "custom-entity-id",
+		},
+	}
+
+	cluster := NewClusterWithContext(ctx, model.Alert{
+		ID:          "a1",
+		MetricID:    "gld.ass.price",
+		Severity:    model.SeverityInfo,
+		TriggeredAt: time.Now(),
+	}, resolver)
+
+	if cluster.PrimaryEntity != "custom-entity-id" {
+		t.Errorf("expected PrimaryEntity 'custom-entity-id', got %q", cluster.PrimaryEntity)
+	}
+}
+
+func TestResolveCanonicalEntity(t *testing.T) {
+	ctx := context.Background()
+	resolver := &mockEntityResolver{
+		metricToEntity: map[string]string{
+			"gld.ass.price": "gld-entity",
+		},
+	}
+
+	// With resolver found
+	eid, err := resolveCanonicalEntity(ctx, "gld.ass.price", resolver)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if eid != "gld-entity" {
+		t.Errorf("expected 'gld-entity', got %q", eid)
+	}
+
+	// With resolver not found — fallback to heuristic
+	eid2, err := resolveCanonicalEntity(ctx, "unknown.metric.id", resolver)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if eid2 != "unknown" {
+		t.Errorf("expected 'unknown' from heuristic fallback, got %q", eid2)
+	}
+
+	// Nil resolver — pure heuristic
+	eid3, err := resolveCanonicalEntity(ctx, "foo.bar.baz", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if eid3 != "foo" {
+		t.Errorf("expected 'foo', got %q", eid3)
 	}
 }

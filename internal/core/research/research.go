@@ -24,8 +24,26 @@ type ResearchContext struct {
 	RelatedEntities []EntityRef            `json:"related_entities"`
 	Relations       []RelationRef          `json:"relations"`
 	RecentTrend     []TrendPoint           `json:"recent_trend"`
+	Timeline        []TimelineEntry        `json:"timeline"`
+	Overlays        []OverlaySeries        `json:"overlays"`
 	Metadata        map[string]interface{} `json:"metadata"`
 	AssembledAt     time.Time              `json:"assembled_at"`
+}
+
+// TimelineEntry is one point on the Research Timeline view: the metric's
+// observed value at a specific moment. Built from the same observation store
+// that feeds RecentTrend; a wider lookback (14 days) and a higher point limit
+// give the timeline a fuller picture than the narrow trend strip.
+type TimelineEntry struct {
+	Time      time.Time `json:"time"`
+	MetricUID string    `json:"metric_uid"`
+	Value     float64   `json:"value"`
+}
+
+// OverlaySeries is a named metric series rendered on the Research Overlay view.
+type OverlaySeries struct {
+	MetricUID string         `json:"metric_uid"`
+	Points    []OverlayPoint `json:"points"`
 }
 
 // EntityRef is a lightweight entity reference in research context.
@@ -118,6 +136,20 @@ func (a *Assembler) Assemble(ctx context.Context, alert model.Alert) (*ResearchC
 		out.RecentTrend = append(out.RecentTrend, TrendPoint{Time: obs.Time, Value: obs.Value})
 	}
 
+	// Build the Timeline view (14-day lookback, up to 120 points). Separately
+	// from RecentTrend which uses a 7-day / 60-point window — the Timeline pane
+	// in the Research view needs context beyond the recent strip.
+	timelineStart := out.WindowEnd.Add(-14 * 24 * time.Hour)
+	timelineEntries, err := a.emitTimeline(ctx, metricUID, timelineStart, out.WindowEnd)
+	if err != nil {
+		return nil, fmt.Errorf("emit timeline for %s: %w", alert.MetricID, err)
+	}
+	out.Timeline = timelineEntries
+
+	// Overlays are reserved for future multi-series comparisons. The field is
+	// emitted as an empty slice so the API contract is stable from day one.
+	out.Overlays = []OverlaySeries{}
+
 	// Fetch related entities + relations (via metric → entity → relations).
 	// For MVP: use metric's entity from evidence.
 	if entityID, ok := evidence["entity_id"].(string); ok && entityID != "" {
@@ -180,6 +212,26 @@ func derefTime(t *time.Time) time.Time {
 		return time.Time{}
 	}
 	return *t
+}
+
+// emitTimeline pulls observations for the given metric UID within [start, end]
+// and maps them to TimelineEntries. It reuses store.GetObservations so no
+// additional store methods are needed.
+func (a *Assembler) emitTimeline(ctx context.Context, metricUID string, start, end time.Time) ([]TimelineEntry, error) {
+	const timelineLimit = 120
+	obs, err := a.store.GetObservations(ctx, metricUID, start, end, timelineLimit)
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]TimelineEntry, 0, len(obs))
+	for _, o := range obs {
+		entries = append(entries, TimelineEntry{
+			Time:      o.Time,
+			MetricUID: o.MetricUID,
+			Value:     o.Value,
+		})
+	}
+	return entries, nil
 }
 
 // toFloat converts interface{} to float64.

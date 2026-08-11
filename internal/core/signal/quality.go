@@ -14,7 +14,7 @@ import (
 type Quality struct {
 	SourceClass model.SourceClass `json:"source_class"`
 	Grade       string            `json:"grade"`
-	Freshness   time.Duration     `json:"freshness"`   // 观测时间到现在的延迟
+	Freshness   time.Duration     `json:"freshness"`    // 观测时间到现在的延迟
 	SourceCount int               `json:"source_count"` // 多少独立数据源确认
 
 	// Computed score (0 … 100)

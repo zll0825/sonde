@@ -8,15 +8,36 @@
 package classification
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"capital_observatory/pkg/model"
 )
+
+// ---- Resolver interfaces ----
+
+// EntityResolver maps a metric ID to its owning entity ID.
+// Implementations should query the entity store / metric_definitions table.
+type EntityResolver interface {
+	// MetricToEntity returns the entity ID that owns the given metric.
+	// found=false when the metric is not registered to any entity.
+	MetricToEntity(ctx context.Context, metricID string) (entityID string, found bool, err error)
+}
+
+// RelationReader checks whether an accepted structural/semantic relation
+// exists between two entities in the relation store.
+type RelationReader interface {
+	// HasAcceptedRelation returns true when sourceEntity and targetEntity
+	// share at least one accepted relation (structural or semantic layer).
+	HasAcceptedRelation(ctx context.Context, sourceEntity, targetEntity string) (bool, error)
+}
 
 // ---- Layer 1: Event Clustering ----
 
@@ -33,6 +54,16 @@ type ClusteringConfig struct {
 	// EntityCooccurrenceWindow extends clustering to related entities (BTC-GLD).
 	// Must be >= Window.
 	EntityCooccurrenceWindow time.Duration
+
+	// EntityResolver resolves metric IDs to entity IDs. Optional; if nil the
+	// fallback (first segment of metric ID) is used. Production callers MUST
+	// provide a resolver backed by the entity store.
+	EntityResolver EntityResolver
+
+	// RelationReader validates cross-entityMergeOption clusters. Optional; if nil
+	// cross-entity co-occurrence will be rejected conservatively (same-metric
+	// only) unless explicit related entities are provided.
+	RelationReader RelationReader
 }
 
 // DefaultClusteringConfig returns conservative free-tier defaults.
@@ -44,6 +75,14 @@ func DefaultClusteringConfig() ClusteringConfig {
 	}
 }
 
+// MergeEntry records a single alert-into-cluster merge decision.
+type MergeEntry struct {
+	AlertID          string    `json:"alert_id"`
+	Reason           string    `json:"reason"`
+	TriggeredAt      time.Time `json:"triggered_at"`
+	RelationEvidence string    `json:"_relation_evidence"`
+}
+
 // EventCluster is the output of Layer 1 — one cluster replaces N raw alerts.
 type EventCluster struct {
 	ID             string         `json:"id"`
@@ -53,50 +92,163 @@ type EventCluster struct {
 	MaxSeverity    model.Severity `json:"max_severity"`
 	FirstTriggered time.Time      `json:"first_triggered"`
 	LastTriggered  time.Time      `json:"last_triggered"`
-	Coalesced     bool           `json:"coalesced"` // true if >1 alert joined
-	TriggerCount  int            `json:"trigger_count"`
+	Coalesced      bool           `json:"coalesced"` // true if >1 alert joined
+	TriggerCount   int            `json:"trigger_count"`
+	MergeLog       []MergeEntry   `json:"merge_log"` // audit trail of every merge
 }
 
 // Clusterer coalesces alerts within a time window into events.
 type Clusterer struct {
 	config ClusteringConfig
+
+	// active holds the open event clusters in memory so that Receive can
+	// assign successive alerts to the correct cluster. Protected by mu
+	// because Receive is invoked from a goroutine in the outbox pipeline.
+	mu     sync.Mutex
+	active []EventCluster
 }
 
 // NewClusterer creates a Layer-1 clusterer.
+//
+// Deprecated: prefer NewClusterer with ClusteringConfig for production.
+// This convenience constructor passes nil resolvers, which means canonical
+// entity resolution falls back to the first-segment heuristic, and
+// cross-entity co-occurrence is conservatively restricted.
 func NewClusterer(cfg ClusteringConfig) *Clusterer {
 	return &Clusterer{config: cfg}
 }
 
+// Receive assigns an alert to an existing active cluster or opens a new one.
+// The returned *EventCluster points into the Clusterer's internal active slice;
+// callers must not retain the pointer across subsequent Receive calls.
+//
+// Thread-safe: the outbox handler invokes this from a goroutine after the
+// alert record has been durably written, so the receiver must serialize access.
+func (c *Clusterer) Receive(ctx context.Context, alert model.Alert) *EventCluster {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for i := range c.active {
+		if c.CanCoalesce(ctx, c.active[i], alert, nil) {
+			c.AddAlertToCluster(ctx, &c.active[i], alert)
+			return &c.active[i]
+		}
+	}
+
+	nc := NewCluster(alert)
+	c.active = append(c.active, nc)
+	return &c.active[len(c.active)-1]
+}
+
+// resolvePrimaryEntity resolves the canonical entity for a metric ID.
+//
+// Priority:
+//  1. If an EntityResolver is configured, use it (DB-backed).
+//  2. Otherwise, fall back to the first dot-segment heuristic with a log
+//     warning that this is unreliable.
+func (c *Clusterer) resolvePrimaryEntity(ctx context.Context, metricID string) string {
+	if c.config.EntityResolver != nil {
+		eid, found, err := c.config.EntityResolver.MetricToEntity(ctx, metricID)
+		if err == nil && found {
+			return eid
+		}
+		if err != nil {
+			log.Printf("classification: EntityResolver error for metric %s: %v (falling back to heuristic)", metricID, err)
+		}
+	}
+	// Fallback: primaryEntity uses first dot-segment. Unreliable when entity
+	// IDs differ from the metric prefix. Production callers MUST supply a
+	// resolver to avoid mis-clustering.
+	return primaryEntity(metricID)
+}
+
 // CanCoalesce answers whether a new alert belongs to an existing event cluster.
-// Rules:
-//   - Same entity AND within Window -> coalesce
-//   - Related entity (cross-metric co-occurrence) AND within EntityCooccurrenceWindow -> coalesce
-//   - Cluster has capacity (under MaxAlertsPerCluster) -> coalesce
-func (c *Clusterer) CanCoalesce(cluster EventCluster, candidate model.Alert, relatedEntities []string) bool {
+//
+// Rules (order matters):
+//  1. Capacity guard — reject if cluster is full.
+//  2. Chronological order — reject if incoming triggered before cluster last.
+//  3. Negative time-delta sanity — reject if incoming triggered before cluster first.
+//  4. Same entity AND within Window -> coalesce.
+//  5. Cross-entity: require an accepted relation AND within EntityCooccurrenceWindow.
+func (c *Clusterer) CanCoalesce(ctx context.Context, cluster EventCluster, candidate model.Alert, relatedEntities []string) bool {
 	// Capacity guard
 	if len(cluster.Alerts) >= c.config.MaxAlertsPerCluster {
 		return false
 	}
 
-	candidateEntity := primaryEntity(candidate.MetricID)
+	// Chronological-order check: incoming must not precede the cluster's
+	// most recent alert. Out-of-order arrivals indicate pipeline anomalies
+	// and must not be silently merged.
+	if candidate.TriggeredAt.Before(cluster.LastTriggered) {
+		log.Printf("classification: rejecting out-of-order alert %s (triggered %s before cluster last %s)",
+			candidate.ID, candidate.TriggeredAt.Format(time.RFC3339), cluster.LastTriggered.Format(time.RFC3339))
+		return false
+	}
+
+	// Negative time-delta sanity check: if the candidate falls entirely
+	// before the cluster's first trigger, reject.
+	if candidate.TriggeredAt.Before(cluster.FirstTriggered) {
+		log.Printf("classification: rejecting alert %s — triggered before cluster first (%s < %s)",
+			candidate.ID, candidate.TriggeredAt.Format(time.RFC3339), cluster.FirstTriggered.Format(time.RFC3339))
+		return false
+	}
+
+	candidateEntity := c.resolvePrimaryEntity(ctx, candidate.MetricID)
 
 	// Same entity, within window
 	if cluster.PrimaryEntity == candidateEntity {
-		if candidate.TriggeredAt.Sub(cluster.FirstTriggered) <= c.config.Window {
+		delta := candidate.TriggeredAt.Sub(cluster.FirstTriggered)
+		if delta < 0 {
+			log.Printf("classification: rejecting same-entity alert %s — negative delta %s", candidate.ID, delta)
+			return false
+		}
+		if delta <= c.config.Window {
 			return true
 		}
-		if candidate.TriggeredAt.Sub(cluster.LastTriggered) <= c.config.Window {
-			return true
-		}
+		// Window exceeded — too-wide window means the cluster spans too long
+		log.Printf("classification: rejecting alert %s — window exceeded (%s > %s)", candidate.ID, delta, c.config.Window)
+		return false
 	}
 
-	// Cross-entity co-occurrence: if the cluster's primary entity has a
-	// related entity that matches the candidate's entity, and within window.
+	// Cross-entity co-occurrence: require an accepted relation when a
+	// RelationReader is configured; otherwise fall back to the relatedEntities
+	// list (legacy path).
+	if c.config.RelationReader != nil {
+		hasRel, err := c.config.RelationReader.HasAcceptedRelation(ctx, cluster.PrimaryEntity, candidateEntity)
+		if err != nil {
+			log.Printf("classification: RelationReader error entities %s<->%s: %v — conservatively rejecting cross-entity",
+				cluster.PrimaryEntity, candidateEntity, err)
+			return false
+		}
+		if !hasRel {
+			log.Printf("classification: rejecting cross-entity coalesce %s<->%s — no accepted relation",
+				cluster.PrimaryEntity, candidateEntity)
+			return false
+		}
+		delta := candidate.TriggeredAt.Sub(cluster.FirstTriggered)
+		if delta < 0 {
+			log.Printf("classification: rejecting cross-entity alert %s — negative delta %s", candidate.ID, delta)
+			return false
+		}
+		if delta <= c.config.EntityCooccurrenceWindow {
+			return true
+		}
+		log.Printf("classification: rejecting cross-entity alert %s — co-occurrence window exceeded (%s > %s)",
+			candidate.ID, delta, c.config.EntityCooccurrenceWindow)
+		return false
+	}
+
+	// Legacy: no RelationReader — use the caller-provided relatedEntities list
+	// as long as the candidate's entity appears in it.
 	for _, related := range relatedEntities {
 		if related == candidateEntity {
-			if candidate.TriggeredAt.Sub(cluster.FirstTriggered) <= c.config.EntityCooccurrenceWindow {
+			delta := candidate.TriggeredAt.Sub(cluster.FirstTriggered)
+			if delta >= 0 && delta <= c.config.EntityCooccurrenceWindow {
 				return true
 			}
+			log.Printf("classification: rejecting cross-entity alert %s — window exceeded on legacy path (%s > %s)",
+				candidate.ID, delta, c.config.EntityCooccurrenceWindow)
+			return false
 		}
 	}
 	return false
@@ -104,17 +256,26 @@ func (c *Clusterer) CanCoalesce(cluster EventCluster, candidate model.Alert, rel
 
 // AssignAlert assigns an alert to an existing cluster or returns nil to signal
 // a new cluster should be created.
-func (c *Clusterer) AssignAlert(clusters []EventCluster, alert model.Alert, relatedEntities []string) *EventCluster {
+//
+// This method accepts a context so the Clusterer can resolve entities via the
+// configured EntityResolver.
+func (c *Clusterer) AssignAlert(ctx context.Context, clusters []EventCluster, alert model.Alert, relatedEntities []string) *EventCluster {
 	for i := range clusters {
-		if c.CanCoalesce(clusters[i], alert, relatedEntities) {
+		if c.CanCoalesce(ctx, clusters[i], alert, relatedEntities) {
 			return &clusters[i]
 		}
 	}
 	return nil
 }
 
-// AddAlertToCluster appends an alert to an existing cluster and updates severity bounds.
-func (c *Clusterer) AddAlertToCluster(cluster *EventCluster, alert model.Alert) {
+// AddAlertToCluster appends an alert to an existing cluster, updates severity
+// bounds, and records a MergeEntry in the audit log.
+func (c *Clusterer) AddAlertToCluster(ctx context.Context, cluster *EventCluster, alert model.Alert) {
+	entry := MergeEntry{
+		AlertID:     alert.ID,
+		Reason:      "same-entity within window",
+		TriggeredAt: alert.TriggeredAt,
+	}
 	cluster.Alerts = append(cluster.Alerts, alert.ID)
 	cluster.LastTriggered = alert.TriggeredAt
 	cluster.Coalesced = true
@@ -122,6 +283,7 @@ func (c *Clusterer) AddAlertToCluster(cluster *EventCluster, alert model.Alert) 
 	if isHigherSeverity(alert.Severity, cluster.MaxSeverity) {
 		cluster.MaxSeverity = alert.Severity
 	}
+	cluster.MergeLog = append(cluster.MergeLog, entry)
 }
 
 // NewCluster creates a fresh cluster seeded by an alert.
@@ -137,6 +299,31 @@ func NewCluster(alert model.Alert) EventCluster {
 		LastTriggered:  now,
 		Coalesced:      false,
 		TriggerCount:   1,
+		MergeLog:       nil,
+	}
+}
+
+// NewClusterWithContext creates a fresh cluster seeded by an alert, resolving
+// the canonical entity via the provided EntityResolver.
+func NewClusterWithContext(ctx context.Context, alert model.Alert, resolver EntityResolver) EventCluster {
+	pe := primaryEntity(alert.MetricID)
+	if resolver != nil {
+		if eid, found, err := resolver.MetricToEntity(ctx, alert.MetricID); err == nil && found {
+			pe = eid
+		}
+	}
+	now := alert.TriggeredAt
+	return EventCluster{
+		ID:             clusterID(alert),
+		PrimaryEntity:  pe,
+		EntityScope:    []string{pe},
+		Alerts:         []string{alert.ID},
+		MaxSeverity:    alert.Severity,
+		FirstTriggered: now,
+		LastTriggered:  now,
+		Coalesced:      false,
+		TriggerCount:   1,
+		MergeLog:       nil,
 	}
 }
 
@@ -161,20 +348,20 @@ type GateConfig struct {
 // DefaultGateConfig returns conservative defaults.
 func DefaultGateConfig() GateConfig {
 	return GateConfig{
-		Cooldown:               30 * time.Minute,
+		Cooldown:                30 * time.Minute,
 		CrossMetricConfirmation: 0, // off by default (conservative)
-		MinSeverityForResearch: model.SeverityInfo,
-		CoalesceBoost:          true,
+		MinSeverityForResearch:  model.SeverityInfo,
+		CoalesceBoost:           true,
 	}
 }
 
 // ResearchDecision is the output of Layer 2.
 type ResearchDecision struct {
-	ClusterID     string         `json:"cluster_id"`
+	ClusterID      string         `json:"cluster_id"`
 	ShouldResearch bool           `json:"should_research"`
-	Severity      model.Severity `json:"severity"`
-	Reason        string         `json:"reason"`
-	CooldownUntil *time.Time     `json:"cooldown_until,omitempty"`
+	Severity       model.Severity `json:"severity"`
+	Reason         string         `json:"reason"`
+	CooldownUntil  *time.Time     `json:"cooldown_until,omitempty"`
 }
 
 // Gate applies Layer-2 filtering: cooldown, confirmation, severity threshold.
@@ -199,31 +386,31 @@ func (g *Gate) Evaluate(cluster EventCluster, distinctMetrics int) ResearchDecis
 	last, ok := g.lastResearch[cluster.PrimaryEntity]
 	if ok && now.Sub(last) < g.config.Cooldown {
 		return ResearchDecision{
-			ClusterID:     cluster.ID,
+			ClusterID:      cluster.ID,
 			ShouldResearch: false,
-			Severity:      cluster.MaxSeverity,
-			Reason:        fmt.Sprintf("cooldown active (%s remaining)", g.config.Cooldown-now.Sub(last)),
-			CooldownUntil: ptr(last.Add(g.config.Cooldown)),
+			Severity:       cluster.MaxSeverity,
+			Reason:         fmt.Sprintf("cooldown active (%s remaining)", g.config.Cooldown-now.Sub(last)),
+			CooldownUntil:  ptr(last.Add(g.config.Cooldown)),
 		}
 	}
 
 	// Severity threshold
 	if !meetsSeverityThreshold(cluster.MaxSeverity, g.config.MinSeverityForResearch) {
 		return ResearchDecision{
-			ClusterID:     cluster.ID,
+			ClusterID:      cluster.ID,
 			ShouldResearch: false,
-			Severity:      cluster.MaxSeverity,
-			Reason:        fmt.Sprintf("severity %s below threshold %s", cluster.MaxSeverity, g.config.MinSeverityForResearch),
+			Severity:       cluster.MaxSeverity,
+			Reason:         fmt.Sprintf("severity %s below threshold %s", cluster.MaxSeverity, g.config.MinSeverityForResearch),
 		}
 	}
 
 	// Cross-metric confirmation
 	if g.config.CrossMetricConfirmation > 0 && distinctMetrics < g.config.CrossMetricConfirmation {
 		return ResearchDecision{
-			ClusterID:     cluster.ID,
+			ClusterID:      cluster.ID,
 			ShouldResearch: false,
-			Severity:      cluster.MaxSeverity,
-			Reason:        fmt.Sprintf("insufficient cross-metric confirmation (%d/%d)", distinctMetrics, g.config.CrossMetricConfirmation),
+			Severity:       cluster.MaxSeverity,
+			Reason:         fmt.Sprintf("insufficient cross-metric confirmation (%d/%d)", distinctMetrics, g.config.CrossMetricConfirmation),
 		}
 	}
 
@@ -237,10 +424,10 @@ func (g *Gate) Evaluate(cluster EventCluster, distinctMetrics int) ResearchDecis
 	g.lastResearch[cluster.PrimaryEntity] = now
 
 	return ResearchDecision{
-		ClusterID:     cluster.ID,
+		ClusterID:      cluster.ID,
 		ShouldResearch: true,
-		Severity:      effective,
-		Reason:        fmt.Sprintf("cluster confirmed: %d alerts, severity %s", len(cluster.Alerts), effective),
+		Severity:       effective,
+		Reason:         fmt.Sprintf("cluster confirmed: %d alerts, severity %s", len(cluster.Alerts), effective),
 	}
 }
 
@@ -257,11 +444,34 @@ func clusterID(alert model.Alert) string {
 	return "evt:" + hex.EncodeToString(sum[:])
 }
 
+// primaryEntity returns the first dot-segment of the metric ID as the entity
+// identifier. This is a heuristic fallback used when no EntityResolver is
+// configured — it is unreliable when metric IDs do not map 1:1 to entity IDs.
 func primaryEntity(metricID string) string {
 	if parts := strings.SplitN(metricID, ".", 2); len(parts) >= 1 {
 		return parts[0]
 	}
 	return metricID
+}
+
+// resolveCanonicalEntity is the preferred helper when an EntityResolver is
+// available. It falls back to the heuristic if the resolver is nil or returns
+// not-found, with a clear signal that the result may be unreliable.
+//
+// Deprecated: use Clusterer.resolvePrimaryEntity instead. This standalone
+// helper remains for backward compatibility.
+func resolveCanonicalEntity(ctx context.Context, metricID string, resolver EntityResolver) (string, error) {
+	if resolver != nil {
+		eid, found, err := resolver.MetricToEntity(ctx, metricID)
+		if err != nil {
+			return "", fmt.Errorf("resolving entity for metric %s: %w", metricID, err)
+		}
+		if found {
+			return eid, nil
+		}
+	}
+	// Fallback heuristic
+	return primaryEntity(metricID), nil
 }
 
 func bucketTimestamp(t time.Time) int64 {
