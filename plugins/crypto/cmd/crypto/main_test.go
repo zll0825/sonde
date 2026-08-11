@@ -20,9 +20,9 @@ func TestBuildRegistrationDeclaresMetrics(t *testing.T) {
 
 	// Verify expected metrics are present
 	expectedIDs := map[string]bool{
-		"btc.ass.price":      false,
-		"btc.ass.hash_rate":  false,
-		"btc.ass.tx_count":   false,
+		"btc.ass.price":     false,
+		"btc.ass.hash_rate": false,
+		"btc.ass.tx_count":  false,
 	}
 	for _, metric := range metrics {
 		if _, ok := expectedIDs[metric.GetId()]; ok {

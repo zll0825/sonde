@@ -1,5 +1,5 @@
 # Capital Observatory — Full-Stack Dev Environment
-# M0–M6 deliverable: PostgreSQL + TimescaleDB + Core (gRPC) + API + ETF + Macro + Crypto
+# M0–M6 deliverable: PostgreSQL + TimescaleDB + Core (gRPC) + API + domain plugins
 #
 # Usage:
 #   make dev-up     # start database (compose) + migrate + core + api + etf + macro + crypto
@@ -137,6 +137,24 @@ services:
       PLUGIN_ID: "crypto"
       COLLECTION_INTERVAL: "1h"           # public APIs are low-rate-limit
       PROVIDER: "real"                    # "real" = CoinGecko+mempool; "mock" = synthetic
+
+  # Commodities Plugin: WTI, copper, and gold from FRED.
+  commodities-plugin:
+    build:
+      context: ../
+      dockerfile: deployments/Dockerfile.plugin
+      args:
+        PLUGIN_DIR: commodities
+    container_name: capital-observatory-commodities
+    restart: unless-stopped
+    depends_on:
+      - core
+    environment:
+      CORE_ADDR: "core:50051"
+      PLUGIN_ID: "commodities"
+      COLLECTION_INTERVAL: "24h"
+      PROVIDER: "fred"
+      FRED_API_KEY: "${FRED_API_KEY:-}"
 
 volumes:
   tsdb_data:
