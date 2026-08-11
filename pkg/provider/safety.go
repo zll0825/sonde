@@ -289,6 +289,11 @@ func (s *SafeHTTPClient) CircuitState() string {
 	return s.breaker.State()
 }
 
+// FailureCount returns the current consecutive failure count from the circuit breaker.
+func (s *SafeHTTPClient) FailureCount() int {
+	return s.breaker.FailureCount()
+}
+
 // min returns the smaller duration.
 func min(a, b time.Duration) time.Duration {
 	if a < b {

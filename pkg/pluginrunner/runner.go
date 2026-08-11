@@ -166,18 +166,23 @@ func (r *Runner) trySubmitSnapshots(pluginID string, snapshots []*pb.MetricSnaps
 
 // SubmitHeartbeat enqueues a stream heartbeat so Core can mark the plugin
 // healthy between data pushes (hourly collectors would otherwise look offline).
-// Same drop-don't-block semantics as SubmitSnapshots.
-func (r *Runner) SubmitHeartbeat(pluginID string) {
+// The optional status carries runtime metadata such as the current circuit
+// breaker state. Same drop-don't-block semantics as SubmitSnapshots.
+func (r *Runner) SubmitHeartbeat(pluginID string, status *pb.PluginStatus) {
 	if r.ctx == nil {
 		return
+	}
+	hb := &pb.HeartbeatRequest{
+		PluginId:  pluginID,
+		Timestamp: time.Now().Unix(),
+	}
+	if status != nil {
+		hb.Status = status
 	}
 	select {
 	case r.sendCh <- &pb.PluginMessage{
 		Payload: &pb.PluginMessage_Heartbeat{
-			Heartbeat: &pb.HeartbeatRequest{
-				PluginId:  pluginID,
-				Timestamp: time.Now().Unix(),
-			},
+			Heartbeat: hb,
 		},
 	}:
 	case <-r.ctx.Done():

@@ -122,13 +122,13 @@ func TestFREDSeriesListOrder(t *testing.T) {
 }
 
 func TestMacroCollectorFetchURL_UnitsCPI_PCH(t *testing.T) {
-	// Verify that CPIAUCSL_PCH requests include &units=pc1.
+	// Verify that the inflation_yoy metric (CPIAUCSL with units=pc1) requests
+	// include &units=pc1, while the plain CPI level metric does not.
+	gotUnits := map[string]string{}
 	testClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		q := req.URL.Query()
-		if q.Get("series_id") == "CPIAUCSL_PCH" {
-			if q.Get("units") != "pc1" {
-				t.Errorf("CPIAUCSL_PCH units param = %q, want %q", q.Get("units"), "pc1")
-			}
+		if q.Get("series_id") == "CPIAUCSL" {
+			gotUnits[q.Get("units")] = q.Get("units")
 		}
 		body := `{"observations":[{"date":"2026-08-01","value":"3.2"}]}`
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
@@ -149,6 +149,14 @@ func TestMacroCollectorFetchURL_UnitsCPI_PCH(t *testing.T) {
 	_, err := f.GetSnapshots(context.Background())
 	if err != nil {
 		t.Fatalf("GetSnapshots: %v", err)
+	}
+	// One CPIAUCSL call must have units=pc1 (inflation_yoy), another must have
+	// no units param (CPI level).
+	if _, ok := gotUnits["pc1"]; !ok {
+		t.Error("no CPIAUCSL request with units=pc1 found; inflation_yoy metric was not requested with units transformation")
+	}
+	if _, ok := gotUnits[""]; !ok {
+		t.Error("no CPIAUCSL request without units found; CPI level metric was not requested in native units")
 	}
 }
 

@@ -11,7 +11,7 @@ func CoinGeckoConfig() Config {
 	return Config{
 		ProviderName: "coingecko",
 		Timeout:      10 * time.Second,
-		RPS:          0.5,             // 1 req / 2 sec ≈ 30/min (conservative)
+		RPS:          0.5, // 1 req / 2 sec ≈ 30/min (conservative)
 		Burst:        2,
 		MaxRetries:   3,
 		BaseDelay:    2 * time.Second,
@@ -31,7 +31,7 @@ func MempoolConfig() Config {
 	return Config{
 		ProviderName: "mempool_space",
 		Timeout:      10 * time.Second,
-		RPS:          0.25,            // 1 req / 4 sec (very conservative)
+		RPS:          0.25, // 1 req / 4 sec (very conservative)
 		Burst:        2,
 		MaxRetries:   3,
 		BaseDelay:    3 * time.Second,
@@ -51,7 +51,7 @@ func YahooFinanceConfig() Config {
 	return Config{
 		ProviderName: "yahoo_finance",
 		Timeout:      15 * time.Second,
-		RPS:          0.2,             // 1 req / 5 sec ≈ 720/hour
+		RPS:          0.2, // 1 req / 5 sec ≈ 720/hour
 		Burst:        3,
 		MaxRetries:   3,
 		BaseDelay:    2 * time.Second,
@@ -71,7 +71,7 @@ func FREDConfig() Config {
 	return Config{
 		ProviderName: "fred",
 		Timeout:      15 * time.Second,
-		RPS:          0.03,            // 1 req / 33 sec ≈ 108/hour (under 120 limit)
+		RPS:          0.03, // 1 req / 33 sec ≈ 108/hour (under 120 limit)
 		Burst:        2,
 		MaxRetries:   3,
 		BaseDelay:    5 * time.Second,
@@ -91,7 +91,7 @@ func BlockchainInfoConfig() Config {
 	return Config{
 		ProviderName: "blockchain_com",
 		Timeout:      15 * time.Second,
-		RPS:          0.2,             // 1 req / 5 sec
+		RPS:          0.2, // 1 req / 5 sec
 		Burst:        2,
 		MaxRetries:   3,
 		BaseDelay:    3 * time.Second,

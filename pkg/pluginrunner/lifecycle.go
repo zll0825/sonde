@@ -231,7 +231,7 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				runner.SubmitHeartbeat(pluginID)
+				runner.SubmitHeartbeat(pluginID, heartbeatStatus(collector))
 			}
 		}
 	}()
@@ -280,4 +280,24 @@ func envDurationOrDefault(key string, def time.Duration) time.Duration {
 		log.Warn().Str("key", key).Str("value", v).Msg("invalid duration env var, using default")
 	}
 	return def
+}
+
+// CircuitStateProvider is optionally implemented by collectors that expose
+// an HTTP circuit breaker state for operational health reporting.
+type CircuitStateProvider interface {
+	CircuitState() string
+}
+
+// heartbeatStatus builds a PluginStatus with circuit breaker state if the
+// collector implements CircuitStateProvider; otherwise nil is returned so
+// the heartbeat carries no status payload (backward compatible).
+func heartbeatStatus(collector Provider) *pb.PluginStatus {
+	if csp, ok := collector.(CircuitStateProvider); ok {
+		return &pb.PluginStatus{
+			Runtime: map[string]string{
+				"circuit_state": csp.CircuitState(),
+			},
+		}
+	}
+	return nil
 }

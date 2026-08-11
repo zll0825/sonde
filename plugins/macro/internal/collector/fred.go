@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -55,7 +57,7 @@ var fredSeriesList = []struct {
 	{"us.mkt.dollar_index", fredSeries{"DTWEXBGS", 1, "daily", ""}},
 	{"us.mkt.usd_cny", fredSeries{"DEXCHUS", 1, "daily", ""}},
 	{"us.mkt.cpi", fredSeries{"CPIAUCSL", 1, "monthly", ""}},
-	{"us.mkt.inflation_yoy", fredSeries{"CPIAUCSL_PCH", 1, "monthly", "pc1"}},
+	{"us.mkt.inflation_yoy", fredSeries{"CPIAUCSL", 1, "monthly", "pc1"}},
 }
 
 // FREDCollector fetches real macro data from the Federal Reserve Economic Data
@@ -63,6 +65,10 @@ var fredSeriesList = []struct {
 type FREDCollector struct {
 	apiKey string
 	client *provider.SafeHTTPClient
+
+	mu           sync.Mutex
+	coverages    map[string]provider.BackfillCoverage
+	lastCoverage provider.BackfillCoverage
 }
 
 // NewFREDCollector creates a FRED collector. Fails fast when FRED_API_KEY is missing.
@@ -72,9 +78,26 @@ func NewFREDCollector() (*FREDCollector, error) {
 		return nil, fmt.Errorf("FRED_API_KEY env var is required but not set")
 	}
 	return &FREDCollector{
-		apiKey: apiKey,
-		client: provider.SharedFREDClient(),
+		apiKey:    apiKey,
+		client:    provider.SharedFREDClient(),
+		coverages: make(map[string]provider.BackfillCoverage),
 	}, nil
+}
+
+// LastCoverage returns the most recent BackfillCoverage for a given metric ID.
+func (f *FREDCollector) LastCoverage(metricID string) (provider.BackfillCoverage, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.coverages[metricID]
+	return c, ok
+}
+
+// CircuitState returns the current FRED circuit breaker state for health reporting.
+func (f *FREDCollector) CircuitState() string {
+	if f.client == nil {
+		return "unknown"
+	}
+	return f.client.CircuitState()
 }
 
 // fredObservationsResponse is the JSON payload returned by FRED's observations endpoint.
@@ -87,6 +110,10 @@ type fredObservationsResponse struct {
 
 // GetSnapshots returns the latest observation for each FRED series.
 func (f *FREDCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
+	// Cross-process FRED limitter jitter: small random delay to desync
+	// macro and commodities plugins process-independent singletons.
+	time.Sleep(time.Duration(rand.Int63n(100)) * time.Millisecond)
+
 	now := time.Now()
 	end := now
 	start := end.AddDate(0, 0, -30)
@@ -133,6 +160,9 @@ func (f *FREDCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 // MaxHistoricalWindow (~10 years) and paginates through results using FRED's
 // offset parameter so that full historical backfill is possible.
 func (f *FREDCollector) GetSnapshotsForWindow(ctx context.Context, start, end time.Time) ([]pluginrunner.Snapshot, error) {
+	// Cross-process FRED limiter jitter.
+	time.Sleep(time.Duration(rand.Int63n(100)) * time.Millisecond)
+
 	if end.Before(start) {
 		end = start
 	}
@@ -164,7 +194,7 @@ func (f *FREDCollector) GetSnapshotsForWindow(ctx context.Context, start, end ti
 				Grade:       "delayed",
 			})
 		}
-		detectFREDGaps(entry.MetricID, entry.Frequency, seriesSnaps, start, end)
+		detectFREDGaps(f, entry.MetricID, entry.Frequency, seriesSnaps, start, end)
 		snaps = append(snaps, seriesSnaps...)
 	}
 	return snaps, nil
@@ -305,62 +335,77 @@ func parseFREDValue(s string, scale float64) (float64, bool) {
 }
 
 // detectFREDGaps checks a FRED backfill result for significant timeline gaps
-// and logs warnings to support operational monitoring.
-func detectFREDGaps(metricID string, frequency string, snaps []pluginrunner.Snapshot, reqStart, reqEnd time.Time) {
+// and logs warnings to support operational monitoring. It also populates the
+// collector's BackfillCoverage map so callers can query coverage programmatically.
+func detectFREDGaps(f *FREDCollector, metricID, frequency string, snaps []pluginrunner.Snapshot, reqStart, reqEnd time.Time) {
 	if len(snaps) == 0 {
 		log.Warn().Str("metric", metricID).
 			Str("requested_start", reqStart.Format("2006-01-02")).
 			Str("requested_end", reqEnd.Format("2006-01-02")).
 			Msg("FRED backfill returned zero samples")
+		f.recordCoverage(metricID, provider.BackfillCoverage{
+			MetricID: metricID, SampleCount: 0, HasGaps: false,
+		})
 		return
 	}
 
-	// Determine expected gap threshold based on frequency
-	var maxGap time.Duration
-	switch frequency {
-	case "daily":
-		maxGap = 7 * 24 * time.Hour // weekly gap is unusual for daily series
-	case "weekly":
-		maxGap = 4 * 7 * 24 * time.Hour // monthly gap is unusual for weekly
-	case "monthly":
-		maxGap = 6 * 30 * 24 * time.Hour // 6-month gap is unusual for monthly
-	default:
-		maxGap = 30 * 24 * time.Hour
-	}
-
-	// Sort ascending (should already be sorted from API, but be safe)
+	// Sort ascending by timestamp for gap detection
 	sort.Slice(snaps, func(i, j int) bool {
 		return snaps[i].Timestamp.Before(snaps[j].Timestamp)
 	})
 
+	times := make([]time.Time, len(snaps))
+	for i, s := range snaps {
+		times[i] = s.Timestamp
+	}
+
+	gaps := provider.DetectGaps(times, frequency)
+
 	// Coverage boundaries
 	coverageStart := snaps[0].Timestamp
 	coverageEnd := snaps[len(snaps)-1].Timestamp
-	if coverageStart.After(reqStart.Add(maxGap)) {
+
+	f.recordCoverage(metricID, provider.BackfillCoverage{
+		MetricID:    metricID,
+		ActualStart: coverageStart,
+		ActualEnd:   coverageEnd,
+		SampleCount: len(snaps),
+		HasGaps:     len(gaps) > 0,
+		GapCount:    len(gaps),
+	})
+
+	if coverageStart.After(reqStart.Add(24 * 30 * time.Hour)) {
 		log.Warn().Str("metric", metricID).
 			Str("requested_start", reqStart.Format("2006-01-02")).
 			Str("actual_start", coverageStart.Format("2006-01-02")).
 			Msg("FRED backfill misses early data at window start")
 	}
-	if coverageEnd.Before(reqEnd.Add(-maxGap)) {
+	if coverageEnd.Before(reqEnd.Add(-24 * 30 * time.Hour)) {
 		log.Warn().Str("metric", metricID).
 			Str("requested_end", reqEnd.Format("2006-01-02")).
 			Str("actual_end", coverageEnd.Format("2006-01-02")).
 			Msg("FRED backfill misses recent data at window end")
 	}
 
-	// Internal gaps
-	for i := 1; i < len(snaps); i++ {
-		gap := snaps[i].Timestamp.Sub(snaps[i-1].Timestamp)
-		if gap > maxGap {
-			log.Warn().Str("metric", metricID).
-				Str("gap_start", snaps[i-1].Timestamp.Format("2006-01-02")).
-				Str("gap_end", snaps[i].Timestamp.Format("2006-01-02")).
-				Dur("gap_duration", gap).
-				Int("total_samples", len(snaps)).
-				Msg("FRED backfill timeline gap detected")
-		}
+	for _, gap := range gaps {
+		log.Warn().Str("metric", metricID).
+			Str("gap_start", gap.Start.Format("2006-01-02")).
+			Str("gap_end", gap.End.Format("2006-01-02")).
+			Dur("gap_duration", gap.Duration).
+			Int("total_samples", len(snaps)).
+			Msg("FRED backfill timeline gap detected")
 	}
+}
+
+// recordCoverage safely stores the latest coverage record for a metric.
+func (f *FREDCollector) recordCoverage(metricID string, c provider.BackfillCoverage) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.coverages == nil {
+		f.coverages = make(map[string]provider.BackfillCoverage)
+	}
+	f.coverages[metricID] = c
+	f.lastCoverage = c
 }
 
 // logFetchSkip logs a skipped FRED metric.

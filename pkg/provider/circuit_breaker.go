@@ -35,12 +35,12 @@ func (s CircuitState) String() string {
 // requests for OpenDuration. Then it enters half-open, allowing a limited
 // number of probe requests. On success, it closes again.
 type CircuitBreaker struct {
-	config         CircuitBreakerConfig
-	state          CircuitState
-	failures       int
-	lastFailure    time.Time
-	halfOpenCount  int
-	mu             sync.Mutex
+	config        CircuitBreakerConfig
+	state         CircuitState
+	failures      int
+	lastFailure   time.Time
+	halfOpenCount int
+	mu            sync.Mutex
 }
 
 // NewCircuitBreaker creates a circuit breaker with the given configuration.
@@ -74,7 +74,7 @@ func (cb *CircuitBreaker) Allow() bool {
 		// Check if the open duration has elapsed; try half-open
 		if time.Since(cb.lastFailure) >= cb.config.OpenDuration {
 			cb.state = StateHalfOpen
-			cb.halfOpenCount = 0
+			cb.halfOpenCount = 1
 			return true
 		}
 		return false
