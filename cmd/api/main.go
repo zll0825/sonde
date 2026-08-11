@@ -78,11 +78,20 @@ func main() {
 	mux.HandleFunc("POST /api/ontology/candidates/{id}/accept", ont.ontologyCandidateActionHandler)
 	mux.HandleFunc("POST /api/ontology/candidates/{id}/reject", ont.ontologyCandidateActionHandler)
 
-	// A: event cluster snapshots ring buffer (read-only GET). The API process
-	// owns its own ring; core writes cluster_event outbox rows that reconcile
-	// into this ring. For now the ring starts empty.
-	clusterRing := coreevent.NewClusterRing(200)
-	mux.HandleFunc("GET /api/clusters/", clusterHandler(clusterRing))
+	// A: event cluster snapshots ring buffer (read-only GET). The API reads
+	// from the same JSONL snapshot file that Core writes to (CLUSTER_SNAPSHOTS_FILE).
+	// This shares the clustering history across both processes on the same
+	// machine without an RPC layer.
+	clusterSnapStore := initClusterSnapStore()
+	if clusterSnapStore != nil {
+		defer clusterSnapStore.Close()
+		mux.HandleFunc("GET /api/clusters/", clusterHandlerWithStore(clusterSnapStore))
+	} else {
+		// Fallback: empty ring for backward compatibility when no store is
+		// configured (returns empty list).
+		clusterRing := coreevent.NewClusterRing(200)
+		mux.HandleFunc("GET /api/clusters/", clusterHandler(clusterRing))
+	}
 
 	// Static frontend: mounts web/ at "/" so the frontend can be served by the
 	// API server (fixes the file:// → fetch failure — M5 acceptance #5).
@@ -130,4 +139,21 @@ func signalContext() context.Context {
 		cancel()
 	}()
 	return ctx
+}
+
+// initClusterSnapshotStore creates a ClusterSnapshotStore from the
+// CLUSTER_SNAPSHOTS_FILE env var. It returns nil (with a startup log) when the
+// env var is missing — the API simply serves an empty cluster list in that
+// case.
+func initClusterSnapStore() *coreevent.ClusterSnapshotStore {
+	snapPath := os.Getenv("CLUSTER_SNAPSHOTS_FILE")
+	if snapPath == "" {
+		return nil
+	}
+	store, err := coreevent.NewClusterSnapshotStore(snapPath)
+	if err != nil {
+		log.Warn().Err(err).Str("path", snapPath).Msg("cluster snapshot store init failed")
+		return nil
+	}
+	return store
 }

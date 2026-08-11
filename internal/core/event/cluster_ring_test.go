@@ -117,3 +117,49 @@ func TestNewClusterSnapshot(t *testing.T) {
 		t.Fatalf("LastTriggered mismatch")
 	}
 }
+
+func TestClusterRing_ByID(t *testing.T) {
+	r := NewClusterRing(5)
+
+	r.PushByID(ClusterSnapshot{ClusterID: "c1", PrimaryEntity: "A"})
+	r.PushByID(ClusterSnapshot{ClusterID: "c2", PrimaryEntity: "B"})
+
+	okSnap, found := r.ByID("c1")
+	if !found {
+		t.Fatal("expected to find c1")
+	}
+	if okSnap.PrimaryEntity != "A" {
+		t.Fatalf("c1 PrimaryEntity: got %s want A", okSnap.PrimaryEntity)
+	}
+
+	_, found = r.ByID("missing")
+	if found {
+		t.Fatal("expected not to find 'missing'")
+	}
+}
+
+func TestClusterRing_PushByID_Dedupe(t *testing.T) {
+	r := NewClusterRing(5)
+
+	// First push creates.
+	r.PushByID(ClusterSnapshot{ClusterID: "c1", MemberCount: 1, Severity: model.SeverityInfo,
+		LastTriggered: time.Now(), MergedAlertIDs: []string{"a1"}})
+	// Same ClusterID — should update in place (not append a second).
+	r.PushByID(ClusterSnapshot{ClusterID: "c1", MemberCount: 2, Severity: model.SeverityWarning,
+		LastTriggered: time.Now(), MergedAlertIDs: []string{"a2"}})
+
+	got := r.Recent(10)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 entry after dedupe, got %d", len(got))
+	}
+	if got[0].MemberCount != 2 {
+		t.Fatalf("expected MemberCount=2 (updated), got %d", got[0].MemberCount)
+	}
+	if got[0].Severity != model.SeverityWarning {
+		t.Fatalf("expected severity warning after update, got %s", got[0].Severity)
+	}
+	// MergedAlertIDs should contain both a1 and a2 (deduplicated).
+	if len(got[0].MergedAlertIDs) != 2 {
+		t.Fatalf("expected 2 merged alert IDs, got %v", got[0].MergedAlertIDs)
+	}
+}

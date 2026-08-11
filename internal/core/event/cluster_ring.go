@@ -16,12 +16,17 @@ import (
 // API exposure. It intentionally omits the merge log and full alert list to
 // keep the JSON payload small.
 type ClusterSnapshot struct {
-	ClusterID     string         `json:"cluster_id"`
-	PrimaryEntity string         `json:"primary_entity"`
-	MemberCount   int            `json:"member_count"`
-	Severity      model.Severity `json:"severity"`
-	LastTriggered time.Time      `json:"last_triggered"`
-	Coalesced     bool           `json:"coalesced"`
+	ClusterID      string         `json:"cluster_id"`
+	PrimaryEntity  string         `json:"primary_entity"`
+	MemberCount    int            `json:"member_count"`
+	Severity       model.Severity `json:"severity"`
+	LastTriggered  time.Time      `json:"last_triggered"`
+	Coalesced      bool           `json:"coalesced"`
+	MergedAlertIDs []string       `json:"merged_alert_ids,omitempty"`
+	TriggeredEvent string         `json:"triggered_event,omitempty"`
+	// Priority is the computed research/notification priority score (higher =
+	// more urgent). Populated by the outbox handler after Layer-2 gating.
+	Priority float64 `json:"priority"`
 }
 
 // ClusterRing is a fixed-capacity circular buffer of ClusterSnapshots.
@@ -57,6 +62,72 @@ func (r *ClusterRing) Push(c ClusterSnapshot) {
 	if r.count < r.size {
 		r.count++
 	}
+}
+
+// PushByID appends a snapshot keyed by ClusterID. If a snapshot with the same
+// ClusterID already exists, it is updated in place (fields refreshed, alert IDs
+// merged) so that re-clustering the same logical event from the retry path
+// never appends a duplicate.
+func (r *ClusterRing) PushByID(c ClusterSnapshot) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Linear scan for an existing entry with the same ClusterID.
+	for i := 0; i < r.count; i++ {
+		idx := (r.head - r.count + i + r.size) % r.size
+		if r.items[idx].ClusterID == c.ClusterID {
+			// Update in place — merge alert IDs without duplicates.
+			existing := &r.items[idx]
+			existing.MemberCount = c.MemberCount
+			existing.Severity = c.Severity
+			existing.LastTriggered = c.LastTriggered
+			existing.Coalesced = c.Coalesced
+			existing.PrimaryEntity = c.PrimaryEntity
+			existing.MergedAlertIDs = mergeAlertIDs(existing.MergedAlertIDs, c.MergedAlertIDs)
+			if c.TriggeredEvent != "" {
+				existing.TriggeredEvent = c.TriggeredEvent
+			}
+			return
+		}
+	}
+
+	// Not found — append as usual.
+	r.items[r.head] = c
+	r.head = (r.head + 1) % r.size
+	if r.count < r.size {
+		r.count++
+	}
+}
+
+// ByID returns the snapshot with the given ClusterID if it exists in the ring.
+func (r *ClusterRing) ByID(id string) (ClusterSnapshot, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for i := 0; i < r.count; i++ {
+		idx := (r.head - r.count + i + r.size) % r.size
+		if r.items[idx].ClusterID == id {
+			return r.items[idx], true
+		}
+	}
+	return ClusterSnapshot{}, false
+}
+
+func mergeAlertIDs(a, b []string) []string {
+	if len(b) == 0 {
+		return a
+	}
+	seen := make(map[string]struct{}, len(a)+len(b))
+	for _, id := range a {
+		seen[id] = struct{}{}
+	}
+	result := append([]string{}, a...)
+	for _, id := range b {
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			result = append(result, id)
+		}
+	}
+	return result
 }
 
 // Recent returns up to n snapshots in reverse-chronological order (newest

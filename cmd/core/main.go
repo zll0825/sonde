@@ -10,7 +10,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -27,6 +26,7 @@ import (
 	"capital_observatory/internal/core/ontology"
 	"capital_observatory/internal/core/pluginmgr"
 	"capital_observatory/internal/core/research"
+	sigutil "capital_observatory/internal/core/signal"
 	"capital_observatory/internal/core/store"
 	"capital_observatory/pkg/model"
 	pb "capital_observatory/pkg/proto/plugin/v1"
@@ -58,6 +58,8 @@ func main() {
 		detector.ThresholdDetector{},
 		detector.PercentileDetector{},
 		detector.TrendDetector{},
+		detector.VolatilityDetector{},
+		detector.MovingAverageDetector{},
 	)
 	alertStore := store.NewPostgresAlertStore(db)
 	alertEng := alert.NewEngine(alertStore)
@@ -82,7 +84,35 @@ func main() {
 	// memory; the ring buffer only records completed/recent snapshots.
 	clusterer := classification.NewClusterer(classification.DefaultClusteringConfig())
 	clusterRing := coreevent.NewClusterRing(100)
-	var clusterMu sync.Mutex
+
+	// ── A: Layer-2 research gate ──────────────────────────────────────────────
+	// Gate decides whether a clustered event warrants launching a research
+	// workflow. It enforces cooldown, severity threshold, and cross-metric
+	// confirmation (local static logic — production should pull cross-indicator
+	// confirmation from a dedicated service). For now we evaluate the gate after
+	// every cluster update; ShouldResearch can drive outbox research enqueuing
+	// or external orchestration in a later iteration.
+	researchGate := classification.NewGate(classification.DefaultGateConfig())
+
+	// ClusterSnapshotStore writes each clustered snapshot to a JSONL file so
+	// that API processes on the same machine see the same data (CORE_RPC is
+	// unnecessary), and Core survives restart without losing cluster history.
+	var snapStore *coreevent.ClusterSnapshotStore
+	if snapPath := os.Getenv("CLUSTER_SNAPSHOTS_FILE"); snapPath != "" {
+		var err error
+		snapStore, err = coreevent.NewClusterSnapshotStore(snapPath)
+		if err != nil {
+			log.Warn().Err(err).Str("path", snapPath).Msg("cluster snapshot store init failed; persistence disabled")
+		} else {
+			defer snapStore.Close()
+			// Replay existing snapshots into the memory ring on startup.
+			if n, err := snapStore.Replay(clusterRing); err != nil {
+				log.Warn().Err(err).Msg("cluster snapshot replay failed")
+			} else if n > 0 {
+				log.Info().Int("count", n).Msg("replayed cluster snapshots from disk")
+			}
+		}
+	}
 
 	outboxWorker.RegisterHandler(alert.EventTypeAlertTriggered, func(ctx context.Context, ev alert.OutboxEvent) error {
 		var parsed notifier.AlertInfo
@@ -116,25 +146,74 @@ func main() {
 				Severity:    model.Severity(sev),
 				TriggeredAt: triggeredAt,
 			}
-			cluster := clusterer.Receive(context.Background(), ca)
+			// Use the request-scoped ctx (not context.Background) so process
+			// shutdown correctly terminates in-flight classification.
+			cluster := clusterer.Receive(ctx, ca)
 			if cluster == nil {
 				return
 			}
-			clusterMu.Lock()
-			defer clusterMu.Unlock()
-			clusterRing.Push(coreevent.ClusterSnapshot{
-				ClusterID:     cluster.ID,
-				PrimaryEntity: cluster.PrimaryEntity,
-				MemberCount:   len(cluster.Alerts),
-				Severity:      cluster.MaxSeverity,
-				LastTriggered: cluster.LastTriggered,
-				Coalesced:     cluster.Coalesced,
-			})
+
+			// ── Layer-2: gate decision ──────────────────────────────────────────
+			// Evaluate whether this cluster should trigger research. distinctMetrics
+			// approximates cross-metric confirmation from the alert count in this
+			// cluster; production should resolve distinct metrics via metric store.
+			//
+			// Gate is local static logic — cross-indicator confirmation results
+			// should be fetched from a dedicated service in production. This round
+			// does not introduce a new cross-metric data flow.
+			distinctMetrics := len(cluster.Alerts)
+			decision := researchGate.Evaluate(*cluster, distinctMetrics)
+			if decision.ShouldResearch {
+				log.Info().
+					Str("cluster_id", cluster.ID).
+					Str("entity", cluster.PrimaryEntity).
+					Str("gate_reason", decision.Reason).
+					Str("effective_severity", string(decision.Severity)).
+					Msg("gate: research warranted")
+				// TODO: enqueue research request via outbox when research trigger
+				// path is wired (currently research.requested is emitted by the
+				// alert engine on initial trigger; gate-based re-trigger needs a
+				// separate emit path to avoid duplicate snapshots).
+			} else {
+				log.Debug().
+					Str("cluster_id", cluster.ID).
+					Str("gate_reason", decision.Reason).
+					Msg("gate: research suppressed")
+			}
+
+			// ── Layer-2: priority score ─────────────────────────────────────────
+			// Compute a priority score from signal quality + severity + coalesce
+			// state. Quality defaults to a neutral baseline when source metadata
+			// is unavailable at this stage (production pipeline resolves
+			// source_class/grade from metric definitions for precise scoring).
+			const defaultQuality = 50.0
+			priority := sigutil.PriorityScore(defaultQuality, cluster.MaxSeverity, cluster.Coalesced)
+
+			snap := coreevent.ClusterSnapshot{
+				ClusterID:      cluster.ID,
+				PrimaryEntity:  cluster.PrimaryEntity,
+				MemberCount:    len(cluster.Alerts),
+				Severity:       cluster.MaxSeverity,
+				LastTriggered:  cluster.LastTriggered,
+				Coalesced:      cluster.Coalesced,
+				MergedAlertIDs: cluster.Alerts,
+				Priority:       priority,
+			}
+			if len(cluster.MergeLog) > 0 {
+				snap.TriggeredEvent = cluster.MergeLog[len(cluster.MergeLog)-1].AlertID
+			}
+			clusterRing.PushByID(snap)
+			if snapStore != nil {
+				if sErr := snapStore.Append(snap); sErr != nil {
+					log.Warn().Err(sErr).Str("cluster_id", cluster.ID).Msg("cluster snapshot append failed")
+				}
+			}
 			log.Debug().
 				Str("cluster_id", cluster.ID).
 				Str("entity", cluster.PrimaryEntity).
 				Int("size", len(cluster.Alerts)).
 				Bool("coalesced", cluster.Coalesced).
+				Float64("priority", priority).
 				Msg("alert clustered")
 		}(parsed.AlertID, parsed.MetricID, parsed.Severity, parsed.RuleID, parsed.TriggeredAt)
 

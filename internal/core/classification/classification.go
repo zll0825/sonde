@@ -379,6 +379,12 @@ func NewGate(cfg GateConfig) *Gate {
 }
 
 // Evaluate decides whether a cluster should trigger research.
+//
+// Gate 当前是本地静态 logic，生产环境应从接口拉取跨指标确认结果。
+// This round does not introduce a new cross-metric data flow; distinctMetrics
+// is an approximation from the caller. Production deployments should resolve
+// true cross-indicator confirmation via a dedicated service or the metric
+// store before calling Evaluate.
 func (g *Gate) Evaluate(cluster EventCluster, distinctMetrics int) ResearchDecision {
 	now := cluster.LastTriggered
 
