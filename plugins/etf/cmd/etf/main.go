@@ -66,9 +66,26 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Frequency:   "daily",
 				EntityId:    "GLD",
 			},
+			{
+				Id:          "gld.ass.flow_proxy",
+				Name:        "GLD 3-Month Avg Daily Volume (flow proxy)",
+				Description: "3-month average daily trading volume of GLD shares; serves as capital-flow AUM proxy",
+				Unit:        "shares",
+				Frequency:   "daily",
+				EntityId:    "GLD",
+			},
 		},
 		Relations: []*pb.RelationSuggestion{},
-		Rules:     []*pb.RuleSuggestion{},
-		ChangeLog: "Retired synthetic metrics (gld.ass.daily_flow, eth.ass.daily_flow); retired ETH-P entity; added gld.ass.volume (real source: Yahoo Finance); increased polling to 1h for free-tier compliance",
+		Rules: []*pb.RuleSuggestion{
+			{
+				Name:         "flow_proxy_spike",
+				MetricId:     "gld.ass.flow_proxy",
+				DetectorName: "percentile",
+				Severity:     pb.Severity_SEVERITY_WARNING,
+				Config:       []byte(`{"percentile":90,"consecutive":1}`),
+				Description:  "GLD 3-month avg daily volume exceeds 90th percentile — potential capital flow spike",
+			},
+		},
+		ChangeLog: "Retired synthetic metrics (gld.ass.daily_flow, eth.ass.daily_flow); retired ETH-P entity; added gld.ass.volume (real source: Yahoo Finance); added gld.ass.flow_proxy (GLD 3-month avg daily volume as capital-flow proxy); added flow_proxy_spike rule",
 	}
 }

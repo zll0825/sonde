@@ -78,6 +78,14 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Frequency:   "daily",
 				EntityId:    "BTC",
 			},
+			{
+				Id:          "btc.ass.flow_proxy",
+				Name:        "BTC Active Addresses 7d Change (flow proxy)",
+				Description: "7-day percentage change in active addresses; serves as on-chain exchange-flow proxy",
+				Unit:        "%",
+				Frequency:   "daily",
+				EntityId:    "BTC",
+			},
 		},
 		Relations: []*pb.RelationSuggestion{},
 		Rules: []*pb.RuleSuggestion{
@@ -105,7 +113,15 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Config:       []byte(`{"percentile":90,"consecutive":1}`),
 				Description:  "BTC daily transaction count above 90th percentile (high network activity)",
 			},
+			{
+				Name:         "flow_proxy_spike",
+				MetricId:     "btc.ass.flow_proxy",
+				DetectorName: "percentile",
+				Severity:     pb.Severity_SEVERITY_WARNING,
+				Config:       []byte(`{"percentile":90,"consecutive":1}`),
+				Description:  "Active-address 7d change (flow proxy) exceeds 90th percentile — unusual exchange flow",
+			},
 		},
-		ChangeLog: "Retired btc.ass.exchange_balance (no free source); added btc.ass.tx_count (blockchain.com real source); new rules: btc_hashrate_drop, btc_tx_surge",
+		ChangeLog: "Retired btc.ass.exchange_balance (no free source); added btc.ass.tx_count (blockchain.com real source); added btc.ass.flow_proxy (active address 7d change as exchange-flow proxy); new rules: btc_hashrate_drop, btc_tx_surge, flow_proxy_spike",
 	}
 }

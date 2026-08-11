@@ -14,8 +14,8 @@ import (
 	"capital_observatory/pkg/provider"
 )
 
-// providerYahoo is the source_provider recorded on Yahoo-sourced observations.
-const providerYahoo = "yahoo_finance"
+// providerYahooFinance is the source_provider recorded on Yahoo-sourced observations.
+const providerYahooFinance = "yahoo_finance"
 
 // YahooCollector fetches real GLD data from Yahoo Finance's public chart API
 // with rate limiting and circuit breaker protection.
@@ -24,6 +24,10 @@ type YahooCollector struct {
 }
 
 // NewYahooCollector creates a Yahoo Finance collector with safety mechanisms.
+//
+// Yahoo v8 public chart API — undocumented but publicly accessible per data-source-policy.md.
+// This is a SECONDARY FALLBACK data source; any documented alternative (EOD, ETF.com, etc.)
+// should be preferred. See docs/post-mvp/data-source-policy.md for the full policy discussion.
 func NewYahooCollector() *YahooCollector {
 	return &YahooCollector{
 		client: provider.NewSafeHTTPClient(provider.YahooFinanceConfig()),
@@ -58,19 +62,19 @@ type yahooChartResponse struct {
 
 // GetSnapshots returns real observations for gld.ass.price and gld.ass.volume.
 func (y *YahooCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
-	price, volume, err := y.fetchLatestPriceAndVolume(ctx, "GLD")
+	price, volume, avgVol3m, err := y.fetchLatestPriceAndVolume(ctx, "GLD")
 	if err != nil {
 		return nil, err
 	}
 	fetchedAt := time.Now()
 
-	return []pluginrunner.Snapshot{
+	snaps := []pluginrunner.Snapshot{
 		{
 			MetricID:    "gld.ass.price",
 			Value:       price,
 			Timestamp:   fetchedAt,
 			FetchedAt:   fetchedAt,
-			Provider:    providerYahoo,
+			Provider:    providerYahooFinance,
 			SourceClass: model.SourceClassReal,
 			Grade:       "delayed",
 		},
@@ -79,11 +83,23 @@ func (y *YahooCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snaps
 			Value:       volume,
 			Timestamp:   fetchedAt,
 			FetchedAt:   fetchedAt,
-			Provider:    providerYahoo,
+			Provider:    providerYahooFinance,
 			SourceClass: model.SourceClassReal,
 			Grade:       "delayed",
 		},
-	}, nil
+	}
+	if avgVol3m > 0 {
+		snaps = append(snaps, pluginrunner.Snapshot{
+			MetricID:    "gld.ass.flow_proxy",
+			Value:       avgVol3m,
+			Timestamp:   fetchedAt,
+			FetchedAt:   fetchedAt,
+			Provider:    providerYahooFinance,
+			SourceClass: model.SourceClassReal,
+			Grade:       "delayed",
+		})
+	}
+	return snaps, nil
 }
 
 // GetSnapshotsForWindow serves the backfill path with REAL Yahoo daily closes
@@ -109,7 +125,7 @@ func (y *YahooCollector) GetSnapshotsForWindow(ctx context.Context, start, end t
 			Value:       *closes[i],
 			Timestamp:   ts,
 			FetchedAt:   fetchedAt,
-			Provider:    providerYahoo,
+			Provider:    providerYahooFinance,
 			SourceClass: model.SourceClassReal,
 			Grade:       "delayed",
 		})
@@ -119,7 +135,7 @@ func (y *YahooCollector) GetSnapshotsForWindow(ctx context.Context, start, end t
 				Value:       float64(*volumes[i]),
 				Timestamp:   ts,
 				FetchedAt:   fetchedAt,
-				Provider:    providerYahoo,
+				Provider:    providerYahooFinance,
 				SourceClass: model.SourceClassReal,
 				Grade:       "delayed",
 			})
@@ -129,30 +145,31 @@ func (y *YahooCollector) GetSnapshotsForWindow(ctx context.Context, start, end t
 }
 
 // fetchLatestPriceAndVolume queries the current price and daily trading volume.
-func (y *YahooCollector) fetchLatestPriceAndVolume(ctx context.Context, symbol string) (float64, float64, error) {
+func (y *YahooCollector) fetchLatestPriceAndVolume(ctx context.Context, symbol string) (price, volume, avgVol3m float64, err error) {
 	url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1m&range=1d", symbol)
 	yc, err := y.fetchChart(ctx, url, symbol)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 
 	meta := yc.Chart.Result[0].Meta
-	var price float64
 	if meta.RegularMarketPrice != 0 {
 		price = meta.RegularMarketPrice
 	} else if meta.PreviousClose != 0 {
 		price = meta.PreviousClose
 	} else {
-		return 0, 0, fmt.Errorf("no price in yahoo response for %s", symbol)
+		return 0, 0, 0, fmt.Errorf("no price in yahoo response for %s", symbol)
 	}
 
-	var volume float64
 	if meta.RegularMarketVolume != 0 {
 		volume = float64(meta.RegularMarketVolume)
 	} else if meta.AverageDailyVolume3Month != 0 {
 		volume = float64(meta.AverageDailyVolume3Month)
 	}
-	return price, volume, nil
+	if meta.AverageDailyVolume3Month != 0 {
+		avgVol3m = float64(meta.AverageDailyVolume3Month)
+	}
+	return price, volume, avgVol3m, nil
 }
 
 // fetchDailyClosesAndVolumes queries real daily close bars and volume for [start, end].

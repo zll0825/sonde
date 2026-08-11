@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -16,12 +17,24 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
+func testProviderConfig(name string) provider.Config {
+	return provider.Config{
+		ProviderName: name,
+		Timeout:      50 * time.Millisecond,
+		RPS:          100,
+		Burst:        100,
+		MaxRetries:   0,
+		BaseDelay:    time.Millisecond,
+		MaxDelay:     time.Millisecond,
+	}
+}
+
 // newTestRealCollector creates a RealCollector with mocked HTTP clients.
 func newTestRealCollector(coingeckoRT, mempoolRT, blockchainRT roundTripFunc) *RealCollector {
 	r := &RealCollector{
-		coingeckoClient: provider.NewSafeHTTPClientWithHTTPClient(provider.CoinGeckoConfig(), &http.Client{Transport: coingeckoRT}),
-		mempoolClient:   provider.NewSafeHTTPClientWithHTTPClient(provider.MempoolConfig(), &http.Client{Transport: mempoolRT}),
-		blockchainInfo:  &BlockchainInfoCollector{client: provider.NewSafeHTTPClientWithHTTPClient(provider.BlockchainInfoConfig(), &http.Client{Transport: blockchainRT})},
+		coingeckoClient: provider.NewSafeHTTPClientWithHTTPClient(testProviderConfig("coingecko-test"), &http.Client{Transport: coingeckoRT}),
+		mempoolClient:   provider.NewSafeHTTPClientWithHTTPClient(testProviderConfig("mempool-test"), &http.Client{Transport: mempoolRT}),
+		blockchainInfo:  &BlockchainInfoCollector{client: provider.NewSafeHTTPClientWithHTTPClient(testProviderConfig("blockchain-test"), &http.Client{Transport: blockchainRT})},
 	}
 	return r
 }
@@ -167,4 +180,98 @@ func TestRealCollectorWindow_ProducesRealHistory(t *testing.T) {
 			t.Error("retired metric btc.ass.exchange_balance should not appear in backfill")
 		}
 	}
+}
+
+// TestFetchHistoricalPrices_AutoSplitWindow verifies that fetchHistoricalPrices
+// automatically splits a range larger than maxHistoricalWindowSize into multiple
+// windowed requests and aggregates the results.
+func TestFetchHistoricalPrices_AutoSplitWindow(t *testing.T) {
+	// Total range: 800 days (forces 3 windows: 365 + 365 + 70)
+	end := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	start := end.AddDate(0, 0, -800)
+
+	windowCalls := 0
+	r := newTestRealCollector(
+		// CoinGecko market_chart/range — returns one unique timestamp per call
+		roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			windowCalls++
+			// Each window gets a unique timestamp so dedup doesn't collapse boundaries
+			ts := time.Date(2024, 5, 23, 0, 0, 0, 0, time.UTC).AddDate(0, 0, (windowCalls-1)*30)
+			tsMs := ts.Unix() * 1000
+			body := fmt.Sprintf(`{"prices":[[%d,70000],[%d,71000]]}`, tsMs, tsMs+3600000)
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+		}),
+		// Mempool (empty — not relevant)
+		roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"hashrates":[]}`)), Header: make(http.Header)}, nil
+		}),
+		// Blockchain.com (empty — not relevant)
+		roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"values":[]}`)), Header: make(http.Header)}, nil
+		}),
+	)
+
+	// The inter-window delay is 1500ms in production; this test uses a 30s context timeout
+	// which is sufficient for 2 inter-window pauses (2 × 1.5s = 3s).
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	snaps, err := r.GetSnapshotsForWindow(ctx, start, end)
+	if err != nil {
+		t.Fatalf("GetSnapshotsForWindow: %v", err)
+	}
+
+	// Should have made 3 calls (365 + 365 + 70 days)
+	if windowCalls != 3 {
+		t.Errorf("expected 3 windowed calls for 800-day range, got %d", windowCalls)
+	}
+
+	// Verify we got BTC price snapshots in the result
+	priceCount := 0
+	for _, s := range snaps {
+		if s.MetricID == "btc.ass.price" {
+			priceCount++
+		}
+	}
+	if priceCount == 0 {
+		t.Fatal("expected at least one btc.ass.price snapshot from historical backfill")
+	}
+	t.Logf("CoinGecko historical backfill produced %d price snapshots", priceCount)
+}
+
+// TestFetchHistoricalPrices_ContextCancel verifies that fetchHistoricalPrices
+// respects context cancellation and returns early.
+func TestFetchHistoricalPrices_ContextCancel(t *testing.T) {
+	end := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	start := end.AddDate(0, 0, -800) // >1 window
+
+	callCount := 0
+	r := newTestRealCollector(
+		roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			callCount++
+			if callCount > 1 {
+				// After first successful window, block to simulate rate limiting
+				<-req.Context().Done()
+				return nil, req.Context().Err()
+			}
+			// First window returns some data with a unique timestamp
+			tsMs := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC).Unix() * 1000
+			body := fmt.Sprintf(`{"prices":[[%d,70000],[%d,71000]]}`, tsMs, tsMs+3600000)
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+		}),
+		roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"hashrates":[]}`)), Header: make(http.Header)}, nil
+		}),
+		roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"values":[]}`)), Header: make(http.Header)}, nil
+		}),
+	)
+
+	// Use a short timeout context so the second window hits cancellation
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	// This may or may not error depending on timing, but should not hang
+	_, _ = r.GetSnapshotsForWindow(ctx, start, end)
+	// Just verifying no infinite hang — test passes if we get here
 }
