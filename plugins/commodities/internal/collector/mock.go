@@ -28,7 +28,7 @@ func (Mock) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 		},
 		{
 			MetricID:    "metal.industrial.copper",
-			Value:      420.0 + rand.Float64()*5.0, // ~420 ¢/lb
+			Value:       420.0 + rand.Float64()*5.0, // ~420 ¢/lb
 			Timestamp:   now,
 			FetchedAt:   now,
 			Provider:    "mock_commodities",
@@ -37,7 +37,7 @@ func (Mock) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 		},
 		{
 			MetricID:    "metal.precious.gold",
-			Value:      2350.0 + rand.Float64()*20.0, // ~2350 $/oz
+			Value:       2350.0 + rand.Float64()*20.0, // ~2350 $/oz
 			Timestamp:   now,
 			FetchedAt:   now,
 			Provider:    "mock_commodities",

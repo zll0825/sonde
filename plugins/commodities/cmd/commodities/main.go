@@ -22,9 +22,9 @@ const (
 
 func main() {
 	pluginrunner.NewLifecycle(pluginrunner.Config{
-		PluginName:      "commodities",
-		Version:         pluginVersion,
-		DefaultInterval: 1 * time.Hour, // 商品指标日频发布；小时轮询尊重 API 配额
+		PluginName:        "commodities",
+		Version:           pluginVersion,
+		DefaultInterval:   1 * time.Hour, // 商品指标日频发布；小时轮询尊重 API 配额
 		BuildRegistration: buildRegistration,
 		SetupCollector: func(ctx context.Context) (pluginrunner.Provider, error) {
 			if os.Getenv("PROVIDER") == "mock" {
