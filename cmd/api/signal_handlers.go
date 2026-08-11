@@ -29,6 +29,10 @@ type signalQualityPoint struct {
 // signalQualityHandler serves GET /api/signal/quality/{metric_uid}. It scans the
 // most recent 100 observations for the given metric_uid, computes a quality
 // score per row using signal.ComputeQuality, and returns the timeline.
+//
+// Optional ?at=RFC3339 query parameter selects the point-in-time used to compute
+// freshness. When absent, time.Now() is used — this preserves backward
+// compatibility with existing callers.
 func signalQualityHandler(db *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -42,6 +46,15 @@ func signalQualityHandler(db *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		// Resolve the reference time for point-in-time replay. Default to now
+		// for callers that omit the parameter (backward compatible).
+		at := time.Now()
+		if atStr := r.URL.Query().Get("at"); atStr != "" {
+			if t, err := time.Parse(time.RFC3339, atStr); err == nil {
+				at = t
+			}
+		}
+
 		rows, err := db.Query(r.Context(), `
 			SELECT o.time, o.metric_id, o.value, o.source_class, o.quality_grade,
 			       COALESCE(sc.cnt, 1) AS source_count
@@ -50,13 +63,13 @@ func signalQualityHandler(db *pgxpool.Pool) http.HandlerFunc {
 				SELECT time, metric_id, COUNT(DISTINCT source_provider) AS cnt
 				FROM observations
 				WHERE metric_uid = $1
-				  AND time > now() - interval '1 day'
+				  AND time > $2::timestamp - interval '1 day'
 				GROUP BY time, metric_id
 			) sc ON sc.time = o.time AND sc.metric_id = o.metric_id
 			WHERE o.metric_uid = $1
 			ORDER BY o.time DESC
 			LIMIT 100
-		`, metricUID)
+		`, metricUID, at)
 		if err != nil {
 			log.Error().Err(err).Str("metric_uid", metricUID).Msg("signal quality query failed")
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
@@ -77,7 +90,7 @@ func signalQualityHandler(db *pgxpool.Pool) http.HandlerFunc {
 			}
 			p.SourceClass = srcClass
 			p.Grade = grade
-			freshness := time.Since(p.Time)
+			freshness := at.Sub(p.Time)
 			p.QualityScore = signal.ComputeQuality(srcClass, grade, freshness, p.SourceCount)
 			points = append(points, p)
 		}

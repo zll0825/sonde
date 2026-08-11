@@ -136,11 +136,13 @@ func (a *Assembler) Assemble(ctx context.Context, alert model.Alert) (*ResearchC
 		out.RecentTrend = append(out.RecentTrend, TrendPoint{Time: obs.Time, Value: obs.Value})
 	}
 
-	// Build the Timeline view (14-day lookback, up to 120 points). Separately
-	// from RecentTrend which uses a 7-day / 60-point window — the Timeline pane
-	// in the Research view needs context beyond the recent strip.
+	// Build the event Timeline view (14-day lookback, up to 120 observation
+	// points + the alert event itself). Separately from RecentTrend which uses
+	// a 7-day / 60-point window — the Timeline pane in the Research view needs
+	// context beyond the recent strip. The alert is appended as a synthetic
+	// timeline entry so the event appears in the rendered view.
 	timelineStart := out.WindowEnd.Add(-14 * 24 * time.Hour)
-	timelineEntries, err := a.emitTimeline(ctx, metricUID, timelineStart, out.WindowEnd)
+	timelineEntries, err := a.emitEventTimeline(ctx, metricUID, timelineStart, out.WindowEnd, out.CurrentValue)
 	if err != nil {
 		return nil, fmt.Errorf("emit timeline for %s: %w", alert.MetricID, err)
 	}
@@ -148,6 +150,8 @@ func (a *Assembler) Assemble(ctx context.Context, alert model.Alert) (*ResearchC
 
 	// Overlays are reserved for future multi-series comparisons. The field is
 	// emitted as an empty slice so the API contract is stable from day one.
+	// TODO: populate from relation-graph neighbour metrics when the
+	//       ViewBuilder entity-vs-metric bug (P1 #7) is fully resolved.
 	out.Overlays = []OverlaySeries{}
 
 	// Fetch related entities + relations (via metric → entity → relations).
@@ -214,16 +218,18 @@ func derefTime(t *time.Time) time.Time {
 	return *t
 }
 
-// emitTimeline pulls observations for the given metric UID within [start, end]
-// and maps them to TimelineEntries. It reuses store.GetObservations so no
-// additional store methods are needed.
-func (a *Assembler) emitTimeline(ctx context.Context, metricUID string, start, end time.Time) ([]TimelineEntry, error) {
+// emitEventTimeline pulls observations for the given metric UID within
+// [start, end] and maps them to TimelineEntries, then appends a synthetic
+// "alert" entry at `end` so the alert event itself appears in the rendered
+// timeline. The observation series and the alert event together give the
+// research view both the recent context and the trigger point.
+func (a *Assembler) emitEventTimeline(ctx context.Context, metricUID string, start, end time.Time, alertValue float64) ([]TimelineEntry, error) {
 	const timelineLimit = 120
 	obs, err := a.store.GetObservations(ctx, metricUID, start, end, timelineLimit)
 	if err != nil {
 		return nil, err
 	}
-	entries := make([]TimelineEntry, 0, len(obs))
+	entries := make([]TimelineEntry, 0, len(obs)+1)
 	for _, o := range obs {
 		entries = append(entries, TimelineEntry{
 			Time:      o.Time,
@@ -231,6 +237,13 @@ func (a *Assembler) emitTimeline(ctx context.Context, metricUID string, start, e
 			Value:     o.Value,
 		})
 	}
+	// Append the alert as a synthetic timeline entry. Its Time is the end of
+	// the alert window; its value comes from evidence.current_value.
+	entries = append(entries, TimelineEntry{
+		Time:      end,
+		MetricUID: metricUID,
+		Value:     alertValue,
+	})
 	return entries, nil
 }
 
