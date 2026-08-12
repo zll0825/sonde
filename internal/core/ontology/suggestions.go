@@ -132,9 +132,9 @@ func (rm *RelationManager) AcceptSuggestionByCandidate(ctx context.Context, sugg
 
 	tag, err := tx.Exec(ctx, `
 		UPDATE relation_suggestions
-		SET reviewed_at = NOW(), reviewed_by = $1, decision = 'accepted'
-		WHERE id = $2 AND decision = 'pending'
-	`, userID, suggestion.ID)
+		SET status = 'accepted', review_reason = $1, updated_at = NOW()
+		WHERE id = $2 AND status = 'pending'
+	`, "accepted by "+userID, suggestion.ID)
 	if err != nil {
 		return nil, fmt.Errorf("mark accepted: %w", err)
 	}

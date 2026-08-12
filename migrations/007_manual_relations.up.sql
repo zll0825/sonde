@@ -14,11 +14,12 @@ CREATE TABLE IF NOT EXISTS manual_relations (
     evidence TEXT NOT NULL DEFAULT '',
     last_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     -- taxonomy-valid direction (P1 #12)
-    CONSTRAINT chk_manual_direction CHECK (direction IN ('forward', 'undirected')),
-    -- unique active pair+type to prevent duplicate active relations (P1 #12)
-    CONSTRAINT uq_manual_active_pair UNIQUE (source_id, target_id, relation_type, direction)
-        WHERE active
+    CONSTRAINT chk_manual_direction CHECK (direction IN ('forward', 'undirected'))
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_manual_active_pair
+    ON manual_relations (source_id, target_id, relation_type, direction)
+    WHERE active;
 
 CREATE INDEX IF NOT EXISTS idx_manual_relations_source ON manual_relations (source_id) WHERE active;
 CREATE INDEX IF NOT EXISTS idx_manual_relations_target ON manual_relations (target_id) WHERE active;
