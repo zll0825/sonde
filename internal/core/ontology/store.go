@@ -274,6 +274,61 @@ func (s *Store) GetCurrentMetrics(ctx context.Context, pluginID string) ([]model
 	return metrics, nil
 }
 
+// MetricUIDForEntity returns the first metric UID associated with an entity.
+// Resolution path: entity.id → metric_definitions.entity_id → metric uid
+// (an entity may own many metrics; we return the first current row — good
+// enough for research-overlay series binding where any representative metric
+// is better than none). Returns found=false when no metric is registered.
+func (s *Store) MetricUIDForEntity(ctx context.Context, entityID string) (string, bool, error) {
+	var uid string
+	err := s.db.QueryRow(ctx, `
+		SELECT uid FROM metric_definitions
+		WHERE entity_id = $1 AND effective_to IS NULL
+		LIMIT 1
+	`, entityID).Scan(&uid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if uid == "" {
+		return "", false, nil
+	}
+	return uid, true, nil
+}
+
+// FetchObservations returns ObservationPoints for the given metric UID in
+// [since, until], up to limit rows, time-ascending. Used by CandidateFinder
+// as the observation data source.
+func (s *Store) FetchObservations(ctx context.Context, metricUID string, since, until time.Time, limit int) ([]ObservationPoint, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	rows, err := s.db.Query(ctx, `
+		SELECT time, value FROM observations
+		WHERE metric_uid = $1 AND time >= $2 AND time <= $3
+		ORDER BY time ASC
+		LIMIT $4
+	`, metricUID, since, until, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query observations: %w", err)
+	}
+	defer rows.Close()
+	out := make([]ObservationPoint, 0, 64)
+	for rows.Next() {
+		var p ObservationPoint
+		if err := rows.Scan(&p.Time, &p.Value); err != nil {
+			return nil, fmt.Errorf("scan observation: %w", err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate observation rows: %w", err)
+	}
+	return out, nil
+}
+
 // CreateMetricUID generates a unique metric UID with the format "mtr_" + 12 hex
 // chars drawn from crypto/rand entropy. Falls back to a UUID-derived value if
 // the random source fails.

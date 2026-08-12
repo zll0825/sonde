@@ -35,6 +35,38 @@ func clusterHandler(ring *coreevent.ClusterRing) http.HandlerFunc {
 	}
 }
 
+// clusterHandlerWithID returns a single cluster snapshot by ID from the
+// snapshot file produced by Core. The same data Core sees, shared across
+// processes via the JSONL file. Includes the merge trail so callers can see
+// why alerts share a cluster.
+func clusterHandlerWithID(store *coreevent.ClusterSnapshotStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "GET required"})
+			return
+		}
+		id := r.PathValue("id")
+		if id == "" {
+			// Fallback for older Go routers that expose via query string.
+			id = r.URL.Query().Get("id")
+		}
+		if id == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cluster id required"})
+			return
+		}
+		snap, err := store.ByID(id)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read cluster snapshot"})
+			return
+		}
+		if snap == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "cluster not found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, snap)
+	}
+}
+
 // clusterHandlerWithStore returns the most recent N event-cluster snapshots
 // from the snapshot file produced by Core. This is the same data Core sees,
 // shared across processes via the JSONL file (no in-process ring duplication).

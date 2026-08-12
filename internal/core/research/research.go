@@ -81,6 +81,10 @@ type ResearchStore interface {
 	GetEntityByID(ctx context.Context, entityID string) (*model.Entity, error)
 	GetRelatedEntities(ctx context.Context, entityID string) ([]model.Relation, error)
 	SaveSnapshot(ctx context.Context, snapshot model.ResearchSnapshot) error
+	// MetricUIDForEntity resolves an entity → its representative metric UID.
+	// Used by buildOverlays to pull observation series for related entities.
+	// Implementations may return found=false when the entity has no metric.
+	MetricUIDForEntity(ctx context.Context, entityID string) (string, bool, error)
 }
 
 // NewAssembler creates a new research context assembler.
@@ -148,15 +152,11 @@ func (a *Assembler) Assemble(ctx context.Context, alert model.Alert) (*ResearchC
 	}
 	out.Timeline = timelineEntries
 
-	// Overlays are reserved for future multi-series comparisons. The field is
-	// emitted as an empty slice so the API contract is stable from day one.
-	// TODO: populate from relation-graph neighbour metrics when the
-	//       ViewBuilder entity-vs-metric bug (P1 #7) is fully resolved.
-	out.Overlays = []OverlaySeries{}
-
 	// Fetch related entities + relations (via metric → entity → relations).
-	// For MVP: use metric's entity from evidence.
-	if entityID, ok := evidence["entity_id"].(string); ok && entityID != "" {
+	// For MVP: use metric's entity from evidence. entityID is extracted once
+	// here so buildOverlays below can reuse the same value.
+	entityID, _ := evidence["entity_id"].(string)
+	if entityID != "" {
 		entity, err := a.store.GetEntityByID(ctx, entityID)
 		if err != nil {
 			return nil, fmt.Errorf("fetch entity %s: %w", entityID, err)
@@ -177,6 +177,17 @@ func (a *Assembler) Assemble(ctx context.Context, alert model.Alert) (*ResearchC
 		if err != nil {
 			return nil, fmt.Errorf("fetch relations for %s: %w", entityID, err)
 		}
+
+		// Overlays: populate from relation-graph neighbour metric series where
+		// available. Each related entity → its representative metric (via
+		// MetricUIDForEntity) → observations in a 14-day lookback window. If
+		// the store returns nothing the slice stays nil — we are no longer
+		// lying about the data being "reserved for future".
+		// Historical analogs are not yet assembled (P1 #7); the
+		// ResearchContext struct has no HistoricalAnalogs field today.
+		// TODO: populate HistoricalAnalogs when the analytics pipeline is ready.
+		out.Overlays = a.buildOverlays(ctx, entityID, out.WindowEnd)
+
 		for _, rel := range relations {
 			out.Relations = append(out.Relations, RelationRef{
 				SourceID:     rel.SourceID,
@@ -245,6 +256,38 @@ func (a *Assembler) emitEventTimeline(ctx context.Context, metricUID string, sta
 		Value:     alertValue,
 	})
 	return entries, nil
+}
+
+// buildOverlays constructs one OverlaySeries per related entity whose
+// representative metric has observations in the 14-day window ending at
+// `end`. Entities without an observable metric are silently skipped.
+func (a *Assembler) buildOverlays(ctx context.Context, entityID string, end time.Time) []OverlaySeries {
+	rels, err := a.store.GetRelatedEntities(ctx, entityID)
+	if err != nil || len(rels) == 0 {
+		return nil
+	}
+	const overlayLookback = 14 * 24 * time.Hour
+	start := end.Add(-overlayLookback)
+	out := make([]OverlaySeries, 0, len(rels))
+	for _, r := range rels {
+		uid, ok, err := a.store.MetricUIDForEntity(ctx, r.TargetID)
+		if err != nil || !ok {
+			continue
+		}
+		obs, err := a.store.GetObservations(ctx, uid, start, end, 60)
+		if err != nil || len(obs) == 0 {
+			continue
+		}
+		pts := make([]OverlayPoint, 0, len(obs))
+		for _, o := range obs {
+			pts = append(pts, OverlayPoint{Time: o.Time, Value: o.Value})
+		}
+		out = append(out, OverlaySeries{
+			MetricUID: uid,
+			Points:    pts,
+		})
+	}
+	return out
 }
 
 // toFloat converts interface{} to float64.

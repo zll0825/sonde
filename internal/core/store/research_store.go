@@ -155,6 +155,28 @@ func (s *PostgresResearchStore) GetRelatedEntities(ctx context.Context, entityID
 	return relations, nil
 }
 
+// MetricUIDForEntity resolves an entity to its representative metric UID
+// (entity → metric_definitions.entity_id → uid). Returns found=false when the
+// entity has no registered metric.
+func (s *PostgresResearchStore) MetricUIDForEntity(ctx context.Context, entityID string) (string, bool, error) {
+	var uid string
+	err := s.db.QueryRow(ctx, `
+		SELECT uid FROM metric_definitions
+		WHERE entity_id = $1 AND effective_to IS NULL
+		LIMIT 1
+	`, entityID).Scan(&uid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if uid == "" {
+		return "", false, nil
+	}
+	return uid, true, nil
+}
+
 // SaveSnapshot freezes the first research context for an alert. Redelivery is
 // idempotent and never reinterprets a historical alert using newer ontology.
 func (s *PostgresResearchStore) SaveSnapshot(ctx context.Context, snapshot model.ResearchSnapshot) error {

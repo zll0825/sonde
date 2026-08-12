@@ -324,11 +324,23 @@
                     <div>
                         <label for="ont-relation-type">Relation Type</label>
                         <select id="ont-relation-type" required>
-                            <option value="structural">structural</option>
-                            <option value="semantic">semantic</option>
-                            <option value="statistical">statistical</option>
-                            <option value="causal">causal</option>
+                            <option value="tracks">tracks</option>
+                            <option value="hedges">hedges</option>
+                            <option value="correlates">correlates</option>
+                            <option value="supplies">supplies</option>
+                            <option value="regulates">regulates</option>
                         </select>
+                    </div>
+                    <div>
+                        <label for="ont-direction">Direction</label>
+                        <select id="ont-direction" required>
+                            <option value="forward">forward</option>
+                            <option value="undirected">undirected</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="ont-token">API Token</label>
+                        <input type="password" id="ont-token" placeholder="API_TOKEN（写操作必填，读操作可留空）">
                     </div>
                     <div>
                         <button type="submit">Add Relation</button>
@@ -787,11 +799,22 @@
             const sourceID = document.getElementById('ont-source-id').value.trim();
             const targetID = document.getElementById('ont-target-id').value.trim();
             const relationType = document.getElementById('ont-relation-type').value;
+            const direction = document.getElementById('ont-direction').value;
+            const token = document.getElementById('ont-token').value.trim();
             try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (token) {
+                    headers['Authorization'] = 'Bearer ' + token;
+                }
                 const resp = await fetch(`${API_BASE}/api/ontology/relations/`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ source_id: sourceID, target_id: targetID, relation_type: relationType })
+                    headers,
+                    body: JSON.stringify({
+                        source_id: sourceID,
+                        target_id: targetID,
+                        relation_type: relationType,
+                        direction
+                    })
                 });
                 if (!resp.ok) {
                     const err = await resp.json();

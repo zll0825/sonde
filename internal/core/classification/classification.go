@@ -78,7 +78,9 @@ func DefaultClusteringConfig() ClusteringConfig {
 // MergeEntry records a single alert-into-cluster merge decision.
 type MergeEntry struct {
 	AlertID          string    `json:"alert_id"`
+	MetricID         string    `json:"metric_id"`
 	Reason           string    `json:"reason"`
+	Coalesced        bool      `json:"coalesced"`
 	TriggeredAt      time.Time `json:"triggered_at"`
 	RelationEvidence string    `json:"_relation_evidence"`
 }
@@ -273,7 +275,9 @@ func (c *Clusterer) AssignAlert(ctx context.Context, clusters []EventCluster, al
 func (c *Clusterer) AddAlertToCluster(ctx context.Context, cluster *EventCluster, alert model.Alert) {
 	entry := MergeEntry{
 		AlertID:     alert.ID,
+		MetricID:    alert.MetricID,
 		Reason:      "same-entity within window",
+		Coalesced:   true,
 		TriggeredAt: alert.TriggeredAt,
 	}
 	cluster.Alerts = append(cluster.Alerts, alert.ID)
@@ -365,7 +369,13 @@ type ResearchDecision struct {
 }
 
 // Gate applies Layer-2 filtering: cooldown, confirmation, severity threshold.
+// Gate is the Layer-2 research / notification gate.
+//
+// Gate methods are called from the outbox handler goroutine (cmd/core/main.go),
+// which fires one goroutine per alert — concurrent Evaluate / RecordExternalResearch
+// calls are the norm. lastResearch is guarded by mu to stay race-clean.
 type Gate struct {
+	mu           sync.Mutex
 	config       GateConfig
 	lastResearch map[string]time.Time // cluster primary entity -> last research time
 }
@@ -388,9 +398,11 @@ func NewGate(cfg GateConfig) *Gate {
 func (g *Gate) Evaluate(cluster EventCluster, distinctMetrics int) ResearchDecision {
 	now := cluster.LastTriggered
 
+	g.mu.Lock()
 	// Cooldown check
 	last, ok := g.lastResearch[cluster.PrimaryEntity]
 	if ok && now.Sub(last) < g.config.Cooldown {
+		g.mu.Unlock()
 		return ResearchDecision{
 			ClusterID:      cluster.ID,
 			ShouldResearch: false,
@@ -399,6 +411,7 @@ func (g *Gate) Evaluate(cluster EventCluster, distinctMetrics int) ResearchDecis
 			CooldownUntil:  ptr(last.Add(g.config.Cooldown)),
 		}
 	}
+	g.mu.Unlock()
 
 	// Severity threshold
 	if !meetsSeverityThreshold(cluster.MaxSeverity, g.config.MinSeverityForResearch) {
@@ -426,8 +439,12 @@ func (g *Gate) Evaluate(cluster EventCluster, distinctMetrics int) ResearchDecis
 		effective = bumpSeverity(effective)
 	}
 
-	// Record research time for cooldown
+	// All gates passed — record research timestamp for cooldown. Hold the
+	// mutex for the write to avoid racing another Evaluate that just read
+	// the same map entry.
+	g.mu.Lock()
 	g.lastResearch[cluster.PrimaryEntity] = now
+	g.mu.Unlock()
 
 	return ResearchDecision{
 		ClusterID:      cluster.ID,
@@ -439,7 +456,9 @@ func (g *Gate) Evaluate(cluster EventCluster, distinctMetrics int) ResearchDecis
 
 // RecordExternalResearch manually records a research event (for manual triggers).
 func (g *Gate) RecordExternalResearch(entity string, at time.Time) {
+	g.mu.Lock()
 	g.lastResearch[entity] = at
+	g.mu.Unlock()
 }
 
 // ---- Internal helpers ----

@@ -27,6 +27,27 @@ type ClusterSnapshot struct {
 	// Priority is the computed research/notification priority score (higher =
 	// more urgent). Populated by the outbox handler after Layer-2 gating.
 	Priority float64 `json:"priority"`
+	// MergeTrail is a point-in-time snapshot of the underlying cluster's
+	// classification.MergeEntry list. It is populated by the outbox handler and
+	// surfaced by /api/clusters/{id} so the UI / operators can see *why* two
+	// alerts share a cluster instead of just that they do.
+	MergeTrail *MergeTrail `json:"merge_trail,omitempty"`
+}
+
+// MergeAudit is a concise, API-safe view of the cluster's merge decisions.
+// It is a snapshot of the underlying classification.MergeEntry at persist time
+// so that the API can explain the cluster's member relationship without
+// exporting the full research/notification machinery.
+type MergeAudit struct {
+	AlertID   string `json:"alert_id"`
+	MetricID  string `json:"metric_id"`
+	Reason    string `json:"reason"`
+	Coalesced bool   `json:"coalesced"`
+}
+
+// MergeTrail is the persist-time snapshot carried by ClusterSnapshot.
+type MergeTrail struct {
+	Entries []MergeAudit `json:"entries"`
 }
 
 // ClusterRing is a fixed-capacity circular buffer of ClusterSnapshots.

@@ -286,6 +286,50 @@ func (s *ontologyStore) acceptCandidate(w http.ResponseWriter, r *http.Request, 
 	})
 }
 
+// ------- /api/ontology/discover -------
+
+// ontologyDiscoverHandler triggers the statistical candidate finder on demand.
+//
+//	POST /api/ontology/discover  body: {"entity_pairs":[["btc","gld"], ...]}
+//
+// Runs CandidateFinder.Discover over each pair and returns the merged
+// candidates sorted by |correlation|.
+func (s *ontologyStore) ontologyDiscoverHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "POST required"})
+		return
+	}
+
+	var req struct {
+		EntityPairs [][2]string `json:"entity_pairs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if len(req.EntityPairs) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "entity_pairs required"})
+		return
+	}
+
+	finder := ontology.NewCandidateFinder(s.store, ontology.DefaultCandidateConfig())
+	finder.SetAPI(ontology.ObservationAPI{
+		Fetch: s.store.FetchObservations,
+	})
+	candidates, err := finder.Discover(r.Context(), req.EntityPairs)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if candidates == nil {
+		candidates = []ontology.Candidate{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"candidates": candidates,
+		"count":      len(candidates),
+	})
+}
+
 func (s *ontologyStore) rejectCandidate(w http.ResponseWriter, r *http.Request, id int64, reason, userID string) {
 	if err := s.store.RejectSuggestion(r.Context(), id, reason, userID); err != nil {
 		if err == ontology.ErrSuggestionNotPending {

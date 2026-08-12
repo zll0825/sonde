@@ -135,87 +135,85 @@ func main() {
 		// 记入噪音预算（仅统计，不影响派发结果）。
 		budgetTracker.Record(ctx, parsed.RuleID, parsed.Title, time.Now())
 
-		// Non-blocking classification — clustering must never delay the
-		// critical notification path. We snapshot the needed fields because
-		// parsed will go out of scope when the handler returns.
-		go func(alertID, metricID, sev string, ruleID int, triggeredAt time.Time) {
+		// Blocking clustering — the outbox handler must finish persisting the
+		// cluster snapshot BEFORE the worker marks this event dispatched.
+		// Returning early (or spawning a goroutine) creates two failure modes:
+		//   - Core crash after dispatch but before persist ⇒ cluster lost.
+		//   - notifier redelivery ⇒ duplicate clustering work (already
+		//     partially mitigated by PushByID, but the snapshot append is an
+		//     append-only file and would accumulate redundant lines).
+		// Clustering is CPU-only and bounded by the cluster ring size, so the
+		// extra latency on the alert-dispatched path is negligible. We bound the
+		// work by the handler's ctx so shutdown is still honored.
+		{
 			ca := model.Alert{
-				ID:          alertID,
-				MetricID:    metricID,
-				RuleID:      ruleID,
-				Severity:    model.Severity(sev),
-				TriggeredAt: triggeredAt,
+				ID:          parsed.AlertID,
+				MetricID:    parsed.MetricID,
+				RuleID:      parsed.RuleID,
+				Severity:    model.Severity(parsed.Severity),
+				TriggeredAt: parsed.TriggeredAt,
 			}
-			// Use the request-scoped ctx (not context.Background) so process
-			// shutdown correctly terminates in-flight classification.
 			cluster := clusterer.Receive(ctx, ca)
-			if cluster == nil {
-				return
-			}
+			if cluster != nil {
+				// ── Layer-2: gate decision ──────────────────────────────────────
+				distinctMetrics := len(cluster.Alerts)
+				decision := researchGate.Evaluate(*cluster, distinctMetrics)
+				if decision.ShouldResearch {
+					log.Info().
+						Str("cluster_id", cluster.ID).
+						Str("entity", cluster.PrimaryEntity).
+						Str("gate_reason", decision.Reason).
+						Str("effective_severity", string(decision.Severity)).
+						Msg("gate: research warranted")
+				} else {
+					log.Debug().
+						Str("cluster_id", cluster.ID).
+						Str("gate_reason", decision.Reason).
+						Msg("gate: research suppressed")
+				}
 
-			// ── Layer-2: gate decision ──────────────────────────────────────────
-			// Evaluate whether this cluster should trigger research. distinctMetrics
-			// approximates cross-metric confirmation from the alert count in this
-			// cluster; production should resolve distinct metrics via metric store.
-			//
-			// Gate is local static logic — cross-indicator confirmation results
-			// should be fetched from a dedicated service in production. This round
-			// does not introduce a new cross-metric data flow.
-			distinctMetrics := len(cluster.Alerts)
-			decision := researchGate.Evaluate(*cluster, distinctMetrics)
-			if decision.ShouldResearch {
-				log.Info().
-					Str("cluster_id", cluster.ID).
-					Str("entity", cluster.PrimaryEntity).
-					Str("gate_reason", decision.Reason).
-					Str("effective_severity", string(decision.Severity)).
-					Msg("gate: research warranted")
-				// TODO: enqueue research request via outbox when research trigger
-				// path is wired (currently research.requested is emitted by the
-				// alert engine on initial trigger; gate-based re-trigger needs a
-				// separate emit path to avoid duplicate snapshots).
-			} else {
+				// ── Layer-2: priority score ─────────────────────────────────────
+				const defaultQuality = 50.0
+				priority := sigutil.PriorityScore(defaultQuality, cluster.MaxSeverity, cluster.Coalesced)
+
+				snap := coreevent.ClusterSnapshot{
+					ClusterID:      cluster.ID,
+					PrimaryEntity:  cluster.PrimaryEntity,
+					MemberCount:    len(cluster.Alerts),
+					Severity:       cluster.MaxSeverity,
+					LastTriggered:  cluster.LastTriggered,
+					Coalesced:      cluster.Coalesced,
+					MergedAlertIDs: cluster.Alerts,
+					Priority:       priority,
+				}
+				if len(cluster.MergeLog) > 0 {
+					snap.TriggeredEvent = cluster.MergeLog[len(cluster.MergeLog)-1].AlertID
+					entries := make([]coreevent.MergeAudit, 0, len(cluster.MergeLog))
+					for _, e := range cluster.MergeLog {
+						entries = append(entries, coreevent.MergeAudit{
+							AlertID:   e.AlertID,
+							MetricID:  e.MetricID,
+							Reason:    e.Reason,
+							Coalesced: e.Coalesced,
+						})
+					}
+					snap.MergeTrail = &coreevent.MergeTrail{Entries: entries}
+				}
+				clusterRing.PushByID(snap)
+				if snapStore != nil {
+					if sErr := snapStore.Append(snap); sErr != nil {
+						log.Warn().Err(sErr).Str("cluster_id", cluster.ID).Msg("cluster snapshot append failed")
+					}
+				}
 				log.Debug().
 					Str("cluster_id", cluster.ID).
-					Str("gate_reason", decision.Reason).
-					Msg("gate: research suppressed")
+					Str("entity", cluster.PrimaryEntity).
+					Int("size", len(cluster.Alerts)).
+					Bool("coalesced", cluster.Coalesced).
+					Float64("priority", priority).
+					Msg("alert clustered")
 			}
-
-			// ── Layer-2: priority score ─────────────────────────────────────────
-			// Compute a priority score from signal quality + severity + coalesce
-			// state. Quality defaults to a neutral baseline when source metadata
-			// is unavailable at this stage (production pipeline resolves
-			// source_class/grade from metric definitions for precise scoring).
-			const defaultQuality = 50.0
-			priority := sigutil.PriorityScore(defaultQuality, cluster.MaxSeverity, cluster.Coalesced)
-
-			snap := coreevent.ClusterSnapshot{
-				ClusterID:      cluster.ID,
-				PrimaryEntity:  cluster.PrimaryEntity,
-				MemberCount:    len(cluster.Alerts),
-				Severity:       cluster.MaxSeverity,
-				LastTriggered:  cluster.LastTriggered,
-				Coalesced:      cluster.Coalesced,
-				MergedAlertIDs: cluster.Alerts,
-				Priority:       priority,
-			}
-			if len(cluster.MergeLog) > 0 {
-				snap.TriggeredEvent = cluster.MergeLog[len(cluster.MergeLog)-1].AlertID
-			}
-			clusterRing.PushByID(snap)
-			if snapStore != nil {
-				if sErr := snapStore.Append(snap); sErr != nil {
-					log.Warn().Err(sErr).Str("cluster_id", cluster.ID).Msg("cluster snapshot append failed")
-				}
-			}
-			log.Debug().
-				Str("cluster_id", cluster.ID).
-				Str("entity", cluster.PrimaryEntity).
-				Int("size", len(cluster.Alerts)).
-				Bool("coalesced", cluster.Coalesced).
-				Float64("priority", priority).
-				Msg("alert clustered")
-		}(parsed.AlertID, parsed.MetricID, parsed.Severity, parsed.RuleID, parsed.TriggeredAt)
+		}
 
 		// Send via the configured notifier. Errors propagate to the outbox worker,
 		// which owns redelivery (retry-after backoff, terminal-failure threshold).

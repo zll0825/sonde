@@ -72,11 +72,28 @@ func main() {
 	mux.HandleFunc("PUT /api/ontology/relations/{id}", ont.ontologyRelationByIDHandler)
 	mux.HandleFunc("DELETE /api/ontology/relations/{id}", ont.ontologyRelationByIDHandler)
 
+	// C: ontology Phase 2 — statistical candidate finder runtime trigger.
+	// POST /api/ontology/discover  {"entity_pairs":[["btc","gld"]]}
+	mux.HandleFunc("POST /api/ontology/discover", ont.ontologyDiscoverHandler)
+
 	// C: ontology Phase 2 — relation-suggestion candidate accept / reject.
 	mux.HandleFunc("GET /api/ontology/candidates/", ont.ontologyCandidatesHandler)
 	mux.HandleFunc("GET /api/ontology/candidates/{id}", ont.ontologyCandidatesHandler)
 	mux.HandleFunc("POST /api/ontology/candidates/{id}/accept", ont.ontologyCandidateActionHandler)
 	mux.HandleFunc("POST /api/ontology/candidates/{id}/reject", ont.ontologyCandidateActionHandler)
+
+	// D: rules management — list, enable/disable (PATCH), restore (POST).
+	// P1 #7 minimal rule CRUD: list / toggle / restore-version.
+	rules := newRulesStore(db)
+	mux.HandleFunc("GET /api/rules/", rules.listHandler)
+	mux.HandleFunc("PATCH /api/rules/{id}", rules.patchHandler)
+	mux.HandleFunc("POST /api/rules/{id}/restore/{version}", rules.restoreHandler)
+
+	// D: P1 #7 — research feedback stub. We expose the route today so the API
+	// contract is stable; the handler returns 501 until the value-feedback
+	// analytics pipeline lands (out-of-scope for this P1 cycle).
+	// TODO(P1 #7-research-feedback): implement once signal model is defined.
+	mux.HandleFunc("POST /api/research/{id}/feedback", researchFeedbackHandler)
 
 	// A: event cluster snapshots ring buffer (read-only GET). The API reads
 	// from the same JSONL snapshot file that Core writes to (CLUSTER_SNAPSHOTS_FILE).
@@ -86,6 +103,7 @@ func main() {
 	if clusterSnapStore != nil {
 		defer clusterSnapStore.Close()
 		mux.HandleFunc("GET /api/clusters/", clusterHandlerWithStore(clusterSnapStore))
+		mux.HandleFunc("GET /api/clusters/{id}", clusterHandlerWithID(clusterSnapStore))
 	} else {
 		// Fallback: empty ring for backward compatibility when no store is
 		// configured (returns empty list).

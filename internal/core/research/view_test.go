@@ -46,6 +46,13 @@ func (m *mockViewStore) SaveSnapshot(ctx context.Context, snapshot model.Researc
 	return nil
 }
 
+func (m *mockViewStore) MetricUIDForEntity(_ context.Context, entityID string) (string, bool, error) {
+	if entityID == "" {
+		return "", false, nil
+	}
+	return "mtr_" + entityID, true, nil
+}
+
 func TestBuildTimeline_BasicFlow(t *testing.T) {
 	store := newMockViewStore()
 	now := time.Now()

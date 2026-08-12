@@ -1,6 +1,7 @@
 package event
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -118,6 +119,41 @@ func (s *ClusterSnapshotStore) Replay(ring *ClusterRing) (int, error) {
 		ring.PushByID(snap)
 	}
 	return len(snaps), nil
+}
+
+// ByID returns the most recent snapshot whose ClusterID matches. The JSONL
+// file is append-only, so "most recent" equals the last matching record.
+func (s *ClusterSnapshotStore) ByID(id string) (*ClusterSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Reopen scan to avoid keeping the write fd open for reads.
+	f, err := os.Open(s.filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var found *ClusterSnapshot
+	sc := bufio.NewScanner(f)
+	buf := make([]byte, 0, 64*1024)
+	sc.Buffer(buf, 1024*1024)
+	for sc.Scan() {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		var snap ClusterSnapshot
+		if err := json.Unmarshal(line, &snap); err != nil {
+			continue
+		}
+		if snap.ClusterID == id {
+			cp := snap
+			found = &cp
+		}
+	}
+	if found == nil {
+		return nil, nil
+	}
+	return found, sc.Err()
 }
 
 // Close releases the underlying file handle.

@@ -131,6 +131,23 @@ func researchHandler(db *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
+// researchFeedbackHandler is the P1 #7 placeholder endpoint. The route is
+// registered so the API contract (POST /api/research/{id}/feedback) exists
+// from day one, but the real value-feedback signal model is not yet defined.
+// Returns 501 Not Implemented with an explanatory body.
+func researchFeedbackHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "POST required"})
+		return
+	}
+	// TODO(P1 #7-research-feedback): plug in research-value signal once the
+	// analytics pipeline is implemented (Signal Model v2).
+	writeJSON(w, http.StatusNotImplemented, map[string]string{
+		"error":   "research feedback not yet implemented",
+		"detail":  "P1 #7 placeholder — stable route, unimplemented handler",
+	})
+}
+
 // syncHandler triggers a manual sync for a given plugin+metrics.
 func syncHandler(db *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

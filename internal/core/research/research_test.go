@@ -42,6 +42,13 @@ func (m *mockResearchStore) SaveSnapshot(_ context.Context, snap model.ResearchS
 	return m.saveErr
 }
 
+func (m *mockResearchStore) MetricUIDForEntity(_ context.Context, entityID string) (string, bool, error) {
+	if entityID == "" {
+		return "", false, nil
+	}
+	return "mtr_" + entityID, true, nil
+}
+
 func TestAssembler_Assemble_PropagatesTransientStoreFailure(t *testing.T) {
 	store := &mockResearchStore{observationErr: errors.New("database unavailable")}
 	now := time.Now()

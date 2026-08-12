@@ -61,8 +61,14 @@ services:
       TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"
       WEBHOOK_URL: "${WEBHOOK_URL:-}"
       WEBHOOK_TOKEN: "${WEBHOOK_TOKEN:-}"
+      # Cluster snapshot JSONL shared with the API container through the
+      # `cluster_snapshots` volume below. Without this variable the Core uses
+      # an in-process ring buffer only and /api/clusters/ returns empty.
+      CLUSTER_SNAPSHOTS_FILE: "/data/clusters/capital_observatory_clusters.jsonl"
     ports:
       - "50051:50051"
+    volumes:
+      - cluster_snapshots:/data/clusters
 
   # API server: REST endpoints + static frontend
   api:
@@ -74,14 +80,21 @@ services:
     depends_on:
       timescaledb:
         condition: service_healthy
+      core:
+        condition: service_started
     environment:
       DATABASE_URL: postgres://capital:capital_dev@timescaledb:5432/capital_observatory?sslmode=disable
       API_BIND: ":8080"
       # 控制端点（sync/backfill）Bearer 令牌；空 = 拒绝写操作，读端点不受影响
       API_TOKEN: "${API_TOKEN:-}"
       WEB_DIR: "/app/web"
+      # Same JSONL path the Core writes, so /api/clusters/ can read the
+      # snapshots produced by the Core without sharing a process.
+      CLUSTER_SNAPSHOTS_FILE: "/data/clusters/capital_observatory_clusters.jsonl"
     ports:
       - "8080:8080"
+    volumes:
+      - cluster_snapshots:/data/clusters
 
   # ETF Plugin: GLD real price via Yahoo Finance; synthetic ETF flow (no free public source).
   etf-plugin:
@@ -158,3 +171,4 @@ services:
 
 volumes:
   tsdb_data:
+  cluster_snapshots:
