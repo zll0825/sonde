@@ -105,6 +105,8 @@ func (r *ClusterRing) PushByID(c ClusterSnapshot) {
 			existing.Coalesced = c.Coalesced
 			existing.PrimaryEntity = c.PrimaryEntity
 			existing.MergedAlertIDs = mergeAlertIDs(existing.MergedAlertIDs, c.MergedAlertIDs)
+			existing.Priority = c.Priority
+			existing.MergeTrail = c.MergeTrail
 			if c.TriggeredEvent != "" {
 				existing.TriggeredEvent = c.TriggeredEvent
 			}

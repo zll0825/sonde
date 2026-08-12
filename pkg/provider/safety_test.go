@@ -2,12 +2,80 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 )
+
+type fakeProviderLimiter struct {
+	reserveErr error
+	reserves   int
+	failures   int
+}
+
+func (f *fakeProviderLimiter) Reserve(context.Context, string) error {
+	f.reserves++
+	return f.reserveErr
+}
+
+func (f *fakeProviderLimiter) RecordFailure(context.Context, string) error {
+	f.failures++
+	return nil
+}
+
+func TestSafeHTTPClient_QuotaRejectsBeforeWireRequest(t *testing.T) {
+	cfg := DefaultConfig("test")
+	cfg.RPS = 0
+	cfg.MaxRetries = 0
+	safe := NewSafeHTTPClient(cfg)
+	limiter := &fakeProviderLimiter{reserveErr: ErrProviderQuotaExceeded}
+	safe.SetProviderLimiter(limiter)
+	wireCalls := 0
+	safe.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		wireCalls++
+		return nil, errors.New("must not be called")
+	})
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://test.example/data", nil)
+	_, err := safe.Do(req)
+	if !errors.Is(err, ErrProviderQuotaExceeded) {
+		t.Fatalf("Do error = %v, want ErrProviderQuotaExceeded", err)
+	}
+	if limiter.reserves != 1 || wireCalls != 0 {
+		t.Fatalf("reserves=%d wireCalls=%d, want 1 and 0", limiter.reserves, wireCalls)
+	}
+}
+
+func TestSafeHTTPClient_QuotaReservesEveryRetry(t *testing.T) {
+	cfg := DefaultConfig("test")
+	cfg.RPS = 0
+	cfg.MaxRetries = 1
+	cfg.BaseDelay = time.Nanosecond
+	cfg.MaxDelay = time.Nanosecond
+	safe := NewSafeHTTPClient(cfg)
+	limiter := &fakeProviderLimiter{}
+	safe.SetProviderLimiter(limiter)
+	safe.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       io.NopCloser(strings.NewReader(`{}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://test.example/data", nil)
+	resp, err := safe.Do(req)
+	if err != nil {
+		t.Fatalf("Do returned error: %v", err)
+	}
+	_ = resp.Body.Close()
+	if limiter.reserves != 2 || limiter.failures != 2 {
+		t.Fatalf("reserves=%d failures=%d, want 2 and 2", limiter.reserves, limiter.failures)
+	}
+}
 
 // TestSafeHTTPClient_Success verifies that a successful request passes through.
 func TestSafeHTTPClient_Success(t *testing.T) {

@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -271,13 +272,13 @@ func (s *ontologyStore) acceptCandidate(w http.ResponseWriter, r *http.Request, 
 
 	rel, err := s.relationMgr.AcceptSuggestionByCandidate(r.Context(), *suggestion, userID)
 	if err != nil {
+		if errors.Is(err, ontology.ErrAlreadyReviewed) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "candidate already reviewed"})
+			return
+		}
 		log.Error().Err(err).Int64("id", id).Msg("accept candidate failed")
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
-	}
-
-	if err := s.store.AcceptSuggestion(r.Context(), id, userID); err != nil {
-		log.Warn().Err(err).Int64("id", id).Msg("accepted candidate but failed to update suggestion status")
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -313,12 +314,18 @@ func (s *ontologyStore) ontologyDiscoverHandler(w http.ResponseWriter, r *http.R
 	}
 
 	finder := ontology.NewCandidateFinder(s.store, ontology.DefaultCandidateConfig())
+	finder.SetEntityResolver(s.store)
 	finder.SetAPI(ontology.ObservationAPI{
 		Fetch: s.store.FetchObservations,
 	})
 	candidates, err := finder.Discover(r.Context(), req.EntityPairs)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := s.store.SaveCandidates(r.Context(), candidates); err != nil {
+		log.Error().Err(err).Msg("persist discovered ontology candidates failed")
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to persist candidates"})
 		return
 	}
 	if candidates == nil {

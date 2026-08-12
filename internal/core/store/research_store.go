@@ -131,6 +131,19 @@ func (s *PostgresResearchStore) GetRelatedEntities(ctx context.Context, entityID
 		       effective_from, effective_to
 		FROM relations
 		WHERE effective_to IS NULL AND (source_id = $1 OR target_id = $1)
+		UNION ALL
+		SELECT 0, source_id, target_id, relation_type,
+		       CASE
+		           WHEN relation_type IN ('tracks', 'component_of', 'issued_by', 'belongs_to') THEN 'structural'
+		           WHEN relation_type IN ('hedges', 'competes', 'signals') THEN 'semantic'
+		           WHEN relation_type IN ('correlates', 'inversely_correlates', 'leads', 'lags') THEN 'statistical'
+		           WHEN relation_type IN ('causes', 'depends_on_regime') THEN 'causal'
+		           ELSE 'semantic'
+		       END,
+		       direction, weight::double precision, NULL::interval,
+		       description, 'user_defined', 1, created_at, NULL::timestamptz
+		FROM manual_relations
+		WHERE active = TRUE AND (source_id = $1 OR target_id = $1)
 	`, entityID)
 	if err != nil {
 		return nil, fmt.Errorf("query related entities: %w", err)
@@ -163,6 +176,7 @@ func (s *PostgresResearchStore) MetricUIDForEntity(ctx context.Context, entityID
 	err := s.db.QueryRow(ctx, `
 		SELECT uid FROM metric_definitions
 		WHERE entity_id = $1 AND effective_to IS NULL
+		ORDER BY id
 		LIMIT 1
 	`, entityID).Scan(&uid)
 	if errors.Is(err, pgx.ErrNoRows) {

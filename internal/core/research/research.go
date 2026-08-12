@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"capital_observatory/pkg/model"
@@ -14,20 +15,21 @@ import (
 
 // ResearchContext is the assembled research payload for the API / frontend.
 type ResearchContext struct {
-	AlertID         string                 `json:"alert_id"`
-	MetricID        string                 `json:"metric_id"`
-	MetricName      string                 `json:"metric_name"`
-	WindowStart     time.Time              `json:"window_start"`
-	WindowEnd       time.Time              `json:"window_end"`
-	CurrentValue    float64                `json:"current_value"`
-	Threshold       float64                `json:"threshold,omitempty"`
-	RelatedEntities []EntityRef            `json:"related_entities"`
-	Relations       []RelationRef          `json:"relations"`
-	RecentTrend     []TrendPoint           `json:"recent_trend"`
-	Timeline        []TimelineEntry        `json:"timeline"`
-	Overlays        []OverlaySeries        `json:"overlays"`
-	Metadata        map[string]interface{} `json:"metadata"`
-	AssembledAt     time.Time              `json:"assembled_at"`
+	AlertID           string                 `json:"alert_id"`
+	MetricID          string                 `json:"metric_id"`
+	MetricName        string                 `json:"metric_name"`
+	WindowStart       time.Time              `json:"window_start"`
+	WindowEnd         time.Time              `json:"window_end"`
+	CurrentValue      float64                `json:"current_value"`
+	Threshold         float64                `json:"threshold,omitempty"`
+	RelatedEntities   []EntityRef            `json:"related_entities"`
+	Relations         []RelationRef          `json:"relations"`
+	RecentTrend       []TrendPoint           `json:"recent_trend"`
+	Timeline          []TimelineEntry        `json:"timeline"`
+	Overlays          []OverlaySeries        `json:"overlays"`
+	HistoricalAnalogs []HistoricalAnalog     `json:"historical_analogs,omitempty"`
+	Metadata          map[string]interface{} `json:"metadata"`
+	AssembledAt       time.Time              `json:"assembled_at"`
 }
 
 // TimelineEntry is one point on the Research Timeline view: the metric's
@@ -44,6 +46,59 @@ type TimelineEntry struct {
 type OverlaySeries struct {
 	MetricUID string         `json:"metric_uid"`
 	Points    []OverlayPoint `json:"points"`
+}
+
+// HistoricalAnalog is a hand-picked macro-historical precedent rendered in
+// the Research view. Relevance is a static score (0..1) set at authoring time.
+type HistoricalAnalog struct {
+	Title       string  `json:"title"`
+	Year        int     `json:"year"`
+	Description string  `json:"description"`
+	Relevance   float64 `json:"relevance"`
+	Source      string  `json:"source"`
+}
+
+// macroHistoricalAnalogs is a curated dataset of macro-financial historical
+// analogs. Scores are editorial — they encode how broadly each episode maps
+// to contemporary risk regimes (inflation shock, liquidity crisis, currency
+// peg break, etc.). Used by Assemble to populate ctx.HistoricalAnalogs with
+// the top-3 entries whose Relevance exceeds 0.6.
+var macroHistoricalAnalogs = []HistoricalAnalog{
+	{
+		Title:       "1973 Oil Crisis & Stagflation",
+		Year:        1973,
+		Description: "OPEC embargo triggered a fourfold oil-price spike, ushering a decade of stagflation across advanced economies — a canonical supply-shock template.",
+		Relevance:   0.78,
+		Source:      "BP Statistical Review / NBER",
+	},
+	{
+		Title:       "1987 Black Monday Crash",
+		Year:        1987,
+		Description: "DJIA fell 22% in a single day — portfolio-insurance feedback loops and liquidity evaporation, a template for systemic-liquidity events.",
+		Relevance:   0.71,
+		Source:      "SEC Market Oversight",
+	},
+	{
+		Title:       "1997 Asian Financial Crisis",
+		Year:        1997,
+		Description: "Peg-break contagion from THB devaluation spreading across EM currencies and equities — a template for peg/currency-break regimes.",
+		Relevance:   0.65,
+		Source:      "IMF Working Paper 98/157",
+	},
+	{
+		Title:       "2008 Global Financial Crisis",
+		Year:        2008,
+		Description: "Interbank-freeze and MBS contagion leading to a global recession — the canonical credit-contraction template for modern macro portfolios.",
+		Relevance:   0.86,
+		Source:      "FCIC Final Report",
+	},
+	{
+		Title:       "2020 COVID-19 Market Dislocation",
+		Year:        2020,
+		Description: "Fastest bear market in history followed by unprecedented fiscal/monetary intervention — a template for exogenous-shock recovery regimes.",
+		Relevance:   0.81,
+		Source:      "Federal Reserve FOMC Minutes",
+	},
 }
 
 // EntityRef is a lightweight entity reference in research context.
@@ -180,13 +235,21 @@ func (a *Assembler) Assemble(ctx context.Context, alert model.Alert) (*ResearchC
 
 		// Overlays: populate from relation-graph neighbour metric series where
 		// available. Each related entity → its representative metric (via
-		// MetricUIDForEntity) → observations in a 14-day lookback window. If
-		// the store returns nothing the slice stays nil — we are no longer
-		// lying about the data being "reserved for future".
-		// Historical analogs are not yet assembled (P1 #7); the
-		// ResearchContext struct has no HistoricalAnalogs field today.
-		// TODO: populate HistoricalAnalogs when the analytics pipeline is ready.
-		out.Overlays = a.buildOverlays(ctx, entityID, out.WindowEnd)
+		// MetricUIDForEntity) → observations in a 14-day lookback window.
+		// Failures here are NOT silently dropped — an overlay assembly failure
+		// signals a broken snapshot, so we propagate the error and let the
+		// outbox worker retry (see P1 #10, error surfacing).
+		overlays, err := a.buildOverlays(ctx, entityID, out.WindowEnd)
+		if err != nil {
+			return nil, fmt.Errorf("build overlays for %s: %w", entityID, err)
+		}
+		out.Overlays = overlays
+
+		// HistoricalAnalogs: select static macro-historical precedents whose
+		// Relevance score exceeds 0.6, keep the top-3, and attach to the
+		// research context. The selection is independent of the specific
+		// entity or metric — it is a curated risk-regime reference list.
+		out.HistoricalAnalogs = selectTopAnalogs(macroHistoricalAnalogs, 3)
 
 		for _, rel := range relations {
 			out.Relations = append(out.Relations, RelationRef{
@@ -261,21 +324,42 @@ func (a *Assembler) emitEventTimeline(ctx context.Context, metricUID string, sta
 // buildOverlays constructs one OverlaySeries per related entity whose
 // representative metric has observations in the 14-day window ending at
 // `end`. Entities without an observable metric are silently skipped.
-func (a *Assembler) buildOverlays(ctx context.Context, entityID string, end time.Time) []OverlaySeries {
+//
+// Errors from relation queries, metric-UID resolution, and observation
+// queries are returned to the caller rather than silently dropped. A
+// partial overlay list frozen into a research snapshot would otherwise
+// never be retried (P1 #10 — error surfacing).
+func (a *Assembler) buildOverlays(ctx context.Context, entityID string, end time.Time) ([]OverlaySeries, error) {
 	rels, err := a.store.GetRelatedEntities(ctx, entityID)
-	if err != nil || len(rels) == 0 {
-		return nil
+	if err != nil {
+		return nil, fmt.Errorf("get related entities for %s: %w", entityID, err)
+	}
+	if len(rels) == 0 {
+		return nil, nil
 	}
 	const overlayLookback = 14 * 24 * time.Hour
 	start := end.Add(-overlayLookback)
 	out := make([]OverlaySeries, 0, len(rels))
 	for _, r := range rels {
-		uid, ok, err := a.store.MetricUIDForEntity(ctx, r.TargetID)
-		if err != nil || !ok {
+		neighborID := r.TargetID
+		if neighborID == entityID {
+			neighborID = r.SourceID
+		}
+		if neighborID == entityID || neighborID == "" {
+			continue
+		}
+		uid, ok, err := a.store.MetricUIDForEntity(ctx, neighborID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve metric uid for %s: %w", neighborID, err)
+		}
+		if !ok {
 			continue
 		}
 		obs, err := a.store.GetObservations(ctx, uid, start, end, 60)
-		if err != nil || len(obs) == 0 {
+		if err != nil {
+			return nil, fmt.Errorf("fetch overlay observations for %s: %w", uid, err)
+		}
+		if len(obs) == 0 {
 			continue
 		}
 		pts := make([]OverlayPoint, 0, len(obs))
@@ -287,7 +371,29 @@ func (a *Assembler) buildOverlays(ctx context.Context, entityID string, end time
 			Points:    pts,
 		})
 	}
-	return out
+	return out, nil
+}
+
+// selectTopAnalogs picks up to limit analogs whose Relevance score strictly
+// exceeds 0.6, ordered from most to least relevant.
+func selectTopAnalogs(pool []HistoricalAnalog, limit int) []HistoricalAnalog {
+	if limit <= 0 {
+		return nil
+	}
+	eligible := make([]HistoricalAnalog, 0, len(pool))
+	for _, a := range pool {
+		if a.Relevance <= 0.6 {
+			continue
+		}
+		eligible = append(eligible, a)
+	}
+	sort.SliceStable(eligible, func(i, j int) bool {
+		return eligible[i].Relevance > eligible[j].Relevance
+	})
+	if len(eligible) > limit {
+		eligible = eligible[:limit]
+	}
+	return eligible
 }
 
 // toFloat converts interface{} to float64.

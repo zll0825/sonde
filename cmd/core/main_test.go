@@ -6,9 +6,45 @@ import (
 	"testing"
 
 	"capital_observatory/internal/core/alert"
+	"capital_observatory/internal/core/classification"
 	"capital_observatory/internal/core/research"
 	"capital_observatory/pkg/model"
 )
+
+func TestDistinctMetricCountIncludesSeedAndDeduplicates(t *testing.T) {
+	tests := []struct {
+		name    string
+		cluster classification.EventCluster
+		want    int
+	}{
+		{name: "empty", cluster: classification.EventCluster{}, want: 0},
+		{name: "legacy seed", cluster: classification.EventCluster{Alerts: []string{"a1"}}, want: 1},
+		{
+			name: "same metric alerts",
+			cluster: classification.EventCluster{
+				Alerts:    []string{"a1", "a2"},
+				MetricIDs: []string{"metric.one", "metric.one"},
+			},
+			want: 1,
+		},
+		{
+			name: "seed plus second metric",
+			cluster: classification.EventCluster{
+				Alerts:    []string{"a1", "a2"},
+				MetricIDs: []string{"metric.one", "metric.two"},
+			},
+			want: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := distinctMetricCount(&tt.cluster); got != tt.want {
+				t.Fatalf("distinctMetricCount() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
 
 type fakeAlertLoader struct {
 	alert     *model.Alert

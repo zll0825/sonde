@@ -82,7 +82,10 @@ func main() {
 	// Ring buffer holds the most recent N EventCluster snapshots for the API
 	// endpoint /api/clusters/. The clusterer itself tracks open clusters in
 	// memory; the ring buffer only records completed/recent snapshots.
-	clusterer := classification.NewClusterer(classification.DefaultClusteringConfig())
+	clusterConfig := classification.DefaultClusteringConfig()
+	clusterConfig.EntityResolver = repo
+	clusterConfig.RelationReader = repo
+	clusterer := classification.NewClusterer(clusterConfig)
 	clusterRing := coreevent.NewClusterRing(100)
 
 	// ── A: Layer-2 research gate ──────────────────────────────────────────────
@@ -156,7 +159,11 @@ func main() {
 			cluster := clusterer.Receive(ctx, ca)
 			if cluster != nil {
 				// ── Layer-2: gate decision ──────────────────────────────────────
-				distinctMetrics := len(cluster.Alerts)
+				// Count DISTINCT metric IDs from the merge log, not raw alert
+				// count — multiple alerts can fire on the same metric, and the
+				// gate's cross-metric confirmation must reflect real indicator
+				// breadth, not alert volume.
+				distinctMetrics := distinctMetricCount(cluster)
 				decision := researchGate.Evaluate(*cluster, distinctMetrics)
 				if decision.ShouldResearch {
 					log.Info().
@@ -201,8 +208,15 @@ func main() {
 				}
 				clusterRing.PushByID(snap)
 				if snapStore != nil {
+					// Snap persistence MUST succeed before we acknowledge the
+					// outbox event. If Append fails, return the error so the
+					// outbox worker retries — otherwise the cluster snapshot is
+					// permanently lost and the API will never see this cluster.
+					// Append is idempotent: on retry, the already-written cluster
+					// ID is recognized and returns nil without duplicating the
+					// JSONL line.
 					if sErr := snapStore.Append(snap); sErr != nil {
-						log.Warn().Err(sErr).Str("cluster_id", cluster.ID).Msg("cluster snapshot append failed")
+						return fmt.Errorf("cluster snapshot persist for %s: %w", cluster.ID, sErr)
 					}
 				}
 				log.Debug().
@@ -394,6 +408,24 @@ func handleResearchRequest(
 	}
 	log.Info().Str("alert_id", req.AlertID).Msg("research snapshot assembled")
 	return nil
+}
+
+// distinctMetricCount returns the number of unique metrics represented by a
+// cluster. MetricIDs includes the seed alert, unlike MergeLog, which only
+// records later merge decisions.
+func distinctMetricCount(cluster *classification.EventCluster) int {
+	seen := make(map[string]struct{})
+	for _, metricID := range cluster.MetricIDs {
+		if metricID != "" {
+			seen[metricID] = struct{}{}
+		}
+	}
+	// Backward compatibility for clusters restored from older snapshots that
+	// predate MetricIDs.
+	if len(seen) == 0 && len(cluster.Alerts) != 0 {
+		return 1
+	}
+	return len(seen)
 }
 
 // signalContext returns a context that cancels on SIGINT or SIGTERM.

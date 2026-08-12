@@ -1,13 +1,64 @@
 package event
 
 import (
+	"bytes"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"capital_observatory/pkg/model"
 )
+
+func TestSnapshotStore_DeduplicatesRetryButPersistsUpdatedState(t *testing.T) {
+	path := t.TempDir() + "/clusters.jsonl"
+	store, err := NewClusterSnapshotStore(path)
+	if err != nil {
+		t.Fatalf("NewClusterSnapshotStore: %v", err)
+	}
+
+	first := ClusterSnapshot{ClusterID: "c1", MemberCount: 1, LastTriggered: time.Now()}
+	if err := store.Append(first); err != nil {
+		t.Fatalf("append first: %v", err)
+	}
+	if err := store.Append(first); err != nil {
+		t.Fatalf("append retry: %v", err)
+	}
+	updated := first
+	updated.MemberCount = 2
+	updated.MergedAlertIDs = []string{"a1", "a2"}
+	if err := store.Append(updated); err != nil {
+		t.Fatalf("append update: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read raw snapshots: %v", err)
+	}
+	if got := bytes.Count(raw, []byte{'\n'}); got != 2 {
+		t.Fatalf("durable revisions = %d, want 2", got)
+	}
+
+	reopened, err := NewClusterSnapshotStore(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer reopened.Close()
+	if err := reopened.Append(updated); err != nil {
+		t.Fatalf("append retry after restart: %v", err)
+	}
+	snaps, err := reopened.ReadAll(0)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if len(snaps) != 1 || snaps[0].MemberCount != 2 {
+		t.Fatalf("latest snapshots = %#v, want one updated cluster", snaps)
+	}
+}
 
 func TestSnapshotStore_AppendReadRoundTrip(t *testing.T) {
 	t.Parallel()

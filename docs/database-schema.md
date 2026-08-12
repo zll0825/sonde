@@ -84,7 +84,8 @@ CREATE TABLE metric_definitions (
     unit            TEXT NOT NULL,              -- "USD", "%", "count", "bps"
     frequency       TEXT NOT NULL,              -- "daily", "hourly", "realtime", "weekly", "quarterly"
     entity_id       TEXT NOT NULL,              -- 字符串，不做 FK（Isolation Principle）
-    plugin_id       TEXT NOT NULL REFERENCES plugins(id),
+    plugin_id       TEXT REFERENCES plugins(id),       -- NULL for Core-inferred candidates
+    source          TEXT NOT NULL DEFAULT 'plugin_suggested', -- plugin_suggested | system_inferred
     tags            JSONB DEFAULT '{}',
     active          BOOLEAN DEFAULT TRUE,
     effective_from  TIMESTAMPTZ NOT NULL,
@@ -119,7 +120,8 @@ CREATE TABLE relation_suggestions (
     typical_lag     INTERVAL,
     description     TEXT,
     evidence        TEXT,
-    plugin_id       TEXT NOT NULL REFERENCES plugins(id),
+    plugin_id       TEXT REFERENCES plugins(id),       -- NULL for Core-inferred candidates
+    source          TEXT NOT NULL DEFAULT 'plugin_suggested', -- plugin_suggested | system_inferred
     status          TEXT NOT NULL DEFAULT 'pending',  -- pending | accepted | rejected | merged
     merged_into_id  INT,                        -- → relations.id
     review_reason   TEXT,
@@ -128,6 +130,10 @@ CREATE TABLE relation_suggestions (
 
     UNIQUE(source_id, target_id, relation_type, plugin_id)
 );
+
+CREATE UNIQUE INDEX uq_relation_suggestions_system_candidate
+    ON relation_suggestions (source_id, target_id, relation_type)
+    WHERE plugin_id IS NULL AND source = 'system_inferred';
 ```
 
 ---
@@ -425,9 +431,76 @@ CREATE INDEX idx_command_log_dispatchable
     WHERE status IN ('pending', 'dispatched');
 ```
 
+## 15. Post-MVP contract tables
+
+Migrations 008-010 extend the review and operational contracts without
+rewriting historical alerts, observations, or ontology versions.
+
+```sql
+-- 008: Core statistical candidates share the plugin review queue.
+ALTER TABLE relation_suggestions
+    ALTER COLUMN plugin_id DROP NOT NULL;
+ALTER TABLE relation_suggestions
+    ADD COLUMN source TEXT NOT NULL DEFAULT 'plugin_suggested'
+        CHECK (source IN ('plugin_suggested', 'system_inferred'));
+CREATE UNIQUE INDEX uq_relation_suggestions_system_candidate
+    ON relation_suggestions (source_id, target_id, relation_type)
+    WHERE plugin_id IS NULL AND source = 'system_inferred';
+
+-- 009: one rolling quota window per provider and immutable research/rule audit.
+CREATE TABLE provider_quota (
+    provider TEXT NOT NULL,
+    window_start TIMESTAMPTZ NOT NULL,
+    window_end TIMESTAMPTZ NOT NULL,
+    used INT NOT NULL DEFAULT 0,
+    failures INT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (provider, window_start)
+);
+
+CREATE TABLE research_feedbacks (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    alert_id TEXT NOT NULL REFERENCES research_snapshots(alert_id),
+    cluster_id TEXT,
+    verdict TEXT NOT NULL CHECK (verdict IN ('worth_researching','irrelevant','duplicate')),
+    rationale TEXT,
+    user_id TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE rule_audit_log (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    rule_id INT NOT NULL REFERENCES rules(id),
+    scope TEXT NOT NULL DEFAULT 'global',
+    field TEXT NOT NULL,
+    old_value JSONB NOT NULL,
+    new_value JSONB NOT NULL,
+    actor TEXT NOT NULL DEFAULT 'system',
+    reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE entity_representative_metric (
+    entity_id TEXT NOT NULL,
+    purpose TEXT NOT NULL DEFAULT 'default',
+    metric_id TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'manual',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (entity_id, purpose)
+);
+
+-- 010: statistical evidence retained when a candidate becomes manual.
+ALTER TABLE manual_relations
+    ADD COLUMN extension JSONB NOT NULL DEFAULT '{}';
+```
+
+`provider_quota` is enforced by the API client's atomic reservation path;
+`research_feedbacks.alert_id` points to a frozen snapshot, and rule mutations
+always create a new version before writing `rule_audit_log`.
+
 ---
 
-## 15. 索引汇总
+## 16. 索引汇总
 
 | 表 | 索引 | 类型 | 用途 |
 |----|------|------|------|
@@ -451,7 +524,7 @@ CREATE INDEX idx_command_log_dispatchable
 
 ---
 
-## 16. 迁移策略
+## 17. 迁移策略
 
 ```sql
 -- 迁移文件命名: migrations/001_baseline.up.sql

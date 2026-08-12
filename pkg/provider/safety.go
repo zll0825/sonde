@@ -28,6 +28,7 @@ type SafeHTTPClient struct {
 	maxDelay    time.Duration
 	jitterRatio float64       // 0.0-1.0, fraction of delay to randomize
 	semaphore   chan struct{} // concurrency limiter; nil when MaxConcurrent<=0
+	quota       ProviderLimiter
 
 	mu       sync.Mutex
 	provider string // for logging context
@@ -134,6 +135,14 @@ func NewSafeHTTPClient(cfg Config) *SafeHTTPClient {
 	return s
 }
 
+// SetProviderLimiter installs an optional cross-process request budget. The
+// limiter is consulted before every wire attempt, including retries.
+func (s *SafeHTTPClient) SetProviderLimiter(limiter ProviderLimiter) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.quota = limiter
+}
+
 // Do executes an HTTP request with all safety mechanisms applied:
 // 1. Rate limiting (wait for token)
 // 2. Circuit breaker check (fail fast if open)
@@ -167,11 +176,24 @@ func (s *SafeHTTPClient) Do(req *http.Request) (*http.Response, error) {
 			return nil, lastErr
 		}
 
+		s.mu.Lock()
+		quota := s.quota
+		providerName := s.provider
+		s.mu.Unlock()
+		if quota != nil {
+			if err := quota.Reserve(req.Context(), providerName); err != nil {
+				return nil, err
+			}
+		}
+
 		// Step 3: Execute request
 		resp, err := s.client.Do(req)
 
 		// Step 4: Handle response
 		if err != nil {
+			if quota != nil {
+				_ = quota.RecordFailure(req.Context(), providerName)
+			}
 			lastErr = err
 			s.breaker.RecordFailure()
 			if attempt < s.maxRetries {
@@ -191,6 +213,9 @@ func (s *SafeHTTPClient) Do(req *http.Request) (*http.Response, error) {
 
 		// Handle 429 with Retry-After
 		if resp.StatusCode == http.StatusTooManyRequests {
+			if quota != nil {
+				_ = quota.RecordFailure(req.Context(), providerName)
+			}
 			s.breaker.RecordFailure()
 			retryAfter := parseRetryAfter(resp)
 			if retryAfter > 0 && attempt < s.maxRetries {
@@ -212,6 +237,9 @@ func (s *SafeHTTPClient) Do(req *http.Request) (*http.Response, error) {
 
 		// Handle 5xx transient server errors with retry
 		if resp.StatusCode >= 500 && resp.StatusCode < 600 {
+			if quota != nil {
+				_ = quota.RecordFailure(req.Context(), providerName)
+			}
 			s.breaker.RecordFailure()
 			if attempt < s.maxRetries {
 				_ = resp.Body.Close()

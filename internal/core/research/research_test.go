@@ -21,6 +21,7 @@ type mockResearchStore struct {
 	saveCalled     int
 	savedSnap      *model.ResearchSnapshot
 	queriedUID     string
+	resolvedIDs    []string
 }
 
 func (m *mockResearchStore) GetObservations(_ context.Context, metricUID string, _, _ time.Time, _ int) ([]model.Observation, error) {
@@ -43,10 +44,56 @@ func (m *mockResearchStore) SaveSnapshot(_ context.Context, snap model.ResearchS
 }
 
 func (m *mockResearchStore) MetricUIDForEntity(_ context.Context, entityID string) (string, bool, error) {
+	m.resolvedIDs = append(m.resolvedIDs, entityID)
 	if entityID == "" {
 		return "", false, nil
 	}
 	return "mtr_" + entityID, true, nil
+}
+
+func TestAssemblerOverlayUsesOtherRelationEndpoint(t *testing.T) {
+	now := time.Now()
+	store := &mockResearchStore{
+		observations: []model.Observation{{Time: now.Add(-time.Hour), MetricUID: "mtr_source", Value: 1}},
+		entity:       &model.Entity{ID: "target", Name: "Target"},
+		relations: []model.Relation{{
+			SourceID: "source", TargetID: "target", RelationType: "tracks",
+		}},
+	}
+	alert := model.Alert{
+		ID: "alt_reverse", MetricID: "target.metric", WindowEnd: &now,
+		Evidence: []byte(`{"entity_id":"target","metric_uid":"mtr_target"}`),
+	}
+
+	if _, err := NewAssembler(store).Assemble(context.Background(), alert); err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+	if len(store.resolvedIDs) != 1 || store.resolvedIDs[0] != "source" {
+		t.Fatalf("overlay resolved entities = %#v, want source endpoint", store.resolvedIDs)
+	}
+}
+
+func TestSelectTopAnalogsSortsByRelevance(t *testing.T) {
+	pool := []HistoricalAnalog{
+		{Title: "middle", Relevance: 0.7},
+		{Title: "low", Relevance: 0.61},
+		{Title: "highest", Relevance: 0.9},
+		{Title: "excluded", Relevance: 0.6},
+		{Title: "second", Relevance: 0.8},
+	}
+	got := selectTopAnalogs(pool, 3)
+	want := []string{"highest", "second", "middle"}
+	if len(got) != len(want) {
+		t.Fatalf("len(selectTopAnalogs) = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i].Title != want[i] {
+			t.Fatalf("result[%d] = %q, want %q", i, got[i].Title, want[i])
+		}
+	}
+	if pool[0].Title != "middle" {
+		t.Fatal("selectTopAnalogs mutated its input")
+	}
 }
 
 func TestAssembler_Assemble_PropagatesTransientStoreFailure(t *testing.T) {

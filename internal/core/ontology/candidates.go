@@ -51,6 +51,9 @@ type Candidate struct {
 	TypicalLag    string    `json:"typical_lag"`
 	PVale         float64   `json:"p_value"`
 	Observations  int       `json:"observations"`
+	LookbackDays  int       `json:"lookback_days"`
+	LagDays       int       `json:"lag_days"`
+	EvidenceRefs  []string  `json:"evidence_refs,omitempty"`
 	Confidence    float64   `json:"confidence"`
 	FirstObserved time.Time `json:"first_observed"`
 	LastObserved  time.Time `json:"last_observed"`
@@ -175,18 +178,62 @@ func (cf *CandidateFinder) resolveMetricUIDs(ctx context.Context, sourceID, targ
 		if err != nil {
 			return "", "", fmt.Errorf("resolve source metric UID for %q: %w", sourceID, err)
 		}
-		if found {
-			sourceUID = s
+		if !found {
+			return "", "", fmt.Errorf("no current metric for source entity %q", sourceID)
 		}
+		sourceUID = s
 		t, found, err := cf.resolver.MetricUIDForEntity(ctx, targetID)
 		if err != nil {
 			return "", "", fmt.Errorf("resolve target metric UID for %q: %w", targetID, err)
 		}
-		if found {
-			targetUID = t
+		if !found {
+			return "", "", fmt.Errorf("no current metric for target entity %q", targetID)
 		}
+		targetUID = t
 	}
 	return sourceUID, targetUID, nil
+}
+
+// SaveCandidates writes system-inferred candidates into the existing review
+// queue. The batch is atomic and idempotent by entity pair + relation type;
+// rediscovery refreshes evidence without reopening an accepted or rejected
+// review decision.
+func (s *Store) SaveCandidates(ctx context.Context, candidates []Candidate) error {
+	if len(candidates) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin candidate save: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	for _, candidate := range candidates {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO relation_suggestions (
+				source_id, target_id, relation_type, direction, confidence,
+				typical_lag, description, evidence, plugin_id, source, status
+			) VALUES ($1, $2, $3, $4, $5, $6::interval, $7, $8, NULL, 'system_inferred', 'pending')
+			ON CONFLICT (source_id, target_id, relation_type)
+				WHERE plugin_id IS NULL AND source = 'system_inferred'
+			DO UPDATE SET
+				direction = EXCLUDED.direction,
+				confidence = EXCLUDED.confidence,
+				typical_lag = EXCLUDED.typical_lag,
+				description = EXCLUDED.description,
+				evidence = EXCLUDED.evidence,
+				updated_at = NOW()
+			WHERE relation_suggestions.status = 'pending'
+		`, candidate.SourceID, candidate.TargetID, candidate.RelationType,
+			candidate.Direction, candidate.Confidence, candidate.TypicalLag,
+			"system-discovered statistical candidate", candidate.Evidence); err != nil {
+			return fmt.Errorf("save candidate %s -> %s: %w", candidate.SourceID, candidate.TargetID, err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit candidate save: %w", err)
+	}
+	return nil
 }
 
 // Discover scans entity pairs for candidate relations.
@@ -262,6 +309,8 @@ func (cf *CandidateFinder) computeCandidates(sourceID, targetID string, sourceOb
 		TypicalLag:    bestLag.String(),
 		PVale:         bestP,
 		Observations:  observations,
+		LookbackDays:  int(cf.config.Lookback.Hours() / 24),
+		LagDays:       int(bestLag.Hours() / 24),
 		Confidence:    math.Abs(bestR),
 		FirstObserved: firstObs,
 		LastObserved:  lastObs,
@@ -338,15 +387,20 @@ func pearsonCorrelation(a, b []ObservationPoint) float64 {
 	return numerator / denominator
 }
 
-// pearsonPValue computes a two-sided p-value from Pearson's r via normal
-// approximation (math.Erf).
+// pearsonPValue computes a two-sided p-value from Pearson's r using the
+// Student-t distribution with n-2 degrees of freedom (exact for bivariate
+// normal data).
 //
 //	t = |r| * sqrt((n-2)/(1 - r^2))
-//	p = 2 * (1 - Phi(|t|)), Phi via erf
+//	p = 2 * (1 - CDF_t(|t|, df=n-2))
 //
-// Conservative for small n; df=n-2.
+// The Student-t CDF is expressed via the regularized incomplete beta function:
+//
+//	P(T <= t) = 1 - 0.5 * I_x(df/2, 1/2)  where x = df/(df+t^2)
+//
+// so the two-sided p-value simplifies to I_x(df/2, 1/2).
 func pearsonPValue(r float64, n int) float64 {
-	if n < 3 {
+	if n <= 2 {
 		return 1.0
 	}
 	rAbs := math.Abs(r)
@@ -354,8 +408,7 @@ func pearsonPValue(r float64, n int) float64 {
 		return 0.0
 	}
 	t := rAbs * math.Sqrt(float64(n-2)) / math.Sqrt(1.0-rAbs*rAbs)
-	phi := 0.5 * (1.0 + math.Erf(t/math.Sqrt(2)))
-	p := 2.0 * (1.0 - phi)
+	p := studentsTPValue(t, n-2)
 	if p < 0 {
 		p = 0
 	}
@@ -365,36 +418,160 @@ func pearsonPValue(r float64, n int) float64 {
 	return p
 }
 
-// alignTimeSeries pairs two series by nearest timestamp within tolerance. For
-// each point in a, the closest point in b is chosen; the pair is kept when
-// their timestamp delta is <= tolerance. Unmatched points are dropped. Both
-// returned slices are equal-length and time-ordered.
-func alignTimeSeries(a, b []ObservationPoint, tolerance time.Duration) ([]ObservationPoint, []ObservationPoint) {
-	bByTime := make(map[int64]float64, len(b))
-	for _, p := range b {
-		bByTime[p.Time.Unix()] = p.Value
+// studentsTPValue returns the two-sided p-value for a t-statistic under the
+// Student-t distribution with the given degrees of freedom.
+func studentsTPValue(t float64, df int) float64 {
+	if df <= 0 || t <= 0 {
+		return 1.0
 	}
+	x := float64(df) / (float64(df) + t*t)
+	// Two-sided p = I_x(df/2, 1/2)
+	return regularizedIncompleteBeta(x, float64(df)/2.0, 0.5)
+}
 
-	var alignA, alignB []ObservationPoint
-	for _, pa := range a {
-		bestDelta := tolerance + 1
-		var bestVal float64
-		var found bool
-		for _, pb := range b {
+// regularizedIncompleteBeta computes I_x(a, b), the regularized incomplete beta
+// function, using the continued-fraction expansion (Abramowitz & Stegun 26.5.8,
+// via modified Lentz's method). Converges reliably for all positive a, b and
+// 0 < x < 1.
+func regularizedIncompleteBeta(x, a, b float64) float64 {
+	if x <= 0 {
+		return 0.0
+	}
+	if x >= 1.0 {
+		return 1.0
+	}
+	// Use the symmetry relation I_x(a,b) = 1 - I_{1-x}(b,a) when x is large.
+	if x > (a+1.0)/(a+b+2.0) {
+		return 1.0 - regularizedIncompleteBeta(1.0-x, b, a)
+	}
+	// Log of the prefactor x^a * (1-x)^b / (a * B(a,b)) where B is the beta fn.
+	lab, _ := math.Lgamma(a + b)
+	la, _ := math.Lgamma(a)
+	lb, _ := math.Lgamma(b)
+	lbeta := lab - la - lb
+	front := math.Exp(a*math.Log(x)+b*math.Log(1.0-x)+lbeta) / a
+	// Evaluate the continued fraction.
+	cf := betaContinuedFraction(x, a, b)
+	return front * cf
+}
+
+// betaContinuedFraction evaluates the continued fraction portion of the
+// incomplete beta function using the modified Lentz's method
+// (Numerical Recipes in C, §6.4).
+func betaContinuedFraction(x, a, b float64) float64 {
+	const maxIter = 200
+	const eps = 1e-14
+	const fpMin = 1e-30
+
+	qab := a + b
+	qap := a + 1.0
+	qam := a - 1.0
+
+	c := 1.0
+	d := 1.0 - qab*x/qap
+	if math.Abs(d) < fpMin {
+		d = fpMin
+	}
+	d = 1.0 / d
+	h := d
+
+	for m := 1; m <= maxIter; m++ {
+		m2 := 2 * m
+
+		// Even step.
+		aa := float64(m) * (b - float64(m)) * x / ((qam + float64(m2)) * (a + float64(m2)))
+		d = 1.0 + aa*d
+		if math.Abs(d) < fpMin {
+			d = fpMin
+		}
+		c = 1.0 + aa/c
+		if math.Abs(c) < fpMin {
+			c = fpMin
+		}
+		d = 1.0 / d
+		h *= d * c
+
+		// Odd step.
+		aa = -(a + float64(m)) * (qab + float64(m)) * x / ((a + float64(m2)) * (qap + float64(m2)))
+		d = 1.0 + aa*d
+		if math.Abs(d) < fpMin {
+			d = fpMin
+		}
+		c = 1.0 + aa/c
+		if math.Abs(c) < fpMin {
+			c = fpMin
+		}
+		d = 1.0 / d
+		delta := d * c
+		h *= delta
+
+		if math.Abs(delta-1.0) < eps {
+			break
+		}
+	}
+	return h
+}
+
+// candidatePair is a viable (a-index, b-index) alignment candidate with its
+// absolute time delta.
+type candidatePair struct {
+	aIdx, bIdx int
+	delta      time.Duration
+}
+
+// alignTimeSeries pairs two series by nearest timestamp within tolerance. To
+// avoid inflating the sample count by assigning multiple source points to the
+// same target point (which produces spuriously low p-values), each target
+// index may be matched at most once:
+//
+//  1. Collect every (i, j) pair whose time delta is within tolerance.
+//  2. Sort candidates by ascending delta.
+//  3. Greedily accept pairs, skipping any pair whose b-index was already used.
+//
+// Both returned slices are equal-length and sorted by source time.
+func alignTimeSeries(a, b []ObservationPoint, tolerance time.Duration) ([]ObservationPoint, []ObservationPoint) {
+	// 1. Gather all viable candidate pairs.
+	var candidates []candidatePair
+	for i, pa := range a {
+		for j, pb := range b {
 			delta := pa.Time.Sub(pb.Time)
 			if delta < 0 {
 				delta = -delta
 			}
-			if delta < bestDelta {
-				bestDelta = delta
-				bestVal = pb.Value
-				found = true
+			if delta <= tolerance {
+				candidates = append(candidates, candidatePair{i, j, delta})
 			}
 		}
-		if found && bestDelta <= tolerance {
-			alignA = append(alignA, pa)
-			alignB = append(alignB, ObservationPoint{Time: pa.Time, Value: bestVal})
+	}
+
+	// 2. Sort by ascending delta so the closest pairs are tried first.
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].delta < candidates[j].delta
+	})
+
+	// 3. Greedy selection — each target index used at most once.
+	usedA := make(map[int]bool, len(a))
+	usedB := make(map[int]bool, len(b))
+	selected := make([]candidatePair, 0, len(candidates))
+	for _, c := range candidates {
+		if usedA[c.aIdx] || usedB[c.bIdx] {
+			continue
 		}
+		usedA[c.aIdx] = true
+		usedB[c.bIdx] = true
+		selected = append(selected, c)
+	}
+
+	// Sort selected pairs by source index so the result is time-ordered.
+	sort.Slice(selected, func(i, j int) bool {
+		return selected[i].aIdx < selected[j].aIdx
+	})
+
+	alignA := make([]ObservationPoint, 0, len(selected))
+	alignB := make([]ObservationPoint, 0, len(selected))
+	for _, c := range selected {
+		alignA = append(alignA, a[c.aIdx])
+		alignB = append(alignB, b[c.bIdx])
 	}
 	return alignA, alignB
 }

@@ -140,13 +140,15 @@ func TestClusterRing_ByID(t *testing.T) {
 
 func TestClusterRing_PushByID_Dedupe(t *testing.T) {
 	r := NewClusterRing(5)
+	oldTrail := &MergeTrail{Entries: []MergeAudit{{AlertID: "a1", Reason: "created"}}}
+	newTrail := &MergeTrail{Entries: []MergeAudit{{AlertID: "a2", Reason: "same_entity", Coalesced: true}}}
 
 	// First push creates.
 	r.PushByID(ClusterSnapshot{ClusterID: "c1", MemberCount: 1, Severity: model.SeverityInfo,
-		LastTriggered: time.Now(), MergedAlertIDs: []string{"a1"}})
+		LastTriggered: time.Now(), MergedAlertIDs: []string{"a1"}, Priority: 12, MergeTrail: oldTrail})
 	// Same ClusterID — should update in place (not append a second).
 	r.PushByID(ClusterSnapshot{ClusterID: "c1", MemberCount: 2, Severity: model.SeverityWarning,
-		LastTriggered: time.Now(), MergedAlertIDs: []string{"a2"}})
+		LastTriggered: time.Now(), MergedAlertIDs: []string{"a2"}, Priority: 87, MergeTrail: newTrail})
 
 	got := r.Recent(10)
 	if len(got) != 1 {
@@ -161,5 +163,11 @@ func TestClusterRing_PushByID_Dedupe(t *testing.T) {
 	// MergedAlertIDs should contain both a1 and a2 (deduplicated).
 	if len(got[0].MergedAlertIDs) != 2 {
 		t.Fatalf("expected 2 merged alert IDs, got %v", got[0].MergedAlertIDs)
+	}
+	if got[0].Priority != 87 {
+		t.Fatalf("expected updated priority 87, got %v", got[0].Priority)
+	}
+	if got[0].MergeTrail != newTrail {
+		t.Fatalf("expected latest merge trail, got %#v", got[0].MergeTrail)
 	}
 }

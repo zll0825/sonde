@@ -460,6 +460,36 @@ func TestNewClusterWithContext_ResolverOverridesHeuristic(t *testing.T) {
 	}
 }
 
+func TestReceiveUsesResolverForNewClusterAndTracksMetrics(t *testing.T) {
+	c := NewClusterer(ClusteringConfig{
+		Window:              time.Hour,
+		MaxAlertsPerCluster: 5,
+		EntityResolver: &mockEntityResolver{metricToEntity: map[string]string{
+			"prefix.metric.one": "canonical_entity",
+		}},
+	})
+	now := time.Now()
+	cluster := c.Receive(context.Background(), model.Alert{
+		ID: "a1", MetricID: "prefix.metric.one", TriggeredAt: now,
+	})
+	if cluster.PrimaryEntity != "canonical_entity" {
+		t.Fatalf("PrimaryEntity = %q, want canonical_entity", cluster.PrimaryEntity)
+	}
+	if len(cluster.MetricIDs) != 1 || cluster.MetricIDs[0] != "prefix.metric.one" {
+		t.Fatalf("MetricIDs = %#v, want seed metric", cluster.MetricIDs)
+	}
+
+	c.AddAlertToCluster(context.Background(), cluster, model.Alert{
+		ID: "a2", MetricID: "prefix.metric.two", TriggeredAt: now.Add(time.Minute),
+	})
+	c.AddAlertToCluster(context.Background(), cluster, model.Alert{
+		ID: "a3", MetricID: "prefix.metric.two", TriggeredAt: now.Add(2 * time.Minute),
+	})
+	if len(cluster.MetricIDs) != 2 {
+		t.Fatalf("MetricIDs = %#v, want two distinct metrics", cluster.MetricIDs)
+	}
+}
+
 func TestResolveCanonicalEntity(t *testing.T) {
 	ctx := context.Background()
 	resolver := &mockEntityResolver{

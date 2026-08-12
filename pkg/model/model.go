@@ -188,3 +188,18 @@ type ResearchSnapshot struct {
 	Context          []byte    `json:"context"` // JSONB
 	OntologyFrozenAt time.Time `json:"ontology_frozen_at"`
 }
+
+// ---- Research Feedback ----
+
+// ResearchFeedback is an immutable verdict a researcher records against a
+// research snapshot. Verdict is one of: 'worth_researching', 'irrelevant',
+// 'duplicate'. CreatedAt is populated by the database; the API never sets it.
+type ResearchFeedback struct {
+	ID        int64     `json:"id"`
+	AlertID   string    `json:"alert_id"`
+	ClusterID *string   `json:"cluster_id,omitempty"`
+	Verdict   string    `json:"verdict"`
+	Rationale *string   `json:"rationale,omitempty"`
+	UserID    *string   `json:"user_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}

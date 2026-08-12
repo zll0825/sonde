@@ -7,6 +7,7 @@ package ontology
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -28,6 +29,7 @@ type PendingSuggestion struct {
 	Evidence     string    `json:"evidence,omitempty"`
 	TypicalLag   string    `json:"typical_lag,omitempty"`
 	PluginID     string    `json:"plugin_id"`
+	Source       string    `json:"source"`
 	Status       string    `json:"status"`
 	CreatedAt    time.Time `json:"created_at"`
 }
@@ -46,7 +48,8 @@ var ErrAlreadyReviewed = errors.New("suggestion already reviewed")
 func (s *Store) ListPendingSuggestions(ctx context.Context) ([]PendingSuggestion, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT id, source_id, target_id, relation_type, direction,
-		       confidence, description, evidence, typical_lag, plugin_id,
+		       confidence, description, evidence, typical_lag,
+		       COALESCE(plugin_id, ''), source,
 		       status, created_at
 		FROM relation_suggestions
 		WHERE status = 'pending'
@@ -64,7 +67,7 @@ func (s *Store) ListPendingSuggestions(ctx context.Context) ([]PendingSuggestion
 		var lag *string
 		if err := rows.Scan(
 			&p.ID, &p.SourceID, &p.TargetID, &p.RelationType, &p.Direction,
-			&p.Confidence, &p.Description, &p.Evidence, &lag, &p.PluginID,
+			&p.Confidence, &p.Description, &p.Evidence, &lag, &p.PluginID, &p.Source,
 			&p.Status, &p.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan pending suggestion: %w", err)
@@ -86,7 +89,8 @@ func (s *Store) ListPendingSuggestions(ctx context.Context) ([]PendingSuggestion
 func (s *Store) GetPendingSuggestionByID(ctx context.Context, id int64) (*PendingSuggestion, error) {
 	row := s.db.QueryRow(ctx, `
 		SELECT id, source_id, target_id, relation_type, direction,
-		       confidence, description, evidence, typical_lag, plugin_id,
+		       confidence, description, evidence, typical_lag,
+		       COALESCE(plugin_id, ''), source,
 		       status, created_at
 		FROM relation_suggestions
 		WHERE id = $1 AND status = 'pending'
@@ -99,7 +103,7 @@ func scanPendingSuggestion(row pgx.Row) (*PendingSuggestion, error) {
 	var lag *string
 	if err := row.Scan(
 		&p.ID, &p.SourceID, &p.TargetID, &p.RelationType, &p.Direction,
-		&p.Confidence, &p.Description, &p.Evidence, &lag, &p.PluginID,
+		&p.Confidence, &p.Description, &p.Evidence, &lag, &p.PluginID, &p.Source,
 		&p.Status, &p.CreatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -152,14 +156,58 @@ func (rm *RelationManager) AcceptSuggestionByCandidate(ctx context.Context, sugg
 // shape RelationManager expects. The suggestion's Direction is preserved as-is
 // (typically "forward" because the candidate discovery pipeline always infers
 // forward directionality).
+//
+// Statistical evidence carried in the suggestion's Evidence JSON (produced by
+// the candidate discovery pipeline) is parsed so that p_value, sample_size
+// and lookback_days survive the round-trip through relation_suggestions and
+// reach manual_relations.extension on acceptance.
 func candidateFromSuggestion(suggestion PendingSuggestion) Candidate {
-	return Candidate{
+	c := Candidate{
 		SourceID:     suggestion.SourceID,
 		TargetID:     suggestion.TargetID,
 		RelationType: suggestion.RelationType,
 		Direction:    suggestion.Direction,
 		Confidence:   suggestion.Confidence,
 	}
+
+	// Evidence JSON format written by SaveCandidates / computeCandidates:
+	// {"p_value": .., "sample_size": .., "lookback_days": .., "method": "pearson"}
+	if suggestion.Evidence != "" {
+		var ev struct {
+			PValue       float64 `json:"p_value"`
+			SampleSize   float64 `json:"sample_size"`
+			LookbackDays float64 `json:"lookback_days"`
+		}
+		if err := json.Unmarshal([]byte(suggestion.Evidence), &ev); err == nil {
+			c.PVale = ev.PValue
+			c.Observations = int(ev.SampleSize)
+			c.LookbackDays = int(ev.LookbackDays)
+		}
+	}
+
+	// lag_days derived from the typical_lag duration string stored alongside
+	// the suggestion (Postgres interval rendered as Go duration string).
+	if d, err := time.ParseDuration(suggestion.TypicalLag); err == nil {
+		c.Lag = Duration{d}
+		c.LagDays = int(d.Hours() / 24)
+	}
+
+	// Reconstruct evidence_refs from legacy evidence JSON if present
+	// (saved by computeCandidates as concat fields).
+	if suggestion.Evidence != "" {
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(suggestion.Evidence), &raw); err == nil {
+			if refs, ok := raw["evidence_refs"].([]interface{}); ok {
+				for _, r := range refs {
+					if s, ok := r.(string); ok {
+						c.EvidenceRefs = append(c.EvidenceRefs, s)
+					}
+				}
+			}
+		}
+	}
+
+	return c
 }
 
 // AcceptSuggestion marks a pending suggestion as accepted directly in the

@@ -2,9 +2,17 @@ package ontology
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 )
+
+type candidateResolverFunc func(context.Context, string) (string, bool, error)
+
+func (f candidateResolverFunc) MetricUIDForEntity(ctx context.Context, entityID string) (string, bool, error) {
+	return f(ctx, entityID)
+}
 
 func TestClampWeight(t *testing.T) {
 	cases := []struct {
@@ -21,6 +29,20 @@ func TestClampWeight(t *testing.T) {
 		got := clampWeight(c.input)
 		if got != c.expected {
 			t.Errorf("clampWeight(%v) = %v, want %v", c.input, got, c.expected)
+		}
+	}
+}
+
+func TestCreateRejectsInvalidRelationContractBeforeDatabase(t *testing.T) {
+	rm := NewRelationManager(nil)
+	cases := []RelationInput{
+		{SourceID: "same", TargetID: "same", RelationType: "tracks", Direction: "forward"},
+		{SourceID: "a", TargetID: "b", RelationType: "supplies", Direction: "forward"},
+		{SourceID: "a", TargetID: "b", RelationType: "tracks", Direction: "sideways"},
+	}
+	for _, input := range cases {
+		if _, err := rm.Create(context.Background(), input); err == nil {
+			t.Fatalf("Create(%+v) succeeded, want validation error", input)
 		}
 	}
 }
@@ -81,6 +103,48 @@ func TestCandidateConfig_Defaults(t *testing.T) {
 	}
 	if cfg.MinObservations < 10 {
 		t.Errorf("MinObservations too low: %v", cfg.MinObservations)
+	}
+}
+
+func TestCandidateFinderResolvesEntityIDsToMetricUIDs(t *testing.T) {
+	var fetched []string
+	finder := NewCandidateFinder(nil, CandidateConfig{
+		MinCorrelation:  0.6,
+		MinObservations: 2,
+		MaxLag:          time.Hour,
+		Lookback:        24 * time.Hour,
+	})
+	finder.SetEntityResolver(candidateResolverFunc(func(_ context.Context, entityID string) (string, bool, error) {
+		return "uid_" + entityID, true, nil
+	}))
+	finder.SetAPI(ObservationAPI{Fetch: func(_ context.Context, uid string, _, _ time.Time, _ int) ([]ObservationPoint, error) {
+		fetched = append(fetched, uid)
+		return []ObservationPoint{{Time: time.Unix(1, 0), Value: 1}, {Time: time.Unix(2, 0), Value: 2}}, nil
+	}})
+
+	if _, err := finder.FindBetween(context.Background(), "source", "target"); err != nil {
+		t.Fatalf("FindBetween: %v", err)
+	}
+	if len(fetched) != 2 || fetched[0] != "uid_source" || fetched[1] != "uid_target" {
+		t.Fatalf("fetched metric UIDs = %#v, want uid_source and uid_target", fetched)
+	}
+}
+
+func TestCandidateFinderRejectsEntityWithoutMetric(t *testing.T) {
+	finder := NewCandidateFinder(nil, DefaultCandidateConfig())
+	finder.SetEntityResolver(candidateResolverFunc(func(_ context.Context, entityID string) (string, bool, error) {
+		if entityID == "source" {
+			return "", false, nil
+		}
+		return "uid_" + entityID, true, nil
+	}))
+	finder.SetAPI(ObservationAPI{Fetch: func(context.Context, string, time.Time, time.Time, int) ([]ObservationPoint, error) {
+		return nil, errors.New("fetch must not run")
+	}})
+
+	_, err := finder.FindBetween(context.Background(), "source", "target")
+	if err == nil || !strings.Contains(err.Error(), "no current metric for source entity") {
+		t.Fatalf("error = %v, want missing source metric", err)
 	}
 }
 

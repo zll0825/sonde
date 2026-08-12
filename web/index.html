@@ -248,6 +248,7 @@
         <button class="tab-btn" data-tab="research">Research</button>
         <button class="tab-btn" data-tab="ontology">Ontology</button>
         <button class="tab-btn" data-tab="signal">Signal Quality</button>
+        <button class="tab-btn" data-tab="rules">Rules</button>
     </nav>
 
     <main>
@@ -283,28 +284,31 @@
         <!-- Clusters tab -->
         <div id="clusters-tab" class="tab-content">
             <div class="card">
-                <h2>Event Clusters</h2>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                    <h2 style="margin:0;">Event Clusters</h2>
+                    <button id="btn-refresh-clusters" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;">Refresh Clusters</button>
+                </div>
                 <div id="clusters-list">
-                    <div class="empty">Loading clusters...</div>
+                    <div class="empty">Click "Refresh Clusters" to load.</div>
                 </div>
             </div>
         </div>
 
         <!-- Research tab -->
         <div id="research-tab" class="tab-content">
-            <div class="grid">
-                <div class="card">
-                    <h2>Research Timeline</h2>
-                    <div id="research-list">
-                        <div class="empty">Enter an alert ID to view research context.</div>
+            <div class="card" style="max-width:380px; margin-bottom:1.5rem;">
+                <h2>Load Research</h2>
+                <div style="display:flex; gap:0.5rem; align-items:flex-end;">
+                    <div style="flex:1;">
+                        <label for="research-alert-id" style="font-size:0.72rem; color:#8892b0;">Alert ID</label>
+                        <input type="text" id="research-alert-id" placeholder="e.g. abc123"
+                               style="background:#1a2340; border:1px solid #2a3450; color:#e0e6f0; padding:0.45rem 0.6rem; border-radius:6px; font-size:0.82rem; width:100%; box-sizing:border-box; margin-top:0.25rem;">
                     </div>
+                    <button id="btn-load-research" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.5rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;">Load Research</button>
                 </div>
-                <div class="card">
-                    <h2>Research Detail</h2>
-                    <div id="research-detail">
-                        <div class="empty">Select a research entry to see details.</div>
-                    </div>
-                </div>
+            </div>
+            <div id="research-detail">
+                <div class="empty">Enter an alert ID above and click "Load Research" to view research context.</div>
             </div>
         </div>
 
@@ -325,10 +329,18 @@
                         <label for="ont-relation-type">Relation Type</label>
                         <select id="ont-relation-type" required>
                             <option value="tracks">tracks</option>
+                            <option value="component_of">component_of</option>
+                            <option value="issued_by">issued_by</option>
+                            <option value="belongs_to">belongs_to</option>
                             <option value="hedges">hedges</option>
+                            <option value="competes">competes</option>
+                            <option value="signals">signals</option>
                             <option value="correlates">correlates</option>
-                            <option value="supplies">supplies</option>
-                            <option value="regulates">regulates</option>
+                            <option value="inversely_correlates">inversely_correlates</option>
+                            <option value="leads">leads</option>
+                            <option value="lags">lags</option>
+                            <option value="causes">causes</option>
+                            <option value="depends_on_regime">depends_on_regime</option>
                         </select>
                     </div>
                     <div>
@@ -350,6 +362,17 @@
                     <div class="empty">Loading relations...</div>
                 </div>
             </div>
+            <!-- Discover Candidates card -->
+            <div class="card" style="margin-top:1.5rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                    <h2 style="margin:0;">Discover Candidates</h2>
+                    <button id="btn-discover-candidates" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;">Run Discovery</button>
+                </div>
+                <div id="ontology-candidates-summary" style="font-size:0.78rem; color:#8892b0; margin-bottom:0.5rem;"></div>
+                <div id="ontology-candidates-list">
+                    <div class="empty">Click "Run Discovery" to find new relation candidates.</div>
+                </div>
+            </div>
         </div>
 
         <!-- Signal Quality tab -->
@@ -368,6 +391,20 @@
                     <div id="signal-quality-list">
                         <div class="empty">Enter a metric UID and click Load.</div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rules tab -->
+        <div id="rules-tab" class="tab-content">
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                    <h2 style="margin:0;">Rules</h2>
+                    <button id="btn-refresh-rules" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;">Refresh Rules</button>
+                </div>
+                <div id="rules-summary" style="font-size:0.78rem; color:#8892b0; margin-bottom:0.5rem;"></div>
+                <div id="rules-list">
+                    <div class="empty">Click "Refresh Rules" to load.</div>
                 </div>
             </div>
         </div>
@@ -392,10 +429,10 @@
             if (!isFinite(ms) || ms < 0) return '刚刚';
             const min = Math.floor(ms / 60000);
             if (min < 1) return '1 分钟内';
-            if (min < 60) return `${min} 分钟前`;
+            if (min < 60) return min + ' 分钟前';
             const hr = Math.floor(min / 60);
-            if (hr < 24) return `${hr} 小时前`;
-            return `${Math.floor(hr / 24)} 天前`;
+            if (hr < 24) return hr + ' 小时前';
+            return Math.floor(hr / 24) + ' 天前';
         }
 
         // Compact large numbers (Fed balance sheet ≈ 6.7e12 → 6.74B) and
@@ -414,9 +451,17 @@
             })[c]);
         }
 
+        function mutationHeaders() {
+            const headers = { 'Content-Type': 'application/json' };
+            const tokenInput = document.getElementById('ont-token');
+            const token = tokenInput ? tokenInput.value.trim() : '';
+            if (token) headers.Authorization = 'Bearer ' + token;
+            return headers;
+        }
+
         async function loadAlerts() {
             try {
-                const resp = await fetch(`${API_BASE}/api/alerts`);
+                const resp = await fetch(API_BASE + '/api/alerts');
                 const alerts = await resp.json();
                 alertsList = alerts;
                 renderAlerts(alerts);
@@ -437,17 +482,18 @@
                     ? relativeTime(statusData.latest_data_at)
                     : null;
                 list.innerHTML = rel
-                    ? `<div class="empty">✓ 系统静默运行中 · 最新数据 ${esc(rel)}</div>`
+                    ? '<div class="empty">✓ 系统静默运行中 · 最新数据 ' + esc(rel) + '</div>'
                     : '<div class="empty">✓ 系统静默运行中</div>';
                 return;
             }
-            list.innerHTML = alerts.map(a => `
-                <div class="alert-item ${SEVERITIES.includes(a.severity) ? a.severity : 'info'}" data-alert-id="${esc(a.id)}">
-                    <div class="alert-title">${esc(a.title)}</div>
-                    ${a.summary ? `<div class="alert-summary">${esc(a.summary)}</div>` : ''}
-                    <div class="alert-meta">${esc(a.metric_id)} &middot; ${esc(a.severity)} &middot; ${new Date(a.triggered_at).toLocaleString()}</div>
-                </div>
-            `).join('');
+            list.innerHTML = alerts.map(a => {
+                const sev = SEVERITIES.includes(a.severity) ? a.severity : 'info';
+                return '<div class="alert-item ' + sev + '" data-alert-id="' + esc(a.id) + '">' +
+                    '<div class="alert-title">' + esc(a.title) + '</div>' +
+                    (a.summary ? '<div class="alert-summary">' + esc(a.summary) + '</div>' : '') +
+                    '<div class="alert-meta">' + esc(a.metric_id) + ' &middot; ' + esc(a.severity) + ' &middot; ' + new Date(a.triggered_at).toLocaleString() + '</div>' +
+                    '</div>';
+            }).join('');
             list.querySelectorAll('.alert-item').forEach(el =>
                 el.addEventListener('click', () => showAlertDetail(el.dataset.alertId)));
         }
@@ -457,7 +503,7 @@
             detail.classList.add('active');
 
             try {
-                const resp = await fetch(`${API_BASE}/api/research/${encodeURIComponent(alertID)}`);
+                const resp = await fetch(API_BASE + '/api/research/' + encodeURIComponent(alertID));
                 if (!resp.ok) {
                     document.getElementById('detail-title').textContent = alertID;
                     document.getElementById('detail-summary').textContent = 'Research context not yet available (snapshot is created when alert triggers)';
@@ -466,7 +512,7 @@
                 const rc = await resp.json();
                 document.getElementById('detail-title').textContent = rc.alert_id || alertID;
                 document.getElementById('detail-summary').textContent =
-                    `${rc.metric_name || rc.metric_id} — current: ${rc.current_value ?? 'N/A'}, threshold: ${rc.threshold ?? 'N/A'}`;
+                    (rc.metric_name || rc.metric_id) + ' — current: ' + (rc.current_value ?? 'N/A') + ', threshold: ' + (rc.threshold ?? 'N/A');
 
                 // Render trend chart.
                 if (rc.recent_trend && rc.recent_trend.length > 0) {
@@ -481,7 +527,7 @@
                 const relList = document.getElementById('relations-list');
                 if (rc.relations && rc.relations.length > 0) {
                     relList.innerHTML = rc.relations.map(r =>
-                        `<li>${esc(r.source_id)} &rarr; ${esc(r.target_id)} (${esc(r.relation_type)})</li>`
+                        '<li>' + esc(r.source_id) + ' &rarr; ' + esc(r.target_id) + ' (' + esc(r.relation_type) + ')</li>'
                     ).join('');
                 } else {
                     relList.innerHTML = '<li>None</li>';
@@ -533,8 +579,8 @@
         // computed server-side; the client only maps the string to a color.
         async function fetchStatus() {
             try {
-                const resp = await fetch(`${API_BASE}/api/status`);
-                if (!resp.ok) throw new Error(`status ${resp.status}`);
+                const resp = await fetch(API_BASE + '/api/status');
+                if (!resp.ok) throw new Error('status ' + resp.status);
                 statusData = await resp.json();
                 renderStatus(statusData);
                 // Keep the silent-running empty state's "最新数据 Y 分钟前" fresh
@@ -552,28 +598,28 @@
             const plugins = data.plugins || [];
             const healthy = plugins.filter(p => p.healthy).length;
             const pluginsEl = document.getElementById('sb-plugins');
-            pluginsEl.textContent = `${healthy} 插件在线`;
+            pluginsEl.textContent = healthy + ' 插件在线';
             pluginsEl.title = plugins.map(p =>
-                `${p.name}: ${p.healthy ? '在线' : '离线'} · 最后采集 ${p.last_collect_at ? relativeTime(p.last_collect_at) : '—'} · ${p.last_collect_count} 条`
+                p.name + ': ' + (p.healthy ? '在线' : '离线') + ' · 最后采集 ' + (p.last_collect_at ? relativeTime(p.last_collect_at) : '—') + ' · ' + p.last_collect_count + ' 条'
             ).join('\n');
 
             const metricsEl = document.getElementById('sb-metrics');
-            metricsEl.textContent = `${(data.metrics || []).length} 指标`;
+            metricsEl.textContent = (data.metrics || []).length + ' 指标';
 
             const budget = data.budget || {};
             const today = Number.isFinite(budget.real_today) ? budget.real_today : (budget.today || 0);
             const limit = Number.isFinite(budget.real_limit) ? budget.real_limit : (budget.limit || 10);
             const hasDetailedBudget = Number.isFinite(budget.real_today);
-			const budgetEl = document.getElementById('sb-budget');
-			budgetEl.textContent = hasDetailedBudget
-				? `真实 ${today}/${limit} · 模拟 ${budget.mock_today || 0} · 测试 ${budget.test_today || 0} · 未分类 ${budget.unknown_today || 0}`
-				: `今日告警 ${today}/${limit}`;
-			budgetEl.classList.toggle('warn', today >= 8 && today <= limit);
-			budgetEl.classList.toggle('danger', budget.real_over_budget === true || today > limit);
+            const budgetEl = document.getElementById('sb-budget');
+            budgetEl.textContent = hasDetailedBudget
+                ? '真实 ' + today + '/' + limit + ' · 模拟 ' + (budget.mock_today || 0) + ' · 测试 ' + (budget.test_today || 0) + ' · 未分类 ' + (budget.unknown_today || 0)
+                : '今日告警 ' + today + '/' + limit;
+            budgetEl.classList.toggle('warn', today >= 8 && today <= limit);
+            budgetEl.classList.toggle('danger', budget.real_over_budget === true || today > limit);
 
             const rel = relativeTime(data.latest_data_at);
             document.getElementById('sb-latest').textContent =
-                rel ? `最新数据 ${rel}` : '暂无数据';
+                rel ? '最新数据 ' + rel : '暂无数据';
 
             renderPluginDetail(plugins);
             renderPulseGrid(data.metrics || []);
@@ -601,7 +647,7 @@
                 li.appendChild(name);
                 const meta = document.createElement('span');
                 meta.className = p.healthy ? '' : 'offline';
-                meta.textContent = ` · ${p.healthy ? '在线' : '离线'} · 最后采集 ${p.last_collect_at ? relativeTime(p.last_collect_at) : '—'} · ${p.last_collect_count} 条`;
+                meta.textContent = ' · ' + (p.healthy ? '在线' : '离线') + ' · 最后采集 ' + (p.last_collect_at ? relativeTime(p.last_collect_at) : '—') + ' · ' + p.last_collect_count + ' 条';
                 li.appendChild(meta);
                 ul.appendChild(li);
             }
@@ -632,8 +678,8 @@
             head.className = 'pulse-head';
             const dot = document.createElement('span');
             const freshness = FRESH_CLASSES.includes(m.freshness) ? m.freshness : 'red';
-            dot.className = `pulse-dot ${freshness}`;
-            dot.title = `freshness: ${m.freshness || 'unknown'}`;
+            dot.className = 'pulse-dot ' + freshness;
+            dot.title = 'freshness: ' + (m.freshness || 'unknown');
             const name = document.createElement('span');
             name.className = 'pulse-name';
             name.textContent = m.name || m.metric_id || '—';
@@ -654,7 +700,7 @@
             if (m.unit) {
                 const unit = document.createElement('span');
                 unit.className = 'pulse-unit';
-                unit.textContent = ` ${m.unit}`;
+                unit.textContent = ' ' + m.unit;
                 val.appendChild(unit);
             }
             card.appendChild(val);
@@ -701,7 +747,7 @@
             const pts = series.map((p, i) => {
                 const x = pad + ((xs[i] - xMin) / xSpan) * (100 - 2 * pad);
                 const y = ySpan === 0 ? center : pad + (1 - (ys[i] - yMin) / ySpan) * (28 - 2 * pad);
-                return `${x.toFixed(2)},${y.toFixed(2)}`;
+                return x.toFixed(2) + ',' + y.toFixed(2);
             }).join(' ');
             const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
             poly.setAttribute('points', pts);
@@ -721,49 +767,532 @@
                 // Lazy-load tab content on first activation.
                 if (btn.dataset.tab === 'clusters') loadClusters();
                 if (btn.dataset.tab === 'ontology') loadOntology();
+                if (btn.dataset.tab === 'rules') loadRules();
             });
         });
 
-        // ── Clusters tab ─────────────────────────────────────────────────────
-        let clustersLoaded = false;
+        // ══════════════════════════════════════════════════════════════════════
+        // ── Clusters tab (P1#12) ─────────────────────────────────────────────
+        // ══════════════════════════════════════════════════════════════════════
+
         async function loadClusters() {
-            if (clustersLoaded) return;
-            clustersLoaded = true;
             const list = document.getElementById('clusters-list');
+            const btn = document.getElementById('btn-refresh-clusters');
+            if (btn) btn.disabled = true;
+            list.innerHTML = '<div class="empty">Loading clusters...</div>';
             try {
-                const resp = await fetch(`${API_BASE}/api/clusters/`);
+                const resp = await fetch(API_BASE + '/api/clusters/');
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 const clusters = await resp.json();
-                if (!clusters || clusters.length === 0) {
-                    list.innerHTML = '<div class="empty">No clusters yet. Clusters form when alerts fire within the time window.</div>';
-                    return;
-                }
-                list.innerHTML = `
-                    <table class="data-table">
-                        <thead><tr><th>Entity</th><th>Severity</th><th>Members</th><th>Coalesced</th><th>Priority</th><th>Last Triggered</th></tr></thead>
-                        <tbody>${clusters.map(c => `
-                            <tr>
-                                <td>${esc(c.primary_entity)}</td>
-                                <td>${esc(c.severity)}</td>
-                                <td>${c.member_count}</td>
-                                <td>${c.coalesced ? 'yes' : 'no'}</td>
-                                <td>${c.priority != null ? c.priority.toFixed(1) : '—'}</td>
-                                <td>${c.last_triggered ? new Date(c.last_triggered).toLocaleString() : '—'}</td>
-                            </tr>`).join('')}
-                        </tbody>
-                    </table>`;
+                renderClusters(clusters);
             } catch (err) {
-                list.innerHTML = '<div class="empty">Cannot reach API</div>';
+                list.innerHTML = '<div class="empty">Error: ' + esc(err.message) + '</div>';
+            } finally {
+                if (btn) btn.disabled = false;
             }
         }
 
-        // ── Ontology tab ─────────────────────────────────────────────────────
+        function renderClusters(clusters) {
+            const list = document.getElementById('clusters-list');
+            if (!clusters || clusters.length === 0) {
+                list.innerHTML = '<div class="empty">No clusters yet. Clusters form when alerts fire within the time window.</div>';
+                return;
+            }
+
+            list.textContent = '';
+            const table = document.createElement('table');
+            table.className = 'data-table';
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            ['ID', 'Primary Entity', 'Size', 'Priority', 'Coalesced', ''].forEach(txt => {
+                const th = document.createElement('th');
+                th.textContent = txt;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            for (const c of clusters) {
+                const tr = document.createElement('tr');
+
+                const tdId = document.createElement('td');
+                tdId.textContent = (c.cluster_id || c.id || '').substring(0, 8);
+                tr.appendChild(tdId);
+
+                const tdEntity = document.createElement('td');
+                tdEntity.textContent = c.primary_entity || '—';
+                tr.appendChild(tdEntity);
+
+                const tdSize = document.createElement('td');
+                tdSize.textContent = c.alerts ? c.alerts.length : (c.member_count != null ? c.member_count : '0');
+                tr.appendChild(tdSize);
+
+                const tdPrio = document.createElement('td');
+                tdPrio.textContent = c.priority != null ? Number(c.priority).toFixed(1) : '—';
+                tr.appendChild(tdPrio);
+
+                const tdCoal = document.createElement('td');
+                tdCoal.textContent = c.coalesced ? 'yes' : 'no';
+                tr.appendChild(tdCoal);
+
+                const tdAction = document.createElement('td');
+                const expandBtn = document.createElement('button');
+                expandBtn.textContent = '展开';
+                expandBtn.style.cssText = 'background:#2a3450; color:#64ffda; border:1px solid #64ffda; padding:0.25rem 0.6rem; border-radius:4px; font-size:0.75rem; cursor:pointer;';
+                expandBtn.addEventListener('click', () => toggleClusterDetail(c, tr, expandBtn));
+                tdAction.appendChild(expandBtn);
+                tr.appendChild(tdAction);
+
+                tbody.appendChild(tr);
+            }
+            table.appendChild(tbody);
+            list.appendChild(table);
+        }
+
+        function toggleClusterDetail(cluster, row, btn) {
+            // If detail row already exists, remove it (toggle off).
+            const existing = row.nextElementSibling;
+            if (existing && existing.classList.contains('cluster-detail-row')) {
+                existing.remove();
+                btn.textContent = '展开';
+                return;
+            }
+
+            const detailTr = document.createElement('tr');
+            detailTr.className = 'cluster-detail-row';
+            const detailTd = document.createElement('td');
+            detailTd.colSpan = 6;
+            detailTd.style.cssText = 'background:#0d1220; padding:1rem;';
+
+            const panel = document.createElement('div');
+            panel.style.cssText = 'font-size:0.8rem;';
+
+            // ── Alerts list
+            const hAlerts = document.createElement('h4');
+            hAlerts.style.cssText = 'color:#64ffda; margin-bottom:0.4rem;';
+            const alertIDs = cluster.merged_alert_ids || [];
+            hAlerts.textContent = 'Alerts (' + alertIDs.length + ')';
+            panel.appendChild(hAlerts);
+
+            if (alertIDs.length > 0) {
+                const ulAlerts = document.createElement('ul');
+                ulAlerts.style.cssText = 'list-style:none; margin-bottom:0.8rem;';
+                for (const alertID of alertIDs) {
+                    const li = document.createElement('li');
+                    li.style.cssText = 'padding:0.2rem 0;';
+                    li.textContent = alertID;
+                    ulAlerts.appendChild(li);
+                }
+                panel.appendChild(ulAlerts);
+            } else {
+                const pNone = document.createElement('p');
+                pNone.style.cssText = 'color:#4a5570; font-size:0.75rem; margin-bottom:0.8rem;';
+                pNone.textContent = 'No alerts in this cluster.';
+                panel.appendChild(pNone);
+            }
+
+            // ── Merge trail
+            const hMerge = document.createElement('h4');
+            hMerge.style.cssText = 'color:#64ffda; margin-bottom:0.4rem;';
+            hMerge.textContent = 'Merge Trail';
+            panel.appendChild(hMerge);
+
+            const mergeEntries = cluster.merge_trail && Array.isArray(cluster.merge_trail.entries)
+                ? cluster.merge_trail.entries : [];
+            if (mergeEntries.length > 0) {
+                const ulMerge = document.createElement('ul');
+                ulMerge.style.cssText = 'list-style:none; margin-bottom:0.8rem;';
+                for (const m of mergeEntries) {
+                    const li = document.createElement('li');
+                    li.style.cssText = 'padding:0.2rem 0;';
+                    li.textContent = (m.alert_id || '—') + ' · ' + (m.metric_id || '—') + ' · ' + (m.reason || '—');
+                    ulMerge.appendChild(li);
+                }
+                panel.appendChild(ulMerge);
+            } else {
+                const pMerge = document.createElement('p');
+                pMerge.style.cssText = 'color:#4a5570; font-size:0.75rem; margin-bottom:0.8rem;';
+                pMerge.textContent = '详细合并记录暂不可用';
+                panel.appendChild(pMerge);
+            }
+
+            // ── Raw JSON (collapsible)
+            const hJson = document.createElement('h4');
+            hJson.style.cssText = 'color:#64ffda; margin-bottom:0.4rem; cursor:pointer;';
+            hJson.textContent = '▸ Raw JSON (debug)';
+            panel.appendChild(hJson);
+
+            const preJson = document.createElement('pre');
+            preJson.style.cssText = 'display:none; background:#131a2e; border:1px solid #1a2340; border-radius:6px; padding:0.75rem; max-height:240px; overflow:auto; font-size:0.7rem; color:#a8b2d1; margin-top:0.4rem;';
+            preJson.textContent = JSON.stringify(cluster, null, 2);
+            panel.appendChild(preJson);
+
+            hJson.addEventListener('click', () => {
+                const isOpen = preJson.style.display !== 'none';
+                preJson.style.display = isOpen ? 'none' : 'block';
+                hJson.textContent = (isOpen ? '▸' : '▾') + ' Raw JSON (debug)';
+            });
+
+            detailTd.appendChild(panel);
+            detailTr.appendChild(detailTd);
+            row.after(detailTr);
+            btn.textContent = '收起';
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // ── Research tab (P1#11) ─────────────────────────────────────────────
+        // ══════════════════════════════════════════════════════════════════════
+
+        let researchChart = null;
+
+        async function loadResearch() {
+            const alertIDInput = document.getElementById('research-alert-id');
+            const alertID = alertIDInput.value.trim();
+            if (!alertID) {
+                alert('Please enter an alert ID');
+                return;
+            }
+            const detail = document.getElementById('research-detail');
+            const btn = document.getElementById('btn-load-research');
+            btn.disabled = true;
+            btn.textContent = 'Loading...';
+            detail.innerHTML = '<div class="empty">Loading research data...</div>';
+            try {
+                const resp = await fetch(API_BASE + '/api/research/' + encodeURIComponent(alertID));
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const rc = await resp.json();
+                renderResearchDetail(rc);
+            } catch (err) {
+                detail.innerHTML = '<div class="empty">Error: ' + esc(err.message) + '</div>';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Load Research';
+            }
+        }
+
+        function renderResearchDetail(rc) {
+            const detail = document.getElementById('research-detail');
+            const sections = [];
+
+            // ── Detail card (always shown)
+            const detailCard = document.createElement('div');
+            detailCard.className = 'card';
+            detailCard.style.cssText = 'margin-bottom:1.5rem;';
+
+            const dTitle = document.createElement('h3');
+            dTitle.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.95rem;';
+            dTitle.textContent = rc.alert_id || '—';
+            detailCard.appendChild(dTitle);
+
+            if (rc.metric_name) {
+                const pMetric = document.createElement('p');
+                pMetric.style.cssText = 'font-size:0.82rem; color:#a8b2d1;';
+                pMetric.textContent = 'Metric: ' + rc.metric_name;
+                detailCard.appendChild(pMetric);
+            }
+            if (rc.metric_id && rc.metric_id !== rc.metric_name) {
+                const pMid = document.createElement('p');
+                pMid.style.cssText = 'font-size:0.78rem; color:#8892b0;';
+                pMid.textContent = 'Metric ID: ' + rc.metric_id;
+                detailCard.appendChild(pMid);
+            }
+            if (rc.research_question) {
+                const pQ = document.createElement('p');
+                pQ.style.cssText = 'font-size:0.82rem; color:#e0e6f0; margin-top:0.5rem;';
+                pQ.textContent = rc.research_question;
+                detailCard.appendChild(pQ);
+            }
+            const severitySpan = document.createElement('span');
+            severitySpan.className = 'status-pill';
+            severitySpan.style.cssText = 'margin-top:0.5rem; display:inline-block;';
+            severitySpan.textContent = rc.severity || '—';
+            detailCard.appendChild(severitySpan);
+
+            sections.push(detailCard);
+
+            // ── Timeline chart
+            if (rc.recent_trend && rc.recent_trend.length > 0) {
+                const timelineCard = document.createElement('div');
+                timelineCard.className = 'card';
+                timelineCard.style.cssText = 'margin-bottom:1.5rem;';
+                const hTimeline = document.createElement('h3');
+                hTimeline.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.9rem;';
+                hTimeline.textContent = 'Timeline (recent_trend)';
+                timelineCard.appendChild(hTimeline);
+                const chartDiv = document.createElement('div');
+                chartDiv.style.cssText = 'width:100%; height:250px;';
+                timelineCard.appendChild(chartDiv);
+                sections.push(timelineCard);
+                // Render chart after DOM insertion
+                setTimeout(() => renderResearchTrend(rc.recent_trend, chartDiv), 0);
+            }
+
+            // ── Overlays (mini sparklines)
+            if (rc.overlays && rc.overlays.length > 0) {
+                const overlayCard = document.createElement('div');
+                overlayCard.className = 'card';
+                overlayCard.style.cssText = 'margin-bottom:1.5rem;';
+                const hOverlay = document.createElement('h3');
+                hOverlay.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.9rem;';
+                hOverlay.textContent = 'Overlays (' + rc.overlays.length + ')';
+                overlayCard.appendChild(hOverlay);
+
+                const overlayGrid = document.createElement('div');
+                overlayGrid.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:0.75rem;';
+
+                for (const ov of rc.overlays) {
+                    const ovCard = document.createElement('div');
+                    ovCard.style.cssText = 'background:#0d1220; border:1px solid #1a2340; border-radius:8px; padding:0.6rem;';
+
+                    const ovTitle = document.createElement('div');
+                    ovTitle.style.cssText = 'font-size:0.78rem; font-weight:600; color:#e0e6f0;';
+                    ovTitle.textContent = ov.entity_name || ov.entity_id || '—';
+                    ovCard.appendChild(ovTitle);
+
+                    const ovSub = document.createElement('div');
+                    ovSub.style.cssText = 'font-size:0.7rem; color:#8892b0; margin-bottom:0.3rem;';
+                    const r = ov.correlation != null ? Number(ov.correlation).toFixed(3) : '—';
+                    const n = ov.sample_size != null ? ov.sample_size : '—';
+                    ovSub.textContent = 'r=' + r + ' · n=' + n;
+                    ovCard.appendChild(ovSub);
+
+                    if (ov.series && ov.series.length > 0) {
+                        ovCard.appendChild(buildResearchSparkline(ov.series));
+                    }
+
+                    overlayGrid.appendChild(ovCard);
+                }
+                overlayCard.appendChild(overlayGrid);
+                sections.push(overlayCard);
+            }
+
+            // ── Relations
+            if (rc.relations && rc.relations.length > 0) {
+                const relCard = document.createElement('div');
+                relCard.className = 'card';
+                relCard.style.cssText = 'margin-bottom:1.5rem;';
+                const hRel = document.createElement('h3');
+                hRel.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.9rem;';
+                hRel.textContent = 'Relations';
+                relCard.appendChild(hRel);
+                const ulRel = document.createElement('ul');
+                ulRel.style.cssText = 'list-style:none; font-size:0.8rem;';
+                for (const r of rc.relations) {
+                    const li = document.createElement('li');
+                    li.style.cssText = 'padding:0.2rem 0;';
+                    li.textContent = (r.source_id || r.source || '—') + ' → ' + (r.target_id || r.target || '—') + ' · ' + (r.relation_type || '—');
+                    ulRel.appendChild(li);
+                }
+                relCard.appendChild(ulRel);
+                sections.push(relCard);
+            }
+
+            // ── Provenance
+            if (rc.provenance) {
+                const provCard = document.createElement('div');
+                provCard.className = 'card';
+                provCard.style.cssText = 'margin-bottom:1.5rem;';
+                const hProv = document.createElement('h3');
+                hProv.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.9rem;';
+                hProv.textContent = 'Provenance';
+                provCard.appendChild(hProv);
+                const pProv = document.createElement('p');
+                pProv.style.cssText = 'font-size:0.8rem; color:#a8b2d1; white-space:pre-wrap;';
+                pProv.textContent = typeof rc.provenance === 'string' ? rc.provenance : (rc.provenance.evidence || rc_provenanceSummary(rc.provenance) || JSON.stringify(rc.provenance));
+                provCard.appendChild(pProv);
+                sections.push(provCard);
+            }
+
+            // ── Historical analogs
+            if (rc.historical_analogs && rc.historical_analogs.length > 0) {
+                const analogCard = document.createElement('div');
+                analogCard.className = 'card';
+                analogCard.style.cssText = 'margin-bottom:1.5rem;';
+                const hAnalog = document.createElement('h3');
+                hAnalog.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.9rem;';
+                hAnalog.textContent = 'Historical Analogs';
+                analogCard.appendChild(hAnalog);
+                const ulAnalog = document.createElement('ul');
+                ulAnalog.style.cssText = 'list-style:none; font-size:0.8rem;';
+                for (const a of rc.historical_analogs) {
+                    const li = document.createElement('li');
+                    li.style.cssText = 'padding:0.25rem 0;';
+                    const year = a.year || a.date || '';
+                    const event = a.title || a.event || a.name || '';
+                    const relevance = a.relevance != null ? Number(a.relevance).toFixed(2) : '';
+                    li.textContent = (year ? year + ' — ' : '') + event + (relevance ? ' · 相关度 ' + relevance : '') + (a.source ? ' · ' + a.source : '');
+                    ulAnalog.appendChild(li);
+                }
+                analogCard.appendChild(ulAnalog);
+                sections.push(analogCard);
+            }
+
+            // ── Verdict buttons + rationale
+            const verdictCard = document.createElement('div');
+            verdictCard.className = 'card';
+            verdictCard.style.cssText = 'margin-bottom:1.5rem;';
+            const hVerdict = document.createElement('h3');
+            hVerdict.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.9rem;';
+            hVerdict.textContent = 'Research Feedback';
+            verdictCard.appendChild(hVerdict);
+
+            const labelRationale = document.createElement('label');
+            labelRationale.style.cssText = 'font-size:0.72rem; color:#8892b0;';
+            labelRationale.textContent = 'Rationale (optional)';
+            verdictCard.appendChild(labelRationale);
+
+            const taRationale = document.createElement('textarea');
+            taRationale.style.cssText = 'background:#1a2340; border:1px solid #2a3450; color:#e0e6f0; padding:0.45rem 0.6rem; border-radius:6px; font-size:0.82rem; width:100%; box-sizing:border-box; margin-top:0.25rem; min-height:60px; resize:vertical;';
+            taRationale.placeholder = 'Notes, context, why this verdict...';
+            verdictCard.appendChild(taRationale);
+
+            const btnRow = document.createElement('div');
+            btnRow.style.cssText = 'display:flex; gap:0.5rem; margin-top:0.75rem;';
+
+            const btnWorth = document.createElement('button');
+            btnWorth.textContent = '★ Worth Researching';
+            btnWorth.style.cssText = 'background:#2dd4a7; color:#0a0e1a; border:none; padding:0.5rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;';
+
+            const btnIrrelevant = document.createElement('button');
+            btnIrrelevant.textContent = '✗ Irrelevant';
+            btnIrrelevant.style.cssText = 'background:#f59e0b; color:#0a0e1a; border:none; padding:0.5rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;';
+
+            const btnDup = document.createElement('button');
+            btnDup.textContent = '≈ Duplicate';
+            btnDup.style.cssText = 'background:#3b82f6; color:#fff; border:none; padding:0.5rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;';
+
+            const statusP = document.createElement('p');
+            statusP.style.cssText = 'font-size:0.75rem; color:#8892b0; margin-top:0.5rem; display:none;';
+
+            async function submitVerdict(verdict) {
+                const rationale = taRationale.value.trim();
+                btnWorth.disabled = true;
+                btnIrrelevant.disabled = true;
+                btnDup.disabled = true;
+                statusP.style.display = 'block';
+                statusP.textContent = 'Submitting...';
+                try {
+                    const resp = await fetch(API_BASE + '/api/research/' + encodeURIComponent(rc.alert_id) + '/feedback', {
+                        method: 'POST',
+                        headers: mutationHeaders(),
+                        body: JSON.stringify({ verdict, rationale })
+                    });
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    statusP.textContent = '✓ Feedback submitted: ' + verdict;
+                    statusP.style.color = '#2dd4a7';
+                } catch (err) {
+                    statusP.textContent = 'Error: ' + err.message;
+                    statusP.style.color = '#e85a5a';
+                } finally {
+                    btnWorth.disabled = false;
+                    btnIrrelevant.disabled = false;
+                    btnDup.disabled = false;
+                }
+            }
+
+            btnWorth.addEventListener('click', () => submitVerdict('worth_researching'));
+            btnIrrelevant.addEventListener('click', () => submitVerdict('irrelevant'));
+            btnDup.addEventListener('click', () => submitVerdict('duplicate'));
+
+            btnRow.appendChild(btnWorth);
+            btnRow.appendChild(btnIrrelevant);
+            btnRow.appendChild(btnDup);
+            verdictCard.appendChild(btnRow);
+            verdictCard.appendChild(statusP);
+            sections.push(verdictCard);
+
+            // ── Render
+            detail.textContent = '';
+            for (const sec of sections) detail.appendChild(sec);
+        }
+
+        function rc_provenanceSummary(prov) {
+            if (typeof prov === 'string') return prov;
+            if (prov.evidence) return prov.evidence;
+            if (prov.sources && prov.sources.length > 0) return prov.sources.join('; ');
+            return null;
+        }
+
+        function renderResearchTrend(points, el) {
+            if (researchChart) { researchChart.dispose(); researchChart = null; }
+            el.innerHTML = '';
+            researchChart = echarts.init(el);
+            researchChart.setOption({
+                backgroundColor: 'transparent',
+                grid: { top: 20, right: 20, bottom: 30, left: 50 },
+                xAxis: {
+                    type: 'time',
+                    axisLine: { lineStyle: { color: '#2a3450' } },
+                    axisLabel: { color: '#8892b0', fontSize: 10 }
+                },
+                yAxis: {
+                    type: 'value',
+                    axisLine: { lineStyle: { color: '#2a3450' } },
+                    axisLabel: { color: '#8892b0', fontSize: 10 },
+                    splitLine: { lineStyle: { color: '#1a2340' } }
+                },
+                tooltip: { trigger: 'axis' },
+                series: [{
+                    type: 'line',
+                    data: points.map(p => [new Date(p.time), p.value]),
+                    smooth: true,
+                    lineStyle: { color: '#64ffda', width: 2 },
+                    areaStyle: { color: 'rgba(100,255,218,0.1)' },
+                    symbol: 'circle',
+                    symbolSize: 4
+                }]
+            });
+        }
+
+        function buildResearchSparkline(series) {
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('viewBox', '0 0 160 32');
+            svg.setAttribute('preserveAspectRatio', 'none');
+            svg.style.cssText = 'width:100%; height:32px; display:block;';
+
+            if (!series || series.length < 2) {
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', '2'); line.setAttribute('y1', '16');
+                line.setAttribute('x2', '158'); line.setAttribute('y2', '16');
+                line.setAttribute('stroke', '#2a3450'); line.setAttribute('stroke-width', '1');
+                line.setAttribute('stroke-dasharray', '4 3');
+                svg.appendChild(line);
+                return svg;
+            }
+
+            const ys = series.map(p => typeof p === 'number' ? p : (p.v != null ? p.v : p.value));
+            const yMin = Math.min(...ys);
+            const yMax = Math.max(...ys);
+            const ySpan = yMax - yMin || 1;
+            const pad = 3;
+            const pts = ys.map((v, i) => {
+                const x = pad + (i / (ys.length - 1)) * (156);
+                const y = pad + (1 - (v - yMin) / ySpan) * (32 - 2 * pad);
+                return x.toFixed(1) + ',' + y.toFixed(1);
+            }).join(' ');
+
+            const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+            poly.setAttribute('points', pts);
+            poly.setAttribute('fill', 'none');
+            poly.setAttribute('stroke', '#64ffda');
+            poly.setAttribute('stroke-width', '1.5');
+            svg.appendChild(poly);
+            return svg;
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // ── Ontology tab (P1#13 — candidate discovery/review) ─────────────────
+        // ══════════════════════════════════════════════════════════════════════
+
         let ontologyLoaded = false;
+
         async function loadOntology() {
             const list = document.getElementById('ontology-list');
             if (!ontologyLoaded) {
                 ontologyLoaded = true;
                 try {
-                    const resp = await fetch(`${API_BASE}/api/ontology/relations/`);
+                    const resp = await fetch(API_BASE + '/api/ontology/relations/');
                     const rels = await resp.json();
                     renderOntologyTable(rels);
                 } catch (err) {
@@ -778,20 +1307,226 @@
                 list.innerHTML = '<div class="empty">No relations defined. Use the form above to add one.</div>';
                 return;
             }
-            list.innerHTML = `
-                <table class="data-table">
-                    <thead><tr><th>Relation ID</th><th>Source</th><th>Target</th><th>Type</th><th>Direction</th><th>Created</th></tr></thead>
-                    <tbody>${rels.map(r => `
-                        <tr>
-                            <td>${esc(r.relation_id)}</td>
-                            <td>${esc(r.source_id)}</td>
-                            <td>${esc(r.target_id)}</td>
-                            <td>${esc(r.relation_type)}</td>
-                            <td>${esc(r.direction)}</td>
-                            <td>${r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</td>
-                        </tr>`).join('')}
-                    </tbody>
-                </table>`;
+            list.innerHTML = '';
+            const table = document.createElement('table');
+            table.className = 'data-table';
+            const thead = document.createElement('thead');
+            const hRow = document.createElement('tr');
+            ['Relation ID', 'Source', 'Target', 'Type', 'Direction', 'Created'].forEach(txt => {
+                const th = document.createElement('th');
+                th.textContent = txt;
+                hRow.appendChild(th);
+            });
+            thead.appendChild(hRow);
+            table.appendChild(thead);
+            const tbody = document.createElement('tbody');
+            for (const r of rels) {
+                const tr = document.createElement('tr');
+                const cells = [
+                    (r.relation_id || '').substring(0, 12),
+                    r.source_id || '—',
+                    r.target_id || '—',
+                    r.relation_type || '—',
+                    r.direction || '—',
+                    r.created_at ? new Date(r.created_at).toLocaleString() : '—'
+                ];
+                for (const c of cells) {
+                    const td = document.createElement('td');
+                    td.textContent = c;
+                    tr.appendChild(td);
+                }
+                tbody.appendChild(tr);
+            }
+            table.appendChild(tbody);
+            list.appendChild(table);
+        }
+
+        async function discoverCandidates() {
+            const container = document.getElementById('ontology-candidates-list');
+            const summary = document.getElementById('ontology-candidates-summary');
+            const btn = document.getElementById('btn-discover-candidates');
+            btn.disabled = true;
+            btn.textContent = 'Running...';
+            container.innerHTML = '<div class="empty">Discovering candidates...</div>';
+            try {
+                // Try POST first; if 404/405, fall back to GET.
+                let candidates = null;
+                let updatedAt = null;
+                try {
+                    const res = await fetch(API_BASE + '/api/ontology/discover', { method: 'POST', headers: mutationHeaders(), body: JSON.stringify({}) });
+                    if (res.ok) {
+                        const data = await res.json();
+                        candidates = data.candidates || data;
+                        updatedAt = data.updated_at || data.discovered_at;
+                    }
+                } catch (e) { /* ignore */ }
+
+                if (!candidates) {
+                    const res2 = await fetch(API_BASE + '/api/ontology/candidates?pending=true');
+                    if (res2.ok) {
+                        const data2 = await res2.json();
+                        candidates = data2.candidates || data2;
+                        updatedAt = data2.updated_at || updatedAt;
+                    }
+                }
+
+                if (!candidates) {
+                    // Last resort: try GET without query param
+                    const res3 = await fetch(API_BASE + '/api/ontology/candidates');
+                    if (res3.ok) {
+                        const data3 = await res3.json();
+                        candidates = data3.candidates || (Array.isArray(data3) ? data3 : null);
+                        updatedAt = data3.updated_at || updatedAt;
+                    }
+                }
+
+                renderCandidates(candidates || [], updatedAt);
+            } catch (err) {
+                container.innerHTML = '<div class="empty">Error: ' + esc(err.message) + '</div>';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Run Discovery';
+            }
+        }
+
+        function renderCandidates(candidates, updatedAt) {
+            const container = document.getElementById('ontology-candidates-list');
+            const summary = document.getElementById('ontology-candidates-summary');
+
+            if (updatedAt) {
+                summary.textContent = 'Update at: ' + new Date(updatedAt).toLocaleString();
+            } else {
+                summary.textContent = '';
+            }
+
+            if (!candidates || candidates.length === 0) {
+                container.innerHTML = '<div class="empty">No pending candidates</div>';
+                return;
+            }
+
+            container.textContent = '';
+            const info = document.createElement('p');
+            info.style.cssText = 'font-size:0.78rem; color:#8892b0; margin-bottom:0.5rem;';
+            info.textContent = candidates.length + ' candidate(s) pending review';
+            container.appendChild(info);
+
+            const table = document.createElement('table');
+            table.className = 'data-table';
+            const thead = document.createElement('thead');
+            const hRow = document.createElement('tr');
+            ['Source', 'Target', 'Relation Type', 'Direction', 'Confidence', 'P-Value', 'Sample', 'Lookback', 'Actions'].forEach(txt => {
+                const th = document.createElement('th');
+                th.textContent = txt;
+                hRow.appendChild(th);
+            });
+            thead.appendChild(hRow);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            for (const c of candidates) {
+                const tr = document.createElement('tr');
+                const id = c.id || c.candidate_id || '';
+
+                // Source
+                const tdSrc = document.createElement('td');
+                tdSrc.textContent = c.source_id || c.source || '—';
+                tr.appendChild(tdSrc);
+
+                // Target
+                const tdTgt = document.createElement('td');
+                tdTgt.textContent = c.target_id || c.target || '—';
+                tr.appendChild(tdTgt);
+
+                // Relation Type
+                const tdType = document.createElement('td');
+                tdType.textContent = c.relation_type || c.relation || '—';
+                tr.appendChild(tdType);
+
+                // Direction
+                const tdDir = document.createElement('td');
+                tdDir.textContent = c.direction || '—';
+                tr.appendChild(tdDir);
+
+                // Confidence (progress bar)
+                const tdConf = document.createElement('td');
+                const confVal = c.confidence != null ? Number(c.confidence) : 0;
+                const confPct = Math.max(0, Math.min(100, confVal * 100));
+                const barWrap = document.createElement('div');
+                barWrap.style.cssText = 'width:80px; height:8px; background:#1a2340; border-radius:4px; overflow:hidden;';
+                const barFill = document.createElement('div');
+                const barColor = confPct >= 70 ? '#2dd4a7' : confPct >= 40 ? '#e8c34a' : '#e85a5a';
+                barFill.style.cssText = 'width:' + confPct + '%; height:100%; background:' + barColor + ';';
+                barWrap.appendChild(barFill);
+                tdConf.appendChild(barWrap);
+                tr.appendChild(tdConf);
+
+                // P-Value (scientific notation)
+                const tdPVal = document.createElement('td');
+                if (c.p_value != null && typeof c.p_value === 'number') {
+                    tdPVal.textContent = c.p_value.toExponential(2);
+                } else {
+                    tdPVal.textContent = '—';
+                }
+                tdPVal.style.fontSize = '0.72rem';
+                tr.appendChild(tdPVal);
+
+                // Sample Size
+                const tdSample = document.createElement('td');
+                tdSample.textContent = c.sample_size != null ? c.sample_size : (c.n != null ? c.n : '—');
+                tr.appendChild(tdSample);
+
+                // Lookback Days
+                const tdLookback = document.createElement('td');
+                tdLookback.textContent = c.lookback_days != null ? c.lookback_days + 'd' : (c.lookback != null ? c.lookback : '—');
+                tr.appendChild(tdLookback);
+
+                // Actions
+                const tdActions = document.createElement('td');
+                tdActions.style.cssText = 'white-space:nowrap;';
+
+                const btnAccept = document.createElement('button');
+                btnAccept.textContent = 'Accept';
+                btnAccept.style.cssText = 'background:#2dd4a7; color:#0a0e1a; border:none; padding:0.25rem 0.5rem; border-radius:4px; font-size:0.7rem; font-weight:600; cursor:pointer; margin-right:0.3rem;';
+
+                const btnReject = document.createElement('button');
+                btnReject.textContent = 'Reject';
+                btnReject.style.cssText = 'background:#e85a5a; color:#fff; border:none; padding:0.25rem 0.5rem; border-radius:4px; font-size:0.7rem; font-weight:600; cursor:pointer;';
+
+                btnAccept.addEventListener('click', () => submitCandidateVerdict(id, 'accept', tr, btnAccept, btnReject));
+                btnReject.addEventListener('click', () => submitCandidateVerdict(id, 'reject', tr, btnAccept, btnReject));
+
+                tdActions.appendChild(btnAccept);
+                tdActions.appendChild(btnReject);
+                tr.appendChild(tdActions);
+
+                tbody.appendChild(tr);
+            }
+            table.appendChild(tbody);
+            container.appendChild(table);
+        }
+
+        async function submitCandidateVerdict(candidateId, verdict, row, btnAccept, btnReject) {
+            btnAccept.disabled = true;
+            btnReject.disabled = true;
+            let reason = null;
+            if (verdict === 'reject') {
+                reason = prompt('Reason for rejection (optional):') || '';
+            }
+            try {
+                const resp = await fetch(API_BASE + '/api/ontology/candidates/' + encodeURIComponent(candidateId) + '/' + verdict, {
+                    method: 'POST',
+                    headers: mutationHeaders(),
+                    body: JSON.stringify(reason ? { reason } : {})
+                });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                row.style.transition = 'opacity 0.3s';
+                row.style.opacity = '0';
+                setTimeout(() => row.remove(), 300);
+            } catch (err) {
+                alert('Error: ' + err.message);
+                btnAccept.disabled = false;
+                btnReject.disabled = false;
+            }
         }
 
         document.getElementById('ontology-form').addEventListener('submit', async (e) => {
@@ -800,15 +1535,12 @@
             const targetID = document.getElementById('ont-target-id').value.trim();
             const relationType = document.getElementById('ont-relation-type').value;
             const direction = document.getElementById('ont-direction').value;
-            const token = document.getElementById('ont-token').value.trim();
+            const tokenInput = document.getElementById('ont-token');
+            const token = tokenInput.value.trim();
             try {
-                const headers = { 'Content-Type': 'application/json' };
-                if (token) {
-                    headers['Authorization'] = 'Bearer ' + token;
-                }
-                const resp = await fetch(`${API_BASE}/api/ontology/relations/`, {
+                const resp = await fetch(API_BASE + '/api/ontology/relations/', {
                     method: 'POST',
-                    headers,
+                    headers: mutationHeaders(),
                     body: JSON.stringify({
                         source_id: sourceID,
                         target_id: targetID,
@@ -822,6 +1554,7 @@
                     return;
                 }
                 document.getElementById('ontology-form').reset();
+                tokenInput.value = token;
                 ontologyLoaded = false;
                 await loadOntology();
             } catch (err) {
@@ -829,31 +1562,236 @@
             }
         });
 
-        // ── Research tab (quick lookup) ──────────────────────────────────────
-        async function lookupResearch() {
-            const alertID = prompt('Enter alert ID:');
-            if (!alertID) return;
-            const detail = document.getElementById('research-detail');
-            detail.innerHTML = '<div class="empty">Loading...</div>';
+        // ══════════════════════════════════════════════════════════════════════
+        // ── Rules tab (P1#14) ────────────────────────────────────────────────
+        // ══════════════════════════════════════════════════════════════════════
+
+        async function loadRules() {
+            const list = document.getElementById('rules-list');
+            const summary = document.getElementById('rules-summary');
+            const btn = document.getElementById('btn-refresh-rules');
+            btn.disabled = true;
+            btn.textContent = 'Loading...';
+            list.innerHTML = '<div class="empty">Loading rules...</div>';
             try {
-                const resp = await fetch(`${API_BASE}/api/research/${encodeURIComponent(alertID)}`);
-                if (!resp.ok) {
-                    detail.innerHTML = '<div class="empty">Research not found for this alert.</div>';
-                    return;
-                }
-                const rc = await resp.json();
-                detail.innerHTML = `<p style="font-weight:600; margin-bottom:0.5rem;">${esc(rc.alert_id)}</p>
-                    <p style="font-size:0.85rem; color:#8892b0;">${esc(rc.metric_name || rc.metric_id)} — current: ${rc.current_value ?? 'N/A'}, threshold: ${rc.threshold ?? 'N/A'}</p>`;
+                const resp = await fetch(API_BASE + '/api/rules');
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const rules = await resp.json();
+                const arr = Array.isArray(rules) ? rules : (rules.rules || []);
+                renderRules(arr);
             } catch (err) {
-                detail.innerHTML = '<div class="empty">Error loading research.</div>';
+                list.innerHTML = '<div class="empty">Error: ' + esc(err.message) + '</div>';
+                summary.textContent = '';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Refresh Rules';
             }
         }
 
-        // Add a lookup button to the research tab
-        document.getElementById('research-list').innerHTML = `
-            <div class="empty" style="margin-bottom:1rem;">Enter an alert ID to view its research context.</div>
-            <button onclick="lookupResearch()" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;">Lookup Alert</button>
-        `;
+        function renderRules(rules) {
+            const list = document.getElementById('rules-list');
+            const summary = document.getElementById('rules-summary');
+
+            const active = rules.filter(r => r.enabled !== false).length;
+            const disabled = rules.length - active;
+            summary.textContent = active + ' active · ' + disabled + ' disabled';
+
+            if (!rules || rules.length === 0) {
+                list.innerHTML = '<div class="empty">No rules found.</div>';
+                return;
+            }
+
+            list.textContent = '';
+            const table = document.createElement('table');
+            table.className = 'data-table';
+            const thead = document.createElement('thead');
+            const hRow = document.createElement('tr');
+            ['ID', 'Name / Slug', 'Scope', 'Enabled', 'Confidence Threshold', 'Source Entity', 'Target Entity', 'Actions'].forEach(txt => {
+                const th = document.createElement('th');
+                th.textContent = txt;
+                hRow.appendChild(th);
+            });
+            thead.appendChild(hRow);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            for (const rule of rules) {
+                const tr = document.createElement('tr');
+                const id = rule.id || rule.rule_id || '';
+
+                // ID
+                const tdId = document.createElement('td');
+                tdId.textContent = String(id).substring(0, 10);
+                tr.appendChild(tdId);
+
+                // Name / Slug
+                const tdName = document.createElement('td');
+                tdName.textContent = rule.name || rule.slug || rule.rule_name || '—';
+                tr.appendChild(tdName);
+
+                // Scope
+                const tdScope = document.createElement('td');
+                tdScope.textContent = rule.scope || '—';
+                tr.appendChild(tdScope);
+
+                // Enabled dot
+                const tdEnabled = document.createElement('td');
+                const enabled = rule.enabled !== false;
+                const dot = document.createElement('span');
+                dot.style.cssText = 'display:inline-block; width:10px; height:10px; border-radius:50%; background:' + (enabled ? '#2dd4a7' : '#e85a5a') + ';';
+                tdEnabled.appendChild(dot);
+                tr.appendChild(tdEnabled);
+
+                // Confidence Threshold
+                const tdConf = document.createElement('td');
+                tdConf.textContent = rule.confidence_threshold != null ? Number(rule.confidence_threshold).toFixed(2) : '—';
+                tr.appendChild(tdConf);
+
+                // Source Entity
+                const tdSrc = document.createElement('td');
+                tdSrc.textContent = rule.source_entity || rule.source || '—';
+                tr.appendChild(tdSrc);
+
+                // Target Entity
+                const tdTgt = document.createElement('td');
+                tdTgt.textContent = rule.target_entity || rule.target || '—';
+                tr.appendChild(tdTgt);
+
+                // Actions
+                const tdActions = document.createElement('td');
+                tdActions.style.cssText = 'white-space:nowrap;';
+
+                // Toggle
+                const toggleLabel = document.createElement('label');
+                toggleLabel.style.cssText = 'display:inline-flex; align-items:center; gap:0.3rem; cursor:pointer; margin-right:0.5rem; font-size:0.75rem;';
+                const toggleInput = document.createElement('input');
+                toggleInput.type = 'checkbox';
+                toggleInput.checked = enabled;
+                toggleInput.addEventListener('change', () => toggleRule(id, toggleInput.checked, toggleInput));
+                toggleLabel.appendChild(toggleInput);
+                const toggleTxt = document.createElement('span');
+                toggleTxt.textContent = enabled ? 'on' : 'off';
+                toggleLabel.appendChild(toggleTxt);
+                tdActions.appendChild(toggleLabel);
+
+                // History button
+                const btnHistory = document.createElement('button');
+                btnHistory.textContent = 'History';
+                btnHistory.style.cssText = 'background:#2a3450; color:#64ffda; border:1px solid #64ffda; padding:0.2rem 0.5rem; border-radius:4px; font-size:0.72rem; cursor:pointer;';
+                btnHistory.addEventListener('click', () => toggleRuleHistory(id, tr, btnHistory));
+                tdActions.appendChild(btnHistory);
+
+                tr.appendChild(tdActions);
+                tbody.appendChild(tr);
+            }
+            table.appendChild(tbody);
+            list.appendChild(table);
+        }
+
+        async function toggleRule(ruleId, enabled, checkbox) {
+            checkbox.disabled = true;
+            try {
+                const resp = await fetch(API_BASE + '/api/rules/' + encodeURIComponent(ruleId), {
+                    method: 'PATCH',
+                    headers: mutationHeaders(),
+                    body: JSON.stringify({ enabled })
+                });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            } catch (err) {
+                alert('Error toggling rule: ' + err.message);
+                checkbox.checked = !enabled;
+            } finally {
+                checkbox.disabled = false;
+            }
+        }
+
+        async function toggleRuleHistory(ruleId, row, btn) {
+            const existing = row.nextElementSibling;
+            if (existing && existing.classList.contains('rule-history-row')) {
+                existing.remove();
+                btn.textContent = 'History';
+                return;
+            }
+
+            const historyTr = document.createElement('tr');
+            historyTr.className = 'rule-history-row';
+            const historyTd = document.createElement('td');
+            historyTd.colSpan = 8;
+            historyTd.style.cssText = 'background:#0d1220; padding:1rem;';
+
+            const loadingP = document.createElement('p');
+            loadingP.style.cssText = 'font-size:0.78rem; color:#8892b0;';
+            loadingP.textContent = 'Loading history...';
+            historyTd.appendChild(loadingP);
+            historyTr.appendChild(historyTd);
+            row.after(historyTr);
+            btn.textContent = 'Hide';
+
+            try {
+                const resp = await fetch(API_BASE + '/api/rules/' + encodeURIComponent(ruleId) + '/history');
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const data = await resp.json();
+                const entries = Array.isArray(data) ? data : (data.history || data.entries || []);
+                renderRuleHistory(entries, historyTd);
+            } catch (err) {
+                loadingP.textContent = 'Error loading history: ' + err.message;
+                loadingP.style.color = '#e85a5a';
+            }
+        }
+
+        function renderRuleHistory(entries, container) {
+            container.textContent = '';
+            const h = document.createElement('h4');
+            h.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.85rem;';
+            h.textContent = 'Audit History (' + entries.length + ')';
+            container.appendChild(h);
+
+            if (!entries || entries.length === 0) {
+                const p = document.createElement('p');
+                p.style.cssText = 'font-size:0.78rem; color:#4a5570;';
+                p.textContent = 'No history entries.';
+                container.appendChild(p);
+                return;
+            }
+
+            const table = document.createElement('table');
+            table.className = 'data-table';
+            table.style.fontSize = '0.75rem';
+            const thead = document.createElement('thead');
+            const hRow = document.createElement('tr');
+            ['Timestamp', 'Action', 'Actor', 'Details'].forEach(txt => {
+                const th = document.createElement('th');
+                th.textContent = txt;
+                hRow.appendChild(th);
+            });
+            thead.appendChild(hRow);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            for (const e of entries) {
+                const tr = document.createElement('tr');
+                const ts = document.createElement('td');
+                ts.textContent = e.timestamp || e.created_at || e.time ? new Date(e.timestamp || e.created_at || e.time).toLocaleString() : '—';
+                tr.appendChild(ts);
+                const action = document.createElement('td');
+                action.textContent = e.field || e.action || e.event || '—';
+                tr.appendChild(action);
+                const actor = document.createElement('td');
+                actor.textContent = e.actor || e.user || '—';
+                tr.appendChild(actor);
+                const details = document.createElement('td');
+                const oldValue = e.old_value !== undefined ? JSON.stringify(e.old_value) : '';
+                const newValue = e.new_value !== undefined ? JSON.stringify(e.new_value) : '';
+                details.textContent = oldValue || newValue ? oldValue + ' → ' + newValue : (e.details || e.changes || e.note || '—');
+                details.style.maxWidth = '300px';
+                details.style.overflow = 'hidden';
+                details.style.textOverflow = 'ellipsis';
+                tr.appendChild(details);
+                tbody.appendChild(tr);
+            }
+            table.appendChild(tbody);
+            container.appendChild(table);
+        }
 
         // ── Signal Quality tab ───────────────────────────────────────────────
         let signalChart = null;
@@ -862,7 +1800,7 @@
             if (!metricUID) { alert('Please enter a metric UID'); return; }
             const list = document.getElementById('signal-quality-list');
             try {
-                const resp = await fetch(`${API_BASE}/api/signal/quality/${encodeURIComponent(metricUID)}`);
+                const resp = await fetch(API_BASE + '/api/signal/quality/' + encodeURIComponent(metricUID));
                 if (!resp.ok) {
                     list.innerHTML = '<div class="empty">Signal quality data not available.</div>';
                     return;
@@ -873,18 +1811,37 @@
                     return;
                 }
                 // Render table.
-                list.innerHTML = `
-                    <table class="data-table" style="font-size:0.75rem;">
-                        <thead><tr><th>Time</th><th>Source</th><th>Grade</th><th>Quality</th></tr></thead>
-                        <tbody>${points.slice(0, 20).map(p => `
-                            <tr>
-                                <td>${new Date(p.time).toLocaleString()}</td>
-                                <td>${esc(p.source_class)}</td>
-                                <td>${esc(p.grade)}</td>
-                                <td>${p.quality_score != null ? p.quality_score.toFixed(1) : '—'}</td>
-                            </tr>`).join('')}
-                        </tbody>
-                    </table>`;
+                list.innerHTML = '';
+                const table = document.createElement('table');
+                table.className = 'data-table';
+                table.style.fontSize = '0.75rem';
+                const thead = document.createElement('thead');
+                const hRow = document.createElement('tr');
+                ['Time', 'Source', 'Grade', 'Quality'].forEach(txt => {
+                    const th = document.createElement('th');
+                    th.textContent = txt;
+                    hRow.appendChild(th);
+                });
+                thead.appendChild(hRow);
+                table.appendChild(thead);
+                const tbody = document.createElement('tbody');
+                for (const p of points.slice(0, 20)) {
+                    const tr = document.createElement('tr');
+                    const cells = [
+                        new Date(p.time).toLocaleString(),
+                        p.source_class || '—',
+                        p.grade || '—',
+                        p.quality_score != null ? Number(p.quality_score).toFixed(1) : '—'
+                    ];
+                    for (const c of cells) {
+                        const td = document.createElement('td');
+                        td.textContent = c;
+                        tr.appendChild(td);
+                    }
+                    tbody.appendChild(tr);
+                }
+                table.appendChild(tbody);
+                list.appendChild(table);
                 // Render chart.
                 renderSignalChart(points);
             } catch (err) {
@@ -922,8 +1879,15 @@
             });
         }
 
-        // ── polling ──────────────────────────────────────────────────────────
-        // Initial load + refresh every 30s (same cadence as alerts).
+        // ── Wire up button handlers & polling ────────────────────────────────
+        document.getElementById('btn-load-research').addEventListener('click', loadResearch);
+        document.getElementById('research-alert-id').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') loadResearch();
+        });
+        document.getElementById('btn-refresh-clusters').addEventListener('click', loadClusters);
+        document.getElementById('btn-discover-candidates').addEventListener('click', discoverCandidates);
+        document.getElementById('btn-refresh-rules').addEventListener('click', loadRules);
+
         loadAlerts();
         fetchStatus();
         setInterval(() => { loadAlerts(); fetchStatus(); }, 30000);
@@ -933,6 +1897,7 @@
         window.addEventListener('resize', () => {
             if (trendChart) trendChart.resize();
             if (signalChart) signalChart.resize();
+            if (researchChart) researchChart.resize();
         });
     </script>
 </body>

@@ -21,6 +21,11 @@ type ClusterSnapshotStore struct {
 	mu       sync.Mutex
 	filePath string
 	file     *os.File
+
+	// latestJSON tracks the last durable representation for each cluster.
+	// Exact retries are skipped, while later states of the same logical cluster
+	// remain append-only revisions.
+	latestJSON map[string]string
 }
 
 // NewClusterSnapshotStore opens (creating if needed) a JSONL snapshot file
@@ -30,7 +35,34 @@ func NewClusterSnapshotStore(filePath string) (*ClusterSnapshotStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open cluster snapshot file %s: %w", filePath, err)
 	}
-	return &ClusterSnapshotStore{filePath: filePath, file: f}, nil
+	store := &ClusterSnapshotStore{filePath: filePath, file: f, latestJSON: make(map[string]string)}
+	if err := store.loadLatestJSON(); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return store, nil
+}
+
+func (s *ClusterSnapshotStore) loadLatestJSON() error {
+	data, err := os.ReadFile(s.filePath)
+	if err != nil {
+		return fmt.Errorf("read existing cluster snapshots: %w", err)
+	}
+	for _, line := range bytes.Split(data, []byte{'\n'}) {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		var snap ClusterSnapshot
+		if err := json.Unmarshal(line, &snap); err != nil {
+			continue
+		}
+		canonical, err := json.Marshal(snap)
+		if err == nil {
+			s.latestJSON[snap.ClusterID] = string(canonical)
+		}
+	}
+	return nil
 }
 
 // Append marshals snap to a single JSON line and appends it. fsync guarantees
@@ -44,11 +76,19 @@ func (s *ClusterSnapshotStore) Append(snap ClusterSnapshot) error {
 	if err != nil {
 		return fmt.Errorf("marshal cluster snapshot: %w", err)
 	}
+	if s.latestJSON[snap.ClusterID] == string(line) {
+		return nil
+	}
+	canonical := string(line)
 	line = append(line, '\n')
 	if _, err := s.file.Write(line); err != nil {
 		return fmt.Errorf("write cluster snapshot: %w", err)
 	}
-	return s.file.Sync()
+	if err := s.file.Sync(); err != nil {
+		return fmt.Errorf("fsync cluster snapshot: %w", err)
+	}
+	s.latestJSON[snap.ClusterID] = canonical
+	return nil
 }
 
 // ReadAll reads the entire JSONL file and returns snapshots whose
@@ -68,7 +108,7 @@ func (s *ClusterSnapshotStore) ReadAll(lookback time.Duration) ([]ClusterSnapsho
 		return nil, fmt.Errorf("read cluster snapshot file: %w", err)
 	}
 
-	var result []ClusterSnapshot
+	var parsed []ClusterSnapshot
 	var cutoff time.Time
 	if lookback > 0 {
 		cutoff = time.Now().Add(-lookback)
@@ -82,6 +122,18 @@ func (s *ClusterSnapshotStore) ReadAll(lookback time.Duration) ([]ClusterSnapsho
 			continue // skip corrupt line
 		}
 		if cutoff.IsZero() || !snap.LastTriggered.IsZero() && snap.LastTriggered.After(cutoff) {
+			parsed = append(parsed, snap)
+		}
+	}
+
+	// Project append-only revisions to the latest state per logical cluster.
+	lastIndex := make(map[string]int, len(parsed))
+	for i, snap := range parsed {
+		lastIndex[snap.ClusterID] = i
+	}
+	result := make([]ClusterSnapshot, 0, len(lastIndex))
+	for i, snap := range parsed {
+		if lastIndex[snap.ClusterID] == i {
 			result = append(result, snap)
 		}
 	}

@@ -132,6 +132,7 @@ services:
       COLLECTION_INTERVAL: "1h"           # FRED publishes daily/weekly -- hourly poll
       PROVIDER: "fred"                    # "fred" = real FRED data; "mock" = synthetic
       FRED_API_KEY: "${FRED_API_KEY:-}"     # REQUIRED -- fails fast if unset
+      PROVIDER_QUOTA_DB_URL: "postgres://capital:capital_dev@timescaledb:5432/capital_observatory?sslmode=disable"
 
   # Crypto Plugin: BTC price (CoinGecko), hash rate (mempool.space), exchange balance (mock).
   # No API key required for the free public endpoints.
@@ -168,6 +169,7 @@ services:
       COLLECTION_INTERVAL: "24h"
       PROVIDER: "fred"
       FRED_API_KEY: "${FRED_API_KEY:-}"
+      PROVIDER_QUOTA_DB_URL: "postgres://capital:capital_dev@timescaledb:5432/capital_observatory?sslmode=disable"
 
 volumes:
   tsdb_data:

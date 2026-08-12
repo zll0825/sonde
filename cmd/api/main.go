@@ -42,6 +42,9 @@ func main() {
 
 	mux := http.NewServeMux()
 
+	// Research store for feedback endpoints.
+	researchStore := newResearchFeedbackStore(db)
+
 	// Health check.
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -82,18 +85,18 @@ func main() {
 	mux.HandleFunc("POST /api/ontology/candidates/{id}/accept", ont.ontologyCandidateActionHandler)
 	mux.HandleFunc("POST /api/ontology/candidates/{id}/reject", ont.ontologyCandidateActionHandler)
 
-	// D: rules management — list, enable/disable (PATCH), restore (POST).
-	// P1 #7 minimal rule CRUD: list / toggle / restore-version.
+	// D: rules management — list, enable/disable (PATCH), restore (POST), audit history.
+	// P1 #7 minimal rule CRUD: list / toggle / restore-version, plus audit history.
 	rules := newRulesStore(db)
 	mux.HandleFunc("GET /api/rules/", rules.listHandler)
 	mux.HandleFunc("PATCH /api/rules/{id}", rules.patchHandler)
 	mux.HandleFunc("POST /api/rules/{id}/restore/{version}", rules.restoreHandler)
+	mux.HandleFunc("GET /api/rules/{id}/history", rules.historyHandler)
 
-	// D: P1 #7 — research feedback stub. We expose the route today so the API
-	// contract is stable; the handler returns 501 until the value-feedback
-	// analytics pipeline lands (out-of-scope for this P1 cycle).
-	// TODO(P1 #7-research-feedback): implement once signal model is defined.
-	mux.HandleFunc("POST /api/research/{id}/feedback", researchFeedbackHandler)
+	// D: P1 #7 — research feedback (full implementation).
+	// POST requires Bearer token; GET is a public read.
+	mux.HandleFunc("POST /api/research/{id}/feedback", researchFeedbackHandler(researchStore))
+	mux.HandleFunc("GET /api/research/feedback", researchFeedbackHandler(researchStore))
 
 	// A: event cluster snapshots ring buffer (read-only GET). The API reads
 	// from the same JSONL snapshot file that Core writes to (CLUSTER_SNAPSHOTS_FILE).

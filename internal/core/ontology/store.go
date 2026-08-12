@@ -274,16 +274,51 @@ func (s *Store) GetCurrentMetrics(ctx context.Context, pluginID string) ([]model
 	return metrics, nil
 }
 
-// MetricUIDForEntity returns the first metric UID associated with an entity.
-// Resolution path: entity.id → metric_definitions.entity_id → metric uid
-// (an entity may own many metrics; we return the first current row — good
-// enough for research-overlay series binding where any representative metric
-// is better than none). Returns found=false when no metric is registered.
+// MetricUIDForEntity returns the representative metric UID for an entity.
+//
+// Resolution path:
+//  1. entity_representative_metric (entity_id, purpose='default') → metric_id → uid
+//     (manual wins: operators can override the default metric for research context).
+//  2. Fallback: the legacy heuristic — first row by id from metric_definitions.
+//
+// The fallback preserves backward compatibility for entities that have no
+// explicit representative metric registered. Returns found=false when no metric
+// is registered.
 func (s *Store) MetricUIDForEntity(ctx context.Context, entityID string) (string, bool, error) {
-	var uid string
+	// 1. Try the explicit representative metric registry first.
+	var metricID string
 	err := s.db.QueryRow(ctx, `
+		SELECT metric_id FROM entity_representative_metric
+		WHERE entity_id = $1 AND purpose = 'default'
+	`, entityID).Scan(&metricID)
+	if err == nil && metricID != "" {
+		var uid string
+		err := s.db.QueryRow(ctx, `
+			SELECT uid FROM metric_definitions
+			WHERE id = $1 AND effective_to IS NULL
+			LIMIT 1
+		`, metricID).Scan(&uid)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		if err != nil {
+			return "", false, fmt.Errorf("resolve representative metric uid: %w", err)
+		}
+		if uid == "" {
+			return "", false, nil
+		}
+		return uid, true, nil
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", false, fmt.Errorf("query representative metric: %w", err)
+	}
+
+	// 2. Legacy fallback: first metric by id (deterministic but possibly misleading).
+	var uid string
+	err = s.db.QueryRow(ctx, `
 		SELECT uid FROM metric_definitions
 		WHERE entity_id = $1 AND effective_to IS NULL
+		ORDER BY id
 		LIMIT 1
 	`, entityID).Scan(&uid)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -296,6 +331,54 @@ func (s *Store) MetricUIDForEntity(ctx context.Context, entityID string) (string
 		return "", false, nil
 	}
 	return uid, true, nil
+}
+
+// MetricToEntity resolves a registered current metric to its canonical entity.
+// It satisfies classification.EntityResolver for production clustering.
+func (s *Store) MetricToEntity(ctx context.Context, metricID string) (string, bool, error) {
+	var entityID string
+	err := s.db.QueryRow(ctx, `
+		SELECT entity_id FROM metric_definitions
+		WHERE id = $1 AND effective_to IS NULL
+		LIMIT 1
+	`, metricID).Scan(&entityID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("resolve entity for metric %s: %w", metricID, err)
+	}
+	return entityID, entityID != "", nil
+}
+
+// HasAcceptedRelation reports whether two entities share an accepted
+// structural or semantic relation. Statistical and causal relations are
+// intentionally excluded from automatic event clustering, even when manually
+// confirmed; they remain Research context only.
+func (s *Store) HasAcceptedRelation(ctx context.Context, sourceEntity, targetEntity string) (bool, error) {
+	var exists bool
+	err := s.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM relations
+			WHERE effective_to IS NULL
+			  AND layer IN ('structural', 'semantic')
+			  AND ((source_id = $1 AND target_id = $2)
+			    OR (source_id = $2 AND target_id = $1))
+			UNION ALL
+			SELECT 1 FROM manual_relations
+			WHERE active = TRUE
+			  AND relation_type IN (
+				'tracks', 'component_of', 'issued_by', 'belongs_to',
+				'hedges', 'competes', 'signals'
+			  )
+			  AND ((source_id = $1 AND target_id = $2)
+			    OR (source_id = $2 AND target_id = $1))
+		)
+	`, sourceEntity, targetEntity).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("query accepted relation %s <-> %s: %w", sourceEntity, targetEntity, err)
+	}
+	return exists, nil
 }
 
 // FetchObservations returns ObservationPoints for the given metric UID in

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"capital_observatory/internal/core/relationmgr"
 	"capital_observatory/pkg/model"
 	pb "capital_observatory/pkg/proto/plugin/v1"
 	"github.com/jackc/pgx/v5"
@@ -38,6 +39,7 @@ type ManualRelation struct {
 	CreatedAt     time.Time `json:"created_at"`
 	Active        bool      `json:"active"`
 	Evidence      string    `json:"evidence,omitempty"`
+	Extension     string    `json:"extension,omitempty"`
 	LastUpdatedAt time.Time `json:"last_updated_at,omitempty"`
 }
 
@@ -53,6 +55,15 @@ func NewRelationManager(store *Store) *RelationManager {
 
 // Create 创建手动关系。
 func (rm *RelationManager) Create(ctx context.Context, input RelationInput) (*ManualRelation, error) {
+	if input.SourceID == input.TargetID {
+		return nil, fmt.Errorf("source and target entities must differ")
+	}
+	if _, ok := relationmgr.LayerOf(input.RelationType); !ok {
+		return nil, fmt.Errorf("unknown relation type %q", input.RelationType)
+	}
+	if input.Direction != "forward" && input.Direction != "undirected" {
+		return nil, fmt.Errorf("direction must be forward or undirected")
+	}
 	// 验证实体存在
 	if err := rm.validateEntities(ctx, input.SourceID, input.TargetID); err != nil {
 		return nil, err
@@ -184,6 +195,18 @@ func (rm *RelationManager) AcceptCandidate(ctx context.Context, candidate Candid
 // PendingSuggestion was created). Used by AcceptSuggestionByCandidate which
 // writes the manual_relation and the suggestion review row atomically.
 func (rm *RelationManager) txAcceptCandidate(ctx context.Context, tx pgx.Tx, candidate Candidate, userID string) (*ManualRelation, error) {
+	extension := map[string]any{
+		"p_value":       candidate.PVale,
+		"sample_size":   candidate.Observations,
+		"lookback_days": candidate.LookbackDays,
+		"lag_days":      candidate.LagDays,
+		"evidence_refs": candidate.EvidenceRefs,
+	}
+	extJSON, err := json.Marshal(extension)
+	if err != nil {
+		extJSON = []byte("{}")
+	}
+
 	rel := &ManualRelation{
 		RelationID:    generateRelationID(),
 		SourceID:      candidate.SourceID,
@@ -194,6 +217,7 @@ func (rm *RelationManager) txAcceptCandidate(ctx context.Context, tx pgx.Tx, can
 		UserID:        userID,
 		CreatedAt:     time.Now(),
 		Active:        true,
+		Extension:     string(extJSON),
 		LastUpdatedAt: time.Now(),
 	}
 	if err := insertManualRelation(ctx, tx, rel); err != nil {
@@ -202,28 +226,12 @@ func (rm *RelationManager) txAcceptCandidate(ctx context.Context, tx pgx.Tx, can
 	return rel, nil
 }
 
-// RejectCandidate 记录候选被拒绝的原因。
-//
-// MIGRATION TODO: 此方法依赖一个 candidate_rejections 表，请补建 migration 007b：
-//
-//	CREATE TABLE candidate_rejections (
-//	    id BIGSERIAL PRIMARY KEY,
-//	    candidate_id TEXT NOT NULL,
-//	    reason TEXT NOT NULL DEFAULT '',
-//	    rejected_by TEXT NOT NULL DEFAULT '',
-//	    rejected_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-//	);
-//	CREATE INDEX idx_candidate_rejections_candidate_id ON candidate_rejections (candidate_id);
-func (rm *RelationManager) RejectCandidate(ctx context.Context, candidateID, reason string) error {
-	_, err := rm.store.db.Exec(ctx, `
-		INSERT INTO candidate_rejections (candidate_id, reason)
-		VALUES ($1, $2)
-	`, candidateID, reason)
-	if err != nil {
-		return fmt.Errorf("insert candidate rejection (candidate_rejections table may not exist — migration 007b pending): %w", err)
-	}
-	return nil
-}
+// [P2#15] RejectCandidate has been removed. It depended on the non-existent
+// candidate_rejections table and silently lost rejection decisions. The API's
+// accept-reject path in cmd/api/ontology_handlers.go uses
+// relation_suggestions.status + review_reason (SuggestionReviewStatus) instead.
+// Rebuilding candidate_rejections is tracked separately if a richer rejection
+// audit is needed.
 
 func (rm *RelationManager) validateEntities(ctx context.Context, sourceID, targetID string) error {
 	var exists bool
@@ -249,10 +257,12 @@ func insertManualRelation(ctx context.Context, db DB, r *ManualRelation) error {
 	_, err := db.Exec(ctx, `
 		INSERT INTO manual_relations (
 			relation_id, source_id, target_id, relation_type, direction,
-			description, weight, user_id, created_at, active, evidence, last_updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			description, weight, user_id, created_at, active, evidence, extension,
+			last_updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 	`, r.RelationID, r.SourceID, r.TargetID, r.RelationType, r.Direction,
-		r.Description, r.Weight, r.UserID, r.CreatedAt, r.Active, r.Evidence, r.LastUpdatedAt)
+		r.Description, r.Weight, r.UserID, r.CreatedAt, r.Active, r.Evidence, r.Extension,
+		r.LastUpdatedAt)
 	return err
 }
 

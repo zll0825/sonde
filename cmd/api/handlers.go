@@ -1,16 +1,20 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
+
+	"capital_observatory/pkg/model"
 )
 
 // writeJSON writes a JSON response with the given status code.
@@ -131,21 +135,113 @@ func researchHandler(db *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
-// researchFeedbackHandler is the P1 #7 placeholder endpoint. The route is
-// registered so the API contract (POST /api/research/{id}/feedback) exists
-// from day one, but the real value-feedback signal model is not yet defined.
-// Returns 501 Not Implemented with an explanatory body.
-func researchFeedbackHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "POST required"})
+// validFeedbackVerdicts is the set of verdicts the research_feedbacks table
+// accepts (matches the CHECK constraint in migration 009).
+var validFeedbackVerdicts = map[string]bool{
+	"worth_researching": true,
+	"irrelevant":        true,
+	"duplicate":         true,
+}
+
+// researchFeedbackHandler serves
+//   - POST /api/research/{id}/feedback  (requires Bearer token) and
+//   - GET  /api/research/feedback?alert_id=xxx
+//
+// POST records a verdict {alert_id, rationale?, verdict} against the snapshot
+// whose alert_id equals the path {id}. The body may optionally repeat it, but
+// a mismatch is rejected. verdict must be one of
+// worth_researching | irrelevant | duplicate. On success 201; a bad verdict
+// yields 400. The actor (user_id) is derived from the Bearer token when present,
+// otherwise 'anonymous'.
+type researchFeedbackStore interface {
+	SaveFeedback(ctx context.Context, alertID, clusterID, verdict, rationale, userID string) error
+	ListFeedbacks(ctx context.Context, alertID string) ([]model.ResearchFeedback, error)
+}
+
+func researchFeedbackHandler(rs researchFeedbackStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			handleSaveFeedback(w, r, rs)
+		case http.MethodGet:
+			handleListFeedbacks(w, r, rs)
+		default:
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "GET or POST required"})
+		}
+	}
+}
+
+// handleSaveFeedback handles POST /api/research/{id}/feedback.
+func handleSaveFeedback(w http.ResponseWriter, r *http.Request, rs researchFeedbackStore) {
+	alertID := r.PathValue("id")
+	if alertID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "alert_id (path) required"})
 		return
 	}
-	// TODO(P1 #7-research-feedback): plug in research-value signal once the
-	// analytics pipeline is implemented (Signal Model v2).
-	writeJSON(w, http.StatusNotImplemented, map[string]string{
-		"error":   "research feedback not yet implemented",
-		"detail":  "P1 #7 placeholder — stable route, unimplemented handler",
+
+	var req struct {
+		AlertID   string `json:"alert_id"`
+		ClusterID string `json:"cluster_id,omitempty"`
+		Verdict   string `json:"verdict"`
+		Rationale string `json:"rationale"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+
+	if req.AlertID != "" && req.AlertID != alertID {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "body alert_id must match path"})
+		return
+	}
+	if !validFeedbackVerdicts[req.Verdict] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "verdict must be one of: worth_researching, irrelevant, duplicate",
+		})
+		return
+	}
+
+	userID := bearerActorIdentifier(r)
+	if err := rs.SaveFeedback(r.Context(), alertID, req.ClusterID, req.Verdict, req.Rationale, userID); err != nil {
+		log.Error().Err(err).Str("alert_id", alertID).Msg("save research feedback failed")
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"alert_id": alertID,
+		"verdict":  req.Verdict,
+		"status":   "recorded",
 	})
+}
+
+// handleListFeedbacks returns the feedback history for an alert.
+// The alert_id is taken from the query string ?alert_id=.
+func handleListFeedbacks(w http.ResponseWriter, r *http.Request, rs researchFeedbackStore) {
+	alertID := r.URL.Query().Get("alert_id")
+	if alertID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "alert_id query param required"})
+		return
+	}
+	feedbacks, err := rs.ListFeedbacks(r.Context(), alertID)
+	if err != nil {
+		log.Error().Err(err).Str("alert_id", alertID).Msg("list research feedbacks failed")
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, feedbacks)
+}
+
+// bearerActorIdentifier records authentication state without persisting any
+// credential material. The static API token has no user claims to identify a
+// person more specifically.
+func bearerActorIdentifier(r *http.Request) string {
+	auth := r.Header.Get("Authorization")
+	const prefix = "Bearer "
+	if strings.HasPrefix(auth, prefix) && strings.TrimPrefix(auth, prefix) != "" {
+		return "authenticated_api_client"
+	}
+	return "anonymous"
 }
 
 // syncHandler triggers a manual sync for a given plugin+metrics.

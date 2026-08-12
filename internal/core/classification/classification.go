@@ -90,7 +90,8 @@ type EventCluster struct {
 	ID             string         `json:"id"`
 	PrimaryEntity  string         `json:"primary_entity"`
 	EntityScope    []string       `json:"entity_scope"`
-	Alerts         []string       `json:"alert_ids"` // alert IDs in this cluster
+	Alerts         []string       `json:"alert_ids"`  // alert IDs in this cluster
+	MetricIDs      []string       `json:"metric_ids"` // distinct counting includes the seed alert
 	MaxSeverity    model.Severity `json:"max_severity"`
 	FirstTriggered time.Time      `json:"first_triggered"`
 	LastTriggered  time.Time      `json:"last_triggered"`
@@ -137,7 +138,7 @@ func (c *Clusterer) Receive(ctx context.Context, alert model.Alert) *EventCluste
 		}
 	}
 
-	nc := NewCluster(alert)
+	nc := NewClusterWithContext(ctx, alert, c.config.EntityResolver)
 	c.active = append(c.active, nc)
 	return &c.active[len(c.active)-1]
 }
@@ -281,6 +282,7 @@ func (c *Clusterer) AddAlertToCluster(ctx context.Context, cluster *EventCluster
 		TriggeredAt: alert.TriggeredAt,
 	}
 	cluster.Alerts = append(cluster.Alerts, alert.ID)
+	cluster.MetricIDs = appendUnique(cluster.MetricIDs, alert.MetricID)
 	cluster.LastTriggered = alert.TriggeredAt
 	cluster.Coalesced = true
 	cluster.TriggerCount++
@@ -298,6 +300,7 @@ func NewCluster(alert model.Alert) EventCluster {
 		PrimaryEntity:  primaryEntity(alert.MetricID),
 		EntityScope:    []string{primaryEntity(alert.MetricID)},
 		Alerts:         []string{alert.ID},
+		MetricIDs:      []string{alert.MetricID},
 		MaxSeverity:    alert.Severity,
 		FirstTriggered: now,
 		LastTriggered:  now,
@@ -322,6 +325,7 @@ func NewClusterWithContext(ctx context.Context, alert model.Alert, resolver Enti
 		PrimaryEntity:  pe,
 		EntityScope:    []string{pe},
 		Alerts:         []string{alert.ID},
+		MetricIDs:      []string{alert.MetricID},
 		MaxSeverity:    alert.Severity,
 		FirstTriggered: now,
 		LastTriggered:  now,
@@ -329,6 +333,18 @@ func NewClusterWithContext(ctx context.Context, alert model.Alert, resolver Enti
 		TriggerCount:   1,
 		MergeLog:       nil,
 	}
+}
+
+func appendUnique(values []string, value string) []string {
+	if value == "" {
+		return values
+	}
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
 }
 
 // ---- Layer 2: Research Gating ----
