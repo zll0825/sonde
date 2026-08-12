@@ -70,10 +70,10 @@ M1 已注册 entities/relations 数据。M4 新增 Ontology 查询能力：
 type OntologyQuerier interface {
     // 当前生效版本的 Entity 查询
     GetCurrentEntity(ctx context.Context, id string) (*Entity, error)
-    
+
     // 从指定 Entity 出发，BFS 遍历 Relation 图
     GetRelatedEntities(ctx context.Context, entityID string, maxDepth int, maxResults int) ([]RelatedEntity, error)
-    
+
     // 查询 Entity 当前生效的所有 Relation（出边 + 入边）
     GetRelations(ctx context.Context, entityID string) ([]Relation, error)
 }
