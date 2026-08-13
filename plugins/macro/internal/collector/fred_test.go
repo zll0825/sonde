@@ -50,6 +50,48 @@ func TestFREDCollector_ClassifiesUpstreamSnapshotsAsReal(t *testing.T) {
 	}
 }
 
+func TestFREDCollector_ReturnsPartialSnapshotsAndError(t *testing.T) {
+	testClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Query().Get("series_id") == "DGS10" {
+			return &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader("upstream unavailable")), Header: make(http.Header)}, nil
+		}
+		body := `{"observations":[{"date":"2026-08-01","value":"4.2"}]}`
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
+	f := &FREDCollector{apiKey: "test-secret", client: provider.NewSafeHTTPClientWithHTTPClient(provider.Config{
+		ProviderName: "fred-macro-partial", Timeout: time.Second, RPS: 100, Burst: 10,
+	}, testClient)}
+
+	snaps, err := f.GetSnapshots(context.Background())
+	if err == nil || len(snaps) != len(fredSeriesList)-1 {
+		t.Fatalf("partial result = %d snapshots, error %v; want %d and non-nil", len(snaps), err, len(fredSeriesList)-1)
+	}
+	if !strings.Contains(err.Error(), "fred/us.mkt.ten_year_yield") || strings.Contains(err.Error(), "test-secret") {
+		t.Fatalf("partial error = %q", err)
+	}
+}
+
+func TestFREDCollector_BackfillReturnsPartialSnapshotsAndError(t *testing.T) {
+	testClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Query().Get("series_id") == "DGS10" {
+			return &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader("upstream unavailable")), Header: make(http.Header)}, nil
+		}
+		body := `{"observations":[{"date":"2026-08-01","value":"4.2"}]}`
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
+	f := &FREDCollector{apiKey: "test-secret", client: provider.NewSafeHTTPClientWithHTTPClient(provider.Config{
+		ProviderName: "fred-macro-backfill-partial", Timeout: time.Second, RPS: 100, Burst: 10,
+	}, testClient)}
+
+	snaps, err := f.GetSnapshotsForWindow(context.Background(), time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC))
+	if err == nil || len(snaps) != len(fredSeriesList)-1 {
+		t.Fatalf("partial backfill = %d snapshots, error %v; want %d and non-nil", len(snaps), err, len(fredSeriesList)-1)
+	}
+	if !strings.Contains(err.Error(), "fred/us.mkt.ten_year_yield") || strings.Contains(err.Error(), "test-secret") {
+		t.Fatalf("partial backfill error = %q", err)
+	}
+}
+
 func TestParseFREDValue_Missing(t *testing.T) {
 	// FRED marks missing observations with ".".
 	if v, ok := parseFREDValue(".", 1); ok {

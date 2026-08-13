@@ -3,6 +3,8 @@ package pluginmgr
 import (
 	"testing"
 	"time"
+
+	pb "capital_observatory/pkg/proto/plugin/v1"
 )
 
 func TestIsPluginHealthy_NilState(t *testing.T) {
@@ -91,4 +93,36 @@ func TestMarkHealthActivity_MissingPluginNoPanic(t *testing.T) {
 		health:   make(map[string]*PluginHealth),
 	}
 	m.markHealthActivity("plg_nonexistent")
+}
+
+func TestCollectionHealthDeratesAndRecoversInMemoryReputation(t *testing.T) {
+	m := &Manager{
+		sessions:      map[string]*StreamSession{"plg_etf": {pluginID: "plg_etf"}},
+		health:        map[string]*PluginHealth{"plg_etf": {lastActivity: time.Now()}},
+		healthTimeout: 60 * time.Second,
+	}
+
+	m.markCollectionHealth("plg_etf", &pb.PluginStatus{
+		LastCollectError:  "provider timeout",
+		ConsecutiveErrors: 1,
+	})
+	if m.isPluginHealthy("plg_etf") {
+		t.Fatal("fresh session with failed collection should be unhealthy")
+	}
+
+	// Runtime-only and legacy heartbeats refresh liveness but cannot erase the
+	// most recent collection outcome.
+	m.markCollectionHealth("plg_etf", &pb.PluginStatus{Runtime: map[string]string{"circuit_state": "open"}})
+	m.markCollectionHealth("plg_etf", nil)
+	if m.isPluginHealthy("plg_etf") {
+		t.Fatal("status-less heartbeat erased failed collection outcome")
+	}
+
+	m.markCollectionHealth("plg_etf", &pb.PluginStatus{
+		LastCollectAt:    time.Now().Unix(),
+		LastCollectCount: 3,
+	})
+	if !m.isPluginHealthy("plg_etf") {
+		t.Fatal("successful collection should restore in-memory health")
+	}
 }

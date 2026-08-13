@@ -185,8 +185,8 @@ func TestLoadStatus_JoinAndFreshness(t *testing.T) {
 
 	db := &fakeDB{}
 	db.stub(newFakeRows( // plugins
-		[]any{"plg_etf", "etf", true, "running", now.Add(-2 * time.Hour), 3},
-		[]any{"plg_crypto", "crypto", false, "starting", nil, 0},
+		[]any{"plg_etf", "etf", true, true, "running", now.Add(-2 * time.Hour), 125, 3, "", 0},
+		[]any{"plg_crypto", "crypto", true, false, "running", nil, 320, 0, "coingecko/btc.price: timeout", 2},
 	))
 	db.stub(newFakeRows( // metric definitions
 		[]any{"gld.ass.price", "mtr_aaa", "GLD Price", "USD", "daily"},
@@ -215,11 +215,14 @@ func TestLoadStatus_JoinAndFreshness(t *testing.T) {
 	if len(p.Plugins) != 2 {
 		t.Fatalf("plugins len = %d, want 2", len(p.Plugins))
 	}
-	if !p.Plugins[0].Healthy {
-		t.Errorf("plugins[0].Healthy = false, want true")
+	if !p.Plugins[0].Connected || !p.Plugins[0].Healthy {
+		t.Errorf("plugins[0] = %+v, want connected and healthy", p.Plugins[0])
 	}
-	if p.Plugins[1].Healthy || p.Plugins[1].LastCollectAt != nil {
-		t.Errorf("plugins[1] = %+v, want unhealthy with nil last_collect_at", p.Plugins[1])
+	if !p.Plugins[1].Connected || p.Plugins[1].Healthy || p.Plugins[1].LastCollectAt != nil {
+		t.Errorf("plugins[1] = %+v, want connected, unhealthy with nil last_collect_at", p.Plugins[1])
+	}
+	if p.Plugins[1].LastCollectError == "" || p.Plugins[1].ConsecutiveErrors != 2 || p.Plugins[1].LastCollectDurationMs != 320 {
+		t.Errorf("plugins[1] collection health = %+v", p.Plugins[1])
 	}
 	if p.Plugins[0].LastCollectAt == nil || !p.Plugins[0].LastCollectAt.Equal(now.Add(-2*time.Hour)) {
 		t.Errorf("plugins[0].LastCollectAt = %v, want 2h ago", p.Plugins[0].LastCollectAt)

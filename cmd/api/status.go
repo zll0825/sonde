@@ -32,12 +32,16 @@ type statusPayload struct {
 }
 
 type pluginStatus struct {
-	ID               string     `json:"id"`
-	Name             string     `json:"name"`
-	Healthy          bool       `json:"healthy"`
-	State            string     `json:"state"`
-	LastCollectAt    *time.Time `json:"last_collect_at"`
-	LastCollectCount int        `json:"last_collect_count"`
+	ID                    string     `json:"id"`
+	Name                  string     `json:"name"`
+	Connected             bool       `json:"connected"`
+	Healthy               bool       `json:"healthy"`
+	State                 string     `json:"state"`
+	LastCollectAt         *time.Time `json:"last_collect_at"`
+	LastCollectDurationMs int        `json:"last_collect_duration_ms"`
+	LastCollectCount      int        `json:"last_collect_count"`
+	LastCollectError      string     `json:"last_collect_error"`
+	ConsecutiveErrors     int        `json:"consecutive_errors"`
 }
 
 type budgetStatus struct {
@@ -259,16 +263,18 @@ func queryTodayAlertCounts(ctx context.Context, db statusQuerier) (budgetStatus,
 }
 
 // queryPlugins: design D3 query 1 — plugin registration + health state.
-// healthy is derated by heartbeat staleness: the writer (core) sets
-// plugins.healthy=true on heartbeat but cannot flip it back on crash, so a
-// heartbeat older than 90s (3× the 30s plugin heartbeat interval) reads as
-// offline here.
+// connected is heartbeat freshness; healthy additionally requires the latest
+// persisted collection outcome to be successful. A stale heartbeat therefore
+// reads offline even though Core cannot update the row after a plugin crash.
 func queryPlugins(ctx context.Context, db statusQuerier) ([]pluginStatus, error) {
 	rows, err := db.Query(ctx, `
 		SELECT id, name,
+		       (last_heartbeat IS NOT NULL
+		        AND last_heartbeat > now() - interval '90 seconds') AS connected,
 		       (healthy AND last_heartbeat IS NOT NULL
 		        AND last_heartbeat > now() - interval '90 seconds') AS healthy,
-		       state, last_collect_at, last_collect_count
+		       state, last_collect_at, last_collect_duration_ms,
+		       last_collect_count, COALESCE(last_collect_error, ''), consecutive_errors
 		FROM plugins
 		ORDER BY name`)
 	if err != nil {
@@ -282,7 +288,9 @@ func queryPlugins(ctx context.Context, db statusQuerier) ([]pluginStatus, error)
 			p      pluginStatus
 			lastAt pgtype.Timestamptz // nullable last_collect_at
 		)
-		if err := rows.Scan(&p.ID, &p.Name, &p.Healthy, &p.State, &lastAt, &p.LastCollectCount); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Connected, &p.Healthy, &p.State, &lastAt,
+			&p.LastCollectDurationMs, &p.LastCollectCount, &p.LastCollectError,
+			&p.ConsecutiveErrors); err != nil {
 			return nil, fmt.Errorf("scan plugin %s: %w", p.ID, err)
 		}
 		if lastAt.Valid {

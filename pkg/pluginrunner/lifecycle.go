@@ -46,6 +46,7 @@ type Config struct {
 type Lifecycle struct {
 	cfg      Config
 	commands *commandLedger
+	status   *collectionStatus
 }
 
 // NewLifecycle creates a Lifecycle from the given config.
@@ -53,6 +54,7 @@ func NewLifecycle(cfg Config) *Lifecycle {
 	return &Lifecycle{
 		cfg:      cfg,
 		commands: newCommandLedger(defaultCommandLedgerCapacity, defaultCommandLedgerTTL),
+		status:   &collectionStatus{},
 	}
 }
 
@@ -134,11 +136,24 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 	// executeCommand single-flights duplicate command IDs and replays a cached
 	// successful snapshot set without calling the provider again.
 	executeCommand := func(commandID string, collect func() ([]Snapshot, error)) {
-		result := l.commands.execute(commandID, collect)
+		result := l.executeCollection(commandID, collect)
+		// Publish the updated outcome immediately after this result. Snapshot and
+		// ACK delivery retain priority if the bounded send queue is saturated.
+		defer runner.SubmitHeartbeat(pluginID, l.heartbeatStatus(collector))
 		if result.err != nil {
-			log.Error().Err(result.err).Str("command_id", commandID).Msg("collector command failed")
+			errMessage := SanitizeCollectionError(result.err)
+			log.Error().Str("error", errMessage).Str("command_id", commandID).Msg("collector command failed")
+			submitted := true
+			if len(result.snapshots) > 0 {
+				submitted = submitSnapshots(runner, pluginID, commandID, result.snapshots)
+			}
 			if commandID != "" {
-				runner.SubmitCommandAck(commandID, "failed", result.err.Error(), 0, result.err.Error())
+				collectedCount := int32(len(result.snapshots))
+				if !submitted {
+					errMessage = "snapshot enqueue failed after partial collection"
+					collectedCount = 0
+				}
+				runner.SubmitCommandAck(commandID, "failed", errMessage, collectedCount, errMessage)
 			}
 			return
 		}
@@ -161,16 +176,13 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 				return collector.GetSnapshots(ctx)
 			}
 			snaps, err := wColl.GetSnapshotsForWindow(ctx, start, end)
-			if err != nil {
-				return nil, err
-			}
 			log.Info().
 				Str("command_id", commandID).
 				Time("window_start", start).
 				Time("window_end", end).
 				Int("count", len(snaps)).
 				Msg("backfill window collected")
-			return snaps, nil
+			return snaps, err
 		})
 	}
 
@@ -231,7 +243,7 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				runner.SubmitHeartbeat(pluginID, heartbeatStatus(collector))
+				runner.SubmitHeartbeat(pluginID, l.heartbeatStatus(collector))
 			}
 		}
 	}()
@@ -239,30 +251,43 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 	return runner.Run(ctx, pluginID)
 }
 
+func (l *Lifecycle) executeCollection(commandID string, collect func() ([]Snapshot, error)) commandExecutionResult {
+	return l.commands.execute(commandID, func() ([]Snapshot, error) {
+		return l.status.execute(collect)
+	})
+}
+
 // submitAndAck converts snapshots to proto, submits them, and acks the command
 // (if any) with the number of collected snapshots.
 func submitAndAck(runner *Runner, pluginID, commandID string, result commandExecutionResult) {
-	snaps := result.snapshots
-	protoSnaps := SnapshotsToProto(snaps, runner.version)
+	if !submitSnapshots(runner, pluginID, commandID, result.snapshots) {
+		if commandID != "" {
+			const message = "snapshot enqueue failed after collection"
+			runner.submitCommandAckAt(commandID, "failed", message, 0, message, result.ackTimestamp)
+		}
+		return
+	}
+	if commandID != "" {
+		runner.submitCommandAckAt(commandID, "success",
+			fmt.Sprintf("%d snapshots collected", len(result.snapshots)),
+			int32(len(result.snapshots)), "", result.ackTimestamp)
+	}
+}
+
+func submitSnapshots(runner *Runner, pluginID, commandID string, snapshots []Snapshot) bool {
+	protoSnaps := SnapshotsToProto(snapshots, runner.version)
 	if err := runner.trySubmitSnapshots(pluginID, protoSnaps); err != nil {
 		log.Warn().Err(err).
 			Str("command_id", commandID).
 			Int("count", len(protoSnaps)).
 			Msg("snapshot enqueue failed")
-		if commandID != "" {
-			runner.SubmitCommandAck(commandID, "failed", err.Error(), 0, err.Error())
-		}
-		return
+		return false
 	}
 	log.Info().
 		Str("command_id", commandID).
 		Int("count", len(protoSnaps)).
 		Msg("snapshots submitted")
-	if commandID != "" {
-		runner.submitCommandAckAt(commandID, "success",
-			fmt.Sprintf("%d snapshots collected", len(protoSnaps)),
-			int32(len(protoSnaps)), "", result.ackTimestamp)
-	}
+	return true
 }
 
 func envOrDefault(key, def string) string {
@@ -288,16 +313,12 @@ type CircuitStateProvider interface {
 	CircuitState() string
 }
 
-// heartbeatStatus builds a PluginStatus with circuit breaker state if the
-// collector implements CircuitStateProvider; otherwise nil is returned so
-// the heartbeat carries no status payload (backward compatible).
-func heartbeatStatus(collector Provider) *pb.PluginStatus {
+// heartbeatStatus returns a race-free collection outcome merged with optional
+// collector runtime metadata.
+func (l *Lifecycle) heartbeatStatus(collector Provider) *pb.PluginStatus {
+	runtime := make(map[string]string)
 	if csp, ok := collector.(CircuitStateProvider); ok {
-		return &pb.PluginStatus{
-			Runtime: map[string]string{
-				"circuit_state": csp.CircuitState(),
-			},
-		}
+		runtime["circuit_state"] = csp.CircuitState()
 	}
-	return nil
+	return l.status.snapshot(runtime)
 }

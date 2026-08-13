@@ -114,13 +114,15 @@ func (f *FREDCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 	start := end.AddDate(0, 0, -45) // 45-day lookback: aligns with oil/copper release lag
 
 	snaps := make([]pluginrunner.Snapshot, 0, len(fredSeriesList))
-	failed := 0
+	failures := make([]pluginrunner.CollectionFailure, 0)
 
 	for _, entry := range fredSeriesList {
 		val, obsTime, err := f.fetchLatest(ctx, entry.SeriesID, entry.UnitScale, start, end)
 		if err != nil {
 			logFetchSkip(entry.MetricID, entry.SeriesID, err)
-			failed++
+			failures = append(failures, pluginrunner.CollectionFailure{
+				MetricID: entry.MetricID, Provider: providerFRED, Err: err,
+			})
 			continue
 		}
 		ts := obsTime
@@ -140,10 +142,11 @@ func (f *FREDCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 	}
 
 	if len(snaps) == 0 {
-		return nil, fmt.Errorf("all %d FRED commodity fetches failed", len(fredSeriesList))
+		return nil, pluginrunner.SummarizeCollectionFailures(failures)
 	}
-	if failed > 0 {
-		providerLogPartial(len(snaps), failed)
+	if len(failures) > 0 {
+		providerLogPartial(len(snaps), len(failures))
+		return snaps, pluginrunner.SummarizeCollectionFailures(failures)
 	}
 	return snaps, nil
 }
@@ -166,10 +169,14 @@ func (f *FREDCollector) GetSnapshotsForWindow(ctx context.Context, start, end ti
 	}
 
 	snaps := make([]pluginrunner.Snapshot, 0, len(fredSeriesList)*60)
+	failures := make([]pluginrunner.CollectionFailure, 0)
 	for _, entry := range fredSeriesList {
 		times, vals, err := f.fetchRangePaged(ctx, entry.SeriesID, entry.UnitScale, start, end)
 		if err != nil {
 			logFetchSkip(entry.MetricID, entry.SeriesID, err)
+			failures = append(failures, pluginrunner.CollectionFailure{
+				MetricID: entry.MetricID, Provider: providerFRED, Err: err,
+			})
 			continue
 		}
 
@@ -192,7 +199,7 @@ func (f *FREDCollector) GetSnapshotsForWindow(ctx context.Context, start, end ti
 		detectFREDGaps(f, entry.MetricID, entry.Frequency, seriesSnaps, start, end)
 		snaps = append(snaps, seriesSnaps...)
 	}
-	return snaps, nil
+	return snaps, pluginrunner.SummarizeCollectionFailures(failures)
 }
 
 // fetchLatest returns the most recent observation within [windowStart, windowEnd].
@@ -398,7 +405,7 @@ func (f *FREDCollector) recordCoverage(metricID string, c provider.BackfillCover
 }
 
 func logFetchSkip(metric, series string, err error) {
-	log.Warn().Err(err).Str("metric", metric).Str("series", series).Msg("FRED commodity fetch failed; skipping metric")
+	log.Warn().Str("error", pluginrunner.SanitizeCollectionError(err)).Str("metric", metric).Str("series", series).Msg("FRED commodity fetch failed; skipping metric")
 }
 
 func providerLogPartial(succeeded, failed int) {

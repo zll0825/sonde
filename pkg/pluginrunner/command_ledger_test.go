@@ -115,6 +115,33 @@ func TestSubmitAndAckReplaysExactWirePayloads(t *testing.T) {
 	}
 }
 
+func TestSubmitAndAckDoesNotReportSuccessWhenEnqueueFails(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runner := &Runner{
+		version: "1.0.0",
+		sendCh:  make(chan *pb.PluginMessage, 1),
+		ctx:     ctx,
+	}
+	runner.sendCh <- &pb.PluginMessage{}
+
+	result := commandExecutionResult{
+		snapshots:    []Snapshot{{MetricID: "metric.wire", Value: 42}},
+		ackTimestamp: 123,
+	}
+	submitAndAck(runner, "plg_wire", "cmd_wire", result)
+
+	queued := <-runner.sendCh
+	if queued.GetPushSnapshots() != nil || queued.GetCommandAck() != nil {
+		t.Fatalf("full queue sentinel was replaced: %v", queued)
+	}
+	select {
+	case got := <-runner.sendCh:
+		t.Fatalf("unexpected message while send buffer was full: %v", got)
+	default:
+	}
+}
+
 func TestCommandLedgerFailureCanRetry(t *testing.T) {
 	ledger := newCommandLedger(16, time.Hour)
 	temporary := errors.New("temporary provider failure")
@@ -132,6 +159,30 @@ func TestCommandLedgerFailureCanRetry(t *testing.T) {
 	}
 	if result := ledger.execute("cmd_retry", collect); result.err != nil || len(result.snapshots) != 1 {
 		t.Fatalf("retry result = %+v, want success", result)
+	}
+	if calls != 2 {
+		t.Fatalf("collector calls = %d, want 2", calls)
+	}
+}
+
+func TestCommandLedgerPartialFailureCanRetry(t *testing.T) {
+	ledger := newCommandLedger(16, time.Hour)
+	calls := 0
+	collect := func() ([]Snapshot, error) {
+		calls++
+		if calls == 1 {
+			return []Snapshot{{MetricID: "metric.partial", Value: 1}}, errors.New("sibling failed")
+		}
+		return []Snapshot{{MetricID: "metric.partial", Value: 2}}, nil
+	}
+
+	first := ledger.execute("cmd_partial_retry", collect)
+	if first.err == nil || len(first.snapshots) != 1 {
+		t.Fatalf("partial result = %+v", first)
+	}
+	second := ledger.execute("cmd_partial_retry", collect)
+	if second.err != nil || len(second.snapshots) != 1 || second.snapshots[0].Value != 2 {
+		t.Fatalf("retried result = %+v", second)
 	}
 	if calls != 2 {
 		t.Fatalf("collector calls = %d, want 2", calls)

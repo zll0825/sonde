@@ -3,36 +3,51 @@ package ontology
 import (
 	"context"
 	"fmt"
+
+	pb "capital_observatory/pkg/proto/plugin/v1"
 )
 
-// TouchHeartbeat 将插件心跳落库：healthy=true、last_heartbeat=NOW()。
-// core 内存中的 isPluginHealthy 仍是权威判断；这里只是让 /api/status
-// （只读数据库）能看到活跃状态。读侧需自行套用时效窗口判断是否真在线，
-// 因为进程崩溃不会把 healthy 写回 false。
-func (s *Store) TouchHeartbeat(ctx context.Context, pluginID string) error {
+// RecordHeartbeat always refreshes liveness. Legacy and runtime-only status
+// payloads preserve the latest collection outcome; a recorded collection owns
+// the durable health verdict and collection fields.
+func (s *Store) RecordHeartbeat(ctx context.Context, pluginID string, status *pb.PluginStatus) error {
+	if !hasCollectionStatus(status) {
+		_, err := s.db.Exec(ctx, `
+			UPDATE plugins
+			SET last_heartbeat = NOW(), state = 'running', updated_at = NOW()
+			WHERE id = $1
+		`, pluginID)
+		if err != nil {
+			return fmt.Errorf("record liveness heartbeat for %s: %w", pluginID, err)
+		}
+		return nil
+	}
+
+	var lastCollectAt any
+	if status.GetLastCollectAt() > 0 {
+		lastCollectAt = status.GetLastCollectAt()
+	}
 	_, err := s.db.Exec(ctx, `
 		UPDATE plugins
-		SET healthy = TRUE, last_heartbeat = NOW(), state = 'running', updated_at = NOW()
+		SET healthy = ($6 = ''),
+		    last_heartbeat = NOW(),
+		    last_collect_at = CASE WHEN $2::bigint IS NULL THEN last_collect_at ELSE to_timestamp($2) END,
+		    last_collect_duration_ms = $3,
+		    last_collect_count = $4,
+		    last_collect_error = NULLIF($6, ''),
+		    consecutive_errors = $5,
+		    state = 'running', updated_at = NOW()
 		WHERE id = $1
-	`, pluginID)
+	`, pluginID, lastCollectAt, status.GetLastCollectDurationMs(), status.GetLastCollectCount(),
+		status.GetConsecutiveErrors(), status.GetLastCollectError())
 	if err != nil {
-		return fmt.Errorf("touch heartbeat for %s: %w", pluginID, err)
+		return fmt.Errorf("record collection heartbeat for %s: %w", pluginID, err)
 	}
 	return nil
 }
 
-// RecordCollect 记录一次成功的数据推送（用于状态栏的"最后采集"提示）。
-// count 是本次真正入库的观测条数。
-func (s *Store) RecordCollect(ctx context.Context, pluginID string, count int) error {
-	_, err := s.db.Exec(ctx, `
-		UPDATE plugins
-		SET healthy = TRUE, last_heartbeat = NOW(),
-		    last_collect_at = NOW(), last_collect_count = $2,
-		    state = 'running', updated_at = NOW()
-		WHERE id = $1
-	`, pluginID, count)
-	if err != nil {
-		return fmt.Errorf("record collect for %s: %w", pluginID, err)
-	}
-	return nil
+func hasCollectionStatus(status *pb.PluginStatus) bool {
+	return status != nil && (status.GetLastCollectAt() != 0 ||
+		status.GetLastCollectDurationMs() != 0 || status.GetLastCollectCount() != 0 ||
+		status.GetLastCollectError() != "" || status.GetConsecutiveErrors() != 0)
 }

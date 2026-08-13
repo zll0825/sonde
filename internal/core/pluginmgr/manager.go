@@ -47,8 +47,10 @@ type Manager struct {
 // A plugin is healthy if it has an active session AND its last activity
 // (stream heartbeat or data push) was within Manager.healthTimeout.
 type PluginHealth struct {
-	lastActivity time.Time // last heartbeat or push
-	mu           sync.Mutex
+	lastActivity      time.Time // last heartbeat or push
+	collectionKnown   bool
+	collectionHealthy bool
+	mu                sync.Mutex
 }
 
 // markHealthActivity updates the last-seen timestamp for a plugin.
@@ -66,15 +68,40 @@ func (m *Manager) markHealthActivity(pluginID string) {
 	h.mu.Unlock()
 }
 
+// markCollectionHealth updates the in-memory reputation signal only when the
+// heartbeat contains a recorded collection outcome. Legacy and runtime-only
+// heartbeats preserve the prior outcome, matching durable persistence.
+func (m *Manager) markCollectionHealth(pluginID string, status *pb.PluginStatus) {
+	if !hasCollectionStatus(status) {
+		return
+	}
+	m.mu.RLock()
+	h, ok := m.health[pluginID]
+	m.mu.RUnlock()
+	if !ok {
+		return
+	}
+	h.mu.Lock()
+	h.collectionKnown = true
+	h.collectionHealthy = status.GetLastCollectError() == ""
+	h.mu.Unlock()
+}
+
+func hasCollectionStatus(status *pb.PluginStatus) bool {
+	return status != nil && (status.GetLastCollectAt() != 0 ||
+		status.GetLastCollectDurationMs() != 0 || status.GetLastCollectCount() != 0 ||
+		status.GetLastCollectError() != "" || status.GetConsecutiveErrors() != 0)
+}
+
 // persistHeartbeat mirrors the in-memory health signal into plugins.healthy /
 // last_heartbeat so read-only consumers (/api/status) can see liveness.
 // Best-effort: a failed write is logged, never propagated — heartbeats must
 // stay cheap and infallible from the plugin's point of view.
-func (m *Manager) persistHeartbeat(ctx context.Context, pluginID string) {
+func (m *Manager) persistHeartbeat(ctx context.Context, pluginID string, status *pb.PluginStatus) {
 	if m.store == nil {
 		return
 	}
-	if err := m.store.TouchHeartbeat(ctx, pluginID); err != nil {
+	if err := m.store.RecordHeartbeat(ctx, pluginID, status); err != nil {
 		log.Warn().Err(err).Str("plugin_id", pluginID).Msg("persist heartbeat failed")
 	}
 }
@@ -386,8 +413,10 @@ func (m *Manager) HandlePluginMessage(ctx context.Context, msg *pb.PluginMessage
 	case *pb.PluginMessage_PushSnapshots:
 		return m.handlePushSnapshots(ctx, msg.GetPushSnapshots())
 	case *pb.PluginMessage_Heartbeat:
-		m.markHealthActivity(msg.GetHeartbeat().GetPluginId())
-		m.persistHeartbeat(ctx, msg.GetHeartbeat().GetPluginId())
+		heartbeat := msg.GetHeartbeat()
+		m.markHealthActivity(heartbeat.GetPluginId())
+		m.markCollectionHealth(heartbeat.GetPluginId(), heartbeat.GetStatus())
+		m.persistHeartbeat(ctx, heartbeat.GetPluginId(), heartbeat.GetStatus())
 		log.Debug().Msg("stream heartbeat received")
 		return nil
 	case *pb.PluginMessage_CommandAck:
@@ -419,14 +448,6 @@ func (m *Manager) handlePushSnapshots(ctx context.Context, ps *pb.PushSnapshotsR
 		Int("rejected", result.Rejected).
 		Int("pending", len(result.PendingSeen)).
 		Msg("push ingested")
-
-	// Persist collect stats so the dashboard's status bar reflects reality.
-	// Non-fatal: a failed bookkeeping write must not reject the push.
-	if m.store != nil {
-		if err := m.store.RecordCollect(ctx, ps.PluginId, result.Inserted); err != nil {
-			log.Warn().Err(err).Str("plugin_id", ps.PluginId).Msg("record collect failed")
-		}
-	}
 
 	// Send PushAck over the stream if the plugin has an active session.
 	if session := m.GetSession(ps.PluginId); session != nil {
@@ -474,8 +495,10 @@ func (m *Manager) isPluginHealthy(pluginID string) bool {
 
 	health.mu.Lock()
 	last := health.lastActivity
+	collectionKnown := health.collectionKnown
+	collectionHealthy := health.collectionHealthy
 	health.mu.Unlock()
-	return time.Since(last) <= timeout
+	return time.Since(last) <= timeout && (!collectionKnown || collectionHealthy)
 }
 
 // ErrPluginNotConnected is returned when a SyncCommand targets a disconnected plugin.

@@ -614,11 +614,12 @@
             bar.classList.remove('offline');
 
             const plugins = data.plugins || [];
-            const healthy = plugins.filter(p => p.healthy).length;
+            const connected = plugins.filter(p => p.connected).length;
+            const degraded = plugins.filter(p => p.connected && !p.healthy).length;
             const pluginsEl = document.getElementById('sb-plugins');
-            pluginsEl.textContent = healthy + ' 插件在线';
+            pluginsEl.textContent = connected + ' 插件在线' + (degraded ? ' · ' + degraded + ' 采集异常' : '');
             pluginsEl.title = plugins.map(p =>
-                p.name + ': ' + (p.healthy ? '在线' : '离线') + ' · 最后采集 ' + (p.last_collect_at ? relativeTime(p.last_collect_at) : '—') + ' · ' + p.last_collect_count + ' 条'
+                p.name + ': ' + pluginHealthLabel(p) + ' · 最后采集 ' + (p.last_collect_at ? relativeTime(p.last_collect_at) : '—') + ' · ' + p.last_collect_count + ' 条' + (p.last_collect_error ? ' · ' + p.last_collect_error : '')
             ).join('\n');
 
             const metricsEl = document.getElementById('sb-metrics');
@@ -653,6 +654,11 @@
         }
 
         // Per-plugin detail (R1): hover shows a tooltip; click toggles the strip.
+        function pluginHealthLabel(plugin) {
+            if (!plugin.connected) return '离线';
+            return plugin.healthy ? '正常' : '采集异常';
+        }
+
         function renderPluginDetail(plugins) {
             const wrap = document.getElementById('plugin-detail');
             if (wrap.classList.contains('hidden')) return;
@@ -665,8 +671,14 @@
                 li.appendChild(name);
                 const meta = document.createElement('span');
                 meta.className = p.healthy ? '' : 'offline';
-                meta.textContent = ' · ' + (p.healthy ? '在线' : '离线') + ' · 最后采集 ' + (p.last_collect_at ? relativeTime(p.last_collect_at) : '—') + ' · ' + p.last_collect_count + ' 条';
+                meta.textContent = ' · ' + pluginHealthLabel(p) + ' · 最后采集 ' + (p.last_collect_at ? relativeTime(p.last_collect_at) : '—') + ' · ' + p.last_collect_count + ' 条';
                 li.appendChild(meta);
+                if (p.last_collect_error) {
+                    const error = document.createElement('div');
+                    error.className = 'offline';
+                    error.textContent = '采集错误：' + p.last_collect_error + ' · ' + (p.consecutive_errors || 0) + ' 次连续失败 · ' + (p.last_collect_duration_ms || 0) + ' ms';
+                    li.appendChild(error);
+                }
                 ul.appendChild(li);
             }
             wrap.appendChild(ul);

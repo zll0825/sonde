@@ -49,6 +49,48 @@ func TestFREDCommoditiesCollector_ClassifiesUpstreamSnapshotsAsReal(t *testing.T
 	}
 }
 
+func TestFREDCommoditiesCollector_ReturnsPartialSnapshotsAndError(t *testing.T) {
+	testClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Query().Get("series_id") == "GOLDAMGBD228NLBM" {
+			return &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader("upstream unavailable")), Header: make(http.Header)}, nil
+		}
+		body := `{"observations":[{"date":"2026-08-01","value":"75.5"}]}`
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
+	f := &FREDCollector{apiKey: "test-secret", client: provider.NewSafeHTTPClientWithHTTPClient(provider.Config{
+		ProviderName: "fred-commodities-partial", Timeout: time.Second, RPS: 100, Burst: 10,
+	}, testClient)}
+
+	snaps, err := f.GetSnapshots(context.Background())
+	if err == nil || len(snaps) != 2 {
+		t.Fatalf("partial result = %d snapshots, error %v; want 2 and non-nil", len(snaps), err)
+	}
+	if !strings.Contains(err.Error(), "fred/metal.precious.gold") || strings.Contains(err.Error(), "test-secret") {
+		t.Fatalf("partial error = %q", err)
+	}
+}
+
+func TestFREDCommoditiesCollector_BackfillReturnsPartialSnapshotsAndError(t *testing.T) {
+	testClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Query().Get("series_id") == "GOLDAMGBD228NLBM" {
+			return &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader("upstream unavailable")), Header: make(http.Header)}, nil
+		}
+		body := `{"observations":[{"date":"2026-08-01","value":"75.5"}]}`
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
+	f := &FREDCollector{apiKey: "test-secret", client: provider.NewSafeHTTPClientWithHTTPClient(provider.Config{
+		ProviderName: "fred-commodities-backfill-partial", Timeout: time.Second, RPS: 100, Burst: 10,
+	}, testClient)}
+
+	snaps, err := f.GetSnapshotsForWindow(context.Background(), time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC))
+	if err == nil || len(snaps) != 2 {
+		t.Fatalf("partial backfill = %d snapshots, error %v; want 2 and non-nil", len(snaps), err)
+	}
+	if !strings.Contains(err.Error(), "fred/metal.precious.gold") || strings.Contains(err.Error(), "test-secret") {
+		t.Fatalf("partial backfill error = %q", err)
+	}
+}
+
 func TestParseFREDValue_Missing(t *testing.T) {
 	// FRED marks missing observations with ".".
 	if v, ok := parseFREDValue(".", 1); ok {

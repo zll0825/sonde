@@ -113,7 +113,8 @@ func (h *Handler) MaintainSession(stream pb.PluginHost_MaintainSessionServer) er
 // real health status (used downstream for quality-score reputation).
 func (h *Handler) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
 	h.manager.markHealthActivity(req.PluginId)
-	h.manager.persistHeartbeat(ctx, req.PluginId)
+	h.manager.markCollectionHealth(req.PluginId, req.GetStatus())
+	h.manager.persistHeartbeat(ctx, req.PluginId, req.GetStatus())
 	log.Debug().
 		Str("plugin_id", req.PluginId).
 		Str("state", req.Status.GetState()).

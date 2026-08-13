@@ -28,6 +28,7 @@ CREATE TABLE plugins (
     healthy             BOOLEAN DEFAULT FALSE,
     last_heartbeat      TIMESTAMPTZ,
     last_collect_at     TIMESTAMPTZ,
+    last_collect_duration_ms INT NOT NULL DEFAULT 0,
     last_collect_count  INT DEFAULT 0,
     last_collect_error  TEXT,
     consecutive_errors  INT DEFAULT 0,
