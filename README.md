@@ -156,7 +156,7 @@ make build       # 编译 core + api
 | M5 Control + Frontend | ✅ | 命令通路 + Capital Radar |
 | 真实数据源接入 | ✅ | Yahoo / FRED / CoinGecko / mempool.space |
 | 告警通知通道 | ✅ | Telegram / Webhook（outbox 重试托管） |
-| B6 噪音预算校准 | 🔄 | **当前阶段**：soak 中按实际误报率调至 ≤10 条/天 |
+| B6 噪音预算校准 | ✅ | 72 小时风险验收通过；真实告警每天 ≤10 条 |
 
 ## 已知限制
 
@@ -177,3 +177,4 @@ make build       # 编译 core + api
 | [ADR](docs/adr.md) | 架构决策记录（ADR-1…7） |
 | [Conventions](docs/conventions.md) | Go 代码约定 |
 | [Real-Data Onboarding](docs/milestone/real-data-onboarding.md) | 真实数据接入里程碑 |
+| [MVP v0.1.0 发布记录](docs/releases/mvp-v0.1.0.md) | 验收证据、迁移与回滚边界、残余风险 |
