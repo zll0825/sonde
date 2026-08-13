@@ -43,12 +43,13 @@ func dbConn(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-// truncateAll registers a t.Cleanup that empties every table touched by these
-// tests. CASCADE handles foreign-key dependencies.
+// truncateAll empties every table touched by these tests before and after each
+// test. CASCADE handles foreign-key dependencies. Cleaning up front keeps the
+// suite repeatable when a prior run was interrupted before t.Cleanup executed.
 func truncateAll(t *testing.T, db *pgxpool.Pool) {
 	t.Helper()
-	t.Cleanup(func() {
-		_, _ = db.Exec(context.Background(), `
+	truncate := func() error {
+		_, err := db.Exec(context.Background(), `
 			TRUNCATE TABLE
 				observations,
 				relation_suggestions,
@@ -66,6 +67,15 @@ func truncateAll(t *testing.T, db *pgxpool.Pool) {
 				command_log
 			RESTART IDENTITY CASCADE
 		`)
+		return err
+	}
+	if err := truncate(); err != nil {
+		t.Fatalf("truncate integration fixtures before test: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := truncate(); err != nil {
+			t.Errorf("truncate integration fixtures after test: %v", err)
+		}
 	})
 }
 

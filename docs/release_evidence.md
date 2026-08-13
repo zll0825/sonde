@@ -1,12 +1,14 @@
 # Release Evidence — Post-MVP Product Contract
 
-Operational verification checklist for the Post-MVP Product Contract release.
-Every command is self-contained. Adjust `$DATABASE_URL` as needed.
+Operational verification checklist for the Post-MVP Product Contract candidate.
+The command blocks assume the environment variables shown below and disposable
+databases for destructive checks. Never point these commands at the live MVP
+soak database unless the step is explicitly read-only.
 
 ## Environment
 
 ```bash
-export DATABASE_URL="postgres://capital:${PGPASS}@localhost:5432/capital_observatory?sslmode=disable"
+export DATABASE_URL="postgres://capital:${PGPASS}@localhost:55433/capital_observatory_candidate?sslmode=disable"
 ```
 
 ## 1. Database Migrations
@@ -16,16 +18,18 @@ export DATABASE_URL="postgres://capital:${PGPASS}@localhost:5432/capital_observa
 ```bash
 migrate -path migrations -database "$DATABASE_URL" version
 ```
-Expected: `010` (post-apply) or `008` (pre-apply).
+Expected: `010` with `dirty=false` after apply. Version `006` is the schema
+boundary for the MVP `v0.1.0` rollback commit cited below; migrations 007-010
+belong to the post-MVP candidate.
 
-### Apply migrations 009 + 010 (idempotent)
+### Apply pending migrations (idempotent)
 
 ```bash
 migrate -path migrations -database "$DATABASE_URL" up
 ```
 Migration 009 creates `provider_quota`, `research_feedbacks`, `rule_audit_log`,
-`entity_representative_metric` + indexes. Migration 010 adds `extension JSONB`
-+ GIN index to `manual_relations`.
+and `entity_representative_metric` plus indexes. Migration 010 adds the
+`extension JSONB` column and GIN index to `manual_relations`.
 
 ### Verify tables
 
@@ -72,9 +76,11 @@ pg_restore --list "$BACKUP_DIR/release_${TS}.dump" > /dev/null \
 ### Restore to staging and verify
 
 ```bash
-STAGING_URL="postgres://capital@localhost:5432/capital_observatory_staging"
-dropdb --if-exists -h localhost -p 5432 -U capital capital_observatory_staging
-createdb  -h localhost -p 5432 -U capital capital_observatory_staging
+STAGING_URL="postgres://capital:${PGPASS}@localhost:55434/capital_observatory_restore?sslmode=disable"
+# Start a disposable second Postgres/TimescaleDB instance on port 55434.
+# Do not use dropdb/createdb against the live MVP port 5432.
+dropdb --if-exists --maintenance-db=postgres -h localhost -p 55434 -U capital capital_observatory_restore
+createdb  -h localhost -p 55434 -U capital capital_observatory_restore
 pg_restore --no-owner --no-privileges --dbname "$STAGING_URL" \
   "$BACKUP_DIR/release_${TS}.dump"
 psql "$STAGING_URL" -c "
@@ -129,9 +135,9 @@ UPDATE event_outbox
 ```
 Caution: only for transient failures.
 
-## 4. Provider Quota Verification
+## 4. Provider Access Safety
 
-### Latest windows per provider
+### FRED shared quota windows
 
 ```bash
 psql "$DATABASE_URL" -c "
@@ -142,10 +148,13 @@ SELECT provider, window_start, window_end,
  ORDER BY provider, window_start DESC LIMIT 20;
 "
 ```
-Expected: >= 1 row per active provider (`fred`, `yahoo_finance`, `coingecko`,
-`mempool_space`, `blockchain_com`).
+`provider_quota` is the cross-process persistent budget used by FRED when
+`PROVIDER_QUOTA_DB_URL` is configured. It is not a registry for every provider.
+Yahoo Finance, CoinGecko, mempool.space, and other providers use the shared
+safe HTTP client's in-process limiter/circuit/retry controls and must be
+verified from redacted service logs and provider-specific counters instead.
 
-### Health probe
+### FRED quota health probe
 
 ```bash
 psql "$DATABASE_URL" -t -c "
@@ -154,7 +163,9 @@ SELECT CASE WHEN count(*)>0 THEN 'quota_ok'
   FROM provider_quota WHERE window_end > NOW() - INTERVAL '24 hours';
 "
 ```
-Expected: `quota_ok`.
+Expected: `quota_ok` only when FRED is enabled and has made a request. An empty
+table is valid for a candidate run that did not enable FRED; it is not evidence
+about other providers.
 
 ## 5. Rollback Playbook
 
@@ -168,57 +179,60 @@ sudo systemctl stop capital-core
 ### Step 2 — Run DOWN migrations
 
 ```bash
-migrate -path migrations -database "$DATABASE_URL" down 2
+migrate -path migrations -database "$DATABASE_URL" down 4
 ```
-Executes `010_manual_relations_extension.down.sql` then
-`009_research_feedback.down.sql`. To step one at a time:
+Executes migrations 010, 009, 008, and 007 in reverse order. This matches the
+schema at the MVP rollback commit. To step one at a time:
 
 ```bash
 migrate -path migrations -database "$DATABASE_URL" down 1
 migrate -path migrations -database "$DATABASE_URL" down 1
+migrate -path migrations -database "$DATABASE_URL" down 1
+migrate -path migrations -database "$DATABASE_URL" down 1
 ```
 
-### Step 3 — Confirm version 008
+### Step 3 — Confirm version 006
 
 ```bash
 migrate -path migrations -database "$DATABASE_URL" version
 ```
-Expected: `008`.
+Expected: `006`.
 
 ### Step 4 — Revert binary
 
 ```bash
-# Container:
-docker tag capital_observatory/core:v0.8.0 capital_observatory/core:latest
-docker compose up -d core
-
-# Or systemd symlink:
-sudo ln -sf /opt/capital/core-v0.8.0 /opt/capital/core
-sudo systemctl start capital-core
+# The repository's MVP release baseline is commit `3d9472c`.
+# Build/deploy an artifact from that commit in a separate worktree or registry;
+# no `v0.8.0` image is part of this repository.
+ROLLBACK_COMMIT=3d9472c
+git worktree add /private/tmp/capital-observatory-mvp-rollback "$ROLLBACK_COMMIT"
+# Deploy the artifact built from $ROLLBACK_COMMIT using the environment's
+# normal process/container mechanism, then remove the worktree after rollback.
 ```
 
 ### Step 5 — Post-rollback verification
 
 ```bash
-# No stale tables from migration 009
+# No stale tables from migrations 007 and 009
 psql "$DATABASE_URL" -c "
 SELECT count(*) AS stale_tables FROM information_schema.tables
  WHERE table_schema='public' AND table_name IN (
    'provider_quota','research_feedbacks','rule_audit_log',
-   'entity_representative_metric');"
+   'entity_representative_metric','manual_relations');"
 # Expected: 0
 
-# No stale column from migration 010
+# No stale relation_suggestions column from migration 008
 psql "$DATABASE_URL" -c "
 SELECT count(*) AS stale_column FROM information_schema.columns
- WHERE table_name='manual_relations' AND column_name='extension';"
+ WHERE table_name='relation_suggestions' AND column_name='source';"
 # Expected: 0
 
-# Process health
-curl -sf http://localhost:8080/healthz || echo "HEALTHZ_FAIL"
+# Process health (the implemented route is /api/health)
+curl -sf http://localhost:8080/api/health || echo "HEALTH_FAIL"
 ```
 
-If `/healthz` returns 200 and both SQL probes return `0`, rollback is complete.
+If the migration version is `006`, `/api/health` returns 200, and both SQL
+probes return `0`, rollback is complete.
 Monitor `event_outbox` for minutes to confirm the reverted binary does not
 crash on pending events.
 
@@ -227,7 +241,7 @@ crash on pending events.
 | Check | Command | Expected |
 |-------|---------|----------|
 | Migration version | `migrate ... version` | `010` |
-| provider_quota rows | §4.1 | >= 1 per active provider |
+| FRED provider_quota rows | §4.1 | >= 1 when FRED is enabled |
 | event_outbox stuck | §3.2 | 0 rows or known reason |
 | Backup integrity | §2.2 | `BACKUP_OK` |
-| Health endpoint | `curl /healthz` | HTTP 200 |
+| Health endpoint | `curl /api/health` | HTTP 200 |
