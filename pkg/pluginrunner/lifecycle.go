@@ -107,8 +107,16 @@ func (l *Lifecycle) Run() {
 	}
 }
 
-// runSession establishes one connection: dial → register → collect → stream loop.
+// runSession establishes one connection: validate collector → dial → register →
+// collect → stream loop. Local startup validation must happen before any
+// registration side effect; otherwise a missing credential creates a new
+// registration version on every reconnect.
 func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval time.Duration) error {
+	collector, err := l.cfg.SetupCollector(ctx)
+	if err != nil {
+		return fmt.Errorf("setup collector: %w", err)
+	}
+
 	conn, err := grpc.NewClient(coreAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return fmt.Errorf("failed to dial core at %s: %w", coreAddr, err)
@@ -127,11 +135,6 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 		return fmt.Errorf("registration failed: %w", err)
 	}
 	log.Info().Str("plugin_id", pluginID).Msg("plugin registered successfully")
-
-	collector, err := l.cfg.SetupCollector(ctx)
-	if err != nil {
-		return fmt.Errorf("setup collector: %w", err)
-	}
 
 	// executeCommand single-flights duplicate command IDs and replays a cached
 	// successful snapshot set without calling the provider again.
