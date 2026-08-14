@@ -18,8 +18,8 @@ export DATABASE_URL="postgres://capital:${PGPASS}@localhost:55433/capital_observ
 ```bash
 migrate -path migrations -database "$DATABASE_URL" version
 ```
-Expected: `010` with `dirty=false` after apply. Version `006` is the schema
-boundary for the MVP `v0.1.0` rollback commit cited below; migrations 007-010
+Expected: `011` with `dirty=false` after apply. Version `006` is the schema
+boundary for the MVP `v0.1.0` rollback commit cited below; migrations 007-011
 belong to the post-MVP candidate.
 
 ### Apply pending migrations (idempotent)
@@ -30,6 +30,8 @@ migrate -path migrations -database "$DATABASE_URL" up
 Migration 009 creates `provider_quota`, `research_feedbacks`, `rule_audit_log`,
 and `entity_representative_metric` plus indexes. Migration 010 adds the
 `extension JSONB` column and GIN index to `manual_relations`.
+Migration 011 adds `plugins.last_collect_duration_ms` for persisted collection
+health evidence.
 
 ### Verify tables
 
@@ -137,24 +139,26 @@ Caution: only for transient failures.
 
 ## 4. Provider Access Safety
 
-### FRED shared quota windows
+### FRED and Alpha Vantage shared quota windows
 
 ```bash
 psql "$DATABASE_URL" -c "
 SELECT provider, window_start, window_end,
-       used AS successes, failures, updated_at
+       used AS reservations, failures, updated_at
   FROM provider_quota
  WHERE window_end > NOW() - INTERVAL '24 hours'
  ORDER BY provider, window_start DESC LIMIT 20;
 "
 ```
-`provider_quota` is the cross-process persistent budget used by FRED when
-`PROVIDER_QUOTA_DB_URL` is configured. It is not a registry for every provider.
-Yahoo Finance, CoinGecko, mempool.space, and other providers use the shared
-safe HTTP client's in-process limiter/circuit/retry controls and must be
-verified from redacted service logs and provider-specific counters instead.
+`provider_quota` is the cross-process persistent budget used by FRED and Alpha
+Vantage when `PROVIDER_QUOTA_DB_URL` is configured. Alpha Vantage is capped at
+25 reservations per rolling 24-hour window; without the database setting, its
+shared process-local limiter enforces the same cap across reconnects. Yahoo
+Finance, CoinGecko, mempool.space, and other providers use the shared safe HTTP
+client's in-process limiter/circuit/retry controls and must be verified from
+redacted service logs and provider-specific counters instead.
 
-### FRED quota health probe
+### Persistent provider quota health probe
 
 ```bash
 psql "$DATABASE_URL" -t -c "
@@ -163,9 +167,10 @@ SELECT CASE WHEN count(*)>0 THEN 'quota_ok'
   FROM provider_quota WHERE window_end > NOW() - INTERVAL '24 hours';
 "
 ```
-Expected: `quota_ok` only when FRED is enabled and has made a request. An empty
-table is valid for a candidate run that did not enable FRED; it is not evidence
-about other providers.
+Expected: `quota_ok` only when FRED or Alpha Vantage is enabled with
+`PROVIDER_QUOTA_DB_URL` and has made a request. An empty table is valid when
+neither provider ran with persistent quota enabled; it is not evidence about
+other providers.
 
 ## 5. Rollback Playbook
 
@@ -179,12 +184,13 @@ sudo systemctl stop capital-core
 ### Step 2 — Run DOWN migrations
 
 ```bash
-migrate -path migrations -database "$DATABASE_URL" down 4
+migrate -path migrations -database "$DATABASE_URL" down 5
 ```
-Executes migrations 010, 009, 008, and 007 in reverse order. This matches the
+Executes migrations 011, 010, 009, 008, and 007 in reverse order. This matches the
 schema at the MVP rollback commit. To step one at a time:
 
 ```bash
+migrate -path migrations -database "$DATABASE_URL" down 1
 migrate -path migrations -database "$DATABASE_URL" down 1
 migrate -path migrations -database "$DATABASE_URL" down 1
 migrate -path migrations -database "$DATABASE_URL" down 1
@@ -240,8 +246,8 @@ crash on pending events.
 
 | Check | Command | Expected |
 |-------|---------|----------|
-| Migration version | `migrate ... version` | `010` |
-| FRED provider_quota rows | §4.1 | >= 1 when FRED is enabled |
+| Migration version | `migrate ... version` | `011` |
+| Provider quota rows | §4.1 | >= 1 when FRED or Alpha Vantage is enabled with persistent quota |
 | event_outbox stuck | §3.2 | 0 rows or known reason |
 | Backup integrity | §2.2 | `BACKUP_OK` |
 | Health endpoint | `curl /api/health` | HTTP 200 |
