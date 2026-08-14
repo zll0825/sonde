@@ -152,7 +152,8 @@ services:
       COLLECTION_INTERVAL: "1h"           # public APIs are low-rate-limit
       PROVIDER: "real"                    # "real" = CoinGecko+mempool; "mock" = synthetic
 
-  # Commodities Plugin: WTI, copper, and gold from FRED.
+  # Commodities Plugin: WTI/copper from FRED and XAUUSD spot gold from Alpha Vantage.
+  # Both keys are required in real mode; missing credentials fail setup loudly.
   commodities-plugin:
     build:
       context: ../
@@ -166,9 +167,10 @@ services:
     environment:
       CORE_ADDR: "core:50051"
       PLUGIN_ID: "commodities"
-      COLLECTION_INTERVAL: "24h"
-      PROVIDER: "fred"
+      COLLECTION_INTERVAL: "2h"           # 12 Alpha Vantage spot calls/day (free tier: 25/day)
+      PROVIDER: "real"
       FRED_API_KEY: "${FRED_API_KEY:-}"
+      ALPHAVANTAGE_API_KEY: "${ALPHAVANTAGE_API_KEY:-}"
       PROVIDER_QUOTA_DB_URL: "postgres://capital:capital_dev@timescaledb:5432/capital_observatory?sslmode=disable"
 
 volumes:

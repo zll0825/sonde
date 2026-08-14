@@ -120,7 +120,7 @@ run-macro: ## Run the Macro plugin (real FRED data — needs FRED_API_KEY)
 run-macro-mock: ## Run the Macro plugin with PROVIDER=mock (offline dev)
 	cd plugins/macro && CORE_ADDR=localhost:50051 PROVIDER=mock go run ./cmd/macro
 
-run-commodities: ## Run the Commodities plugin (real FRED data — needs FRED_API_KEY)
+run-commodities: ## Run Commodities (needs FRED_API_KEY + ALPHAVANTAGE_API_KEY)
 	cd plugins/commodities && CORE_ADDR=localhost:50051 go run ./cmd/commodities
 
 run-commodities-mock: ## Run the Commodities plugin with PROVIDER=mock (offline dev)
@@ -160,6 +160,7 @@ clean-data: ## DESTRUCTIVE: stop stack AND delete database volumes
 # observe actual false-positive rates against the ≤10 alerts/day noise budget.
 # Setup notes (documented for operators):
 #   - macro: needs FRED_API_KEY (free at https://fred.stlouisfed.org)
+#   - commodities: also needs ALPHAVANTAGE_API_KEY (25 calls/day free tier)
 #   - crypto: no key required (CoinGecko / mempool.space free tiers)
 #   - ETF: no key required (Yahoo Finance public API)
 #   - Telegram: set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID on core env to enable

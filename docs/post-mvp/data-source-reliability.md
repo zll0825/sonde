@@ -11,7 +11,8 @@ patterns for each data source in the capital_observatory production inventory.
 | coingecko | btc.ass.price | 1-2 min | ~30-60 sec | Free tier refreshes every 30-60 sec |
 | mempool_space | btc.ass.hash_rate | 10-30 min | Per-block (~10 min) | Hash rate is estimated; lags block discovery |
 | blockchain_com | btc.ass.tx_count | 1-3 hours | Per-block | Daily aggregates available after block confirmation |
-| fred | fed.ins.balance_sheet, us.mkt.ten_year_yield, us.mkt.dollar_index, us.mkt.usd_cny, us.mkt.cpi, us.mkt.inflation_yoy | 1-7 days | Weekly (Fed), Daily (yields), Monthly (CPI) | See FRED series-specific release calendar |
+| fred | fed.ins.balance_sheet, us.mkt.ten_year_yield, us.mkt.dollar_index, us.mkt.usd_cny, us.mkt.cpi, us.mkt.inflation_yoy, oil.energy.wti, metal.industrial.copper | 1-7 days | Weekly (Fed), Daily (yields/WTI), Monthly (CPI/copper) | See FRED series-specific release calendar |
+| alpha_vantage | metal.precious.gold | Live quote timestamp; daily history closes | Spot polled every 2h; history explicit only | `GOLD_SILVER_SPOT` / `GOLD_SILVER_HISTORY`, `nominal=XAUUSD`, USD per troy ounce; free tier 25 calls/day |
 
 ## FRED Release Calendar
 
@@ -31,6 +32,16 @@ patterns for each data source in the capital_observatory production inventory.
 - **mempool.space**: 24/7 (blockchain continues)
 - **blockchain.com**: 24/7
 - **FRED**: Follows US federal calendar; quarterly data follows BLS/FA calendar
+- **Alpha Vantage XAUUSD**: Spot follows the global precious-metals market; daily history can omit non-trading dates
+
+## Alpha Vantage Gold Contract
+
+- `metal.precious.gold` remains physical/spot gold, not COMEX futures or an ETF proxy.
+- Current collection requires `GOLD_SILVER_SPOT&symbol=GOLD` with `nominal=XAUUSD`; history uses `GOLD_SILVER_HISTORY`, `symbol=GOLD`, `interval=daily`.
+- Spot timestamps are normalized from provider UTC; daily history dates are UTC midnight. Values must be finite and positive.
+- The default two-hour interval schedules at most 12 spot calls/day. Retries, reconnects, operator checks, and explicit history calls consume the remaining 13-call free-tier headroom.
+- A shared limiter hard-caps Alpha Vantage at 25 wire attempts per rolling 24 hours. `PROVIDER_QUOTA_DB_URL` makes the cap persistent across process restarts; without it, the cap remains process-local across session reconnects.
+- Missing credentials, informational/rate-limit JSON, stale spot observations, invalid instruments/values, HTTP failures, oversized responses, and empty requested history windows remain visible as collection failures. Real mode never falls back to mock.
 
 ## Quality Monitoring Recommendations
 

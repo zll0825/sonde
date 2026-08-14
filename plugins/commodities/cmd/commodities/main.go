@@ -1,5 +1,5 @@
 // commodities 插件：覆盖三大商品维度——能源（WTI 原油）、工业金属（IMF 初级铜价）、
-// 贵金属（PM 黄金现货）。数据源统一来自 FRED（需 FRED_API_KEY），小时级轮询。
+// 贵金属（XAUUSD 黄金现货）。WTI/铜来自 FRED，黄金来自 Alpha Vantage。
 // 与现有 ETF / Crypto / Macro 形成互补的研究视图：
 //   - 油价→全球增长与通胀压力
 //   - 铜价→工业需求与全球 PMI 代理（月度 IMF 初级商品价）
@@ -17,20 +17,21 @@ import (
 )
 
 const (
-	pluginVersion = "0.1.0"
+	pluginVersion             = "0.2.0"
+	defaultCollectionInterval = 2 * time.Hour
 )
 
 func main() {
 	pluginrunner.NewLifecycle(pluginrunner.Config{
 		PluginName:        "commodities",
 		Version:           pluginVersion,
-		DefaultInterval:   1 * time.Hour, // 商品指标日频发布；小时轮询尊重 API 配额
+		DefaultInterval:   defaultCollectionInterval, // 12 scheduled gold calls/day leaves free-tier headroom
 		BuildRegistration: buildRegistration,
 		SetupCollector: func(ctx context.Context) (pluginrunner.Provider, error) {
 			if os.Getenv("PROVIDER") == "mock" {
 				return collector.Mock{}, nil
 			}
-			c, err := collector.NewFREDCollector()
+			c, err := collector.NewRealCollector()
 			if err != nil {
 				return nil, err
 			}
@@ -40,15 +41,15 @@ func main() {
 }
 
 // compile-time assertion
-var _ pluginrunner.Provider = (*collector.FREDCollector)(nil)
-var _ pluginrunner.WindowedProvider = (*collector.FREDCollector)(nil)
+var _ pluginrunner.Provider = (*collector.RealCollector)(nil)
+var _ pluginrunner.WindowedProvider = (*collector.RealCollector)(nil)
 
 func buildRegistration() *pb.RegisterPluginRequest {
 	return &pb.RegisterPluginRequest{
 		Info: &pb.PluginInfo{
 			Name:        "commodities",
 			Version:     pluginVersion,
-			Description: "WTI oil, IMF primary copper, PM gold spot—global growth, industrial demand, safe-haven proxy",
+			Description: "WTI oil, IMF primary copper, and XAUUSD spot gold for growth, demand, and safe-haven research",
 		},
 		Entities: []*pb.EntityDeclaration{
 			{
@@ -67,7 +68,7 @@ func buildRegistration() *pb.RegisterPluginRequest {
 			},
 			{
 				Id:         "GOLD",
-				Name:       "Gold (PM Fix)",
+				Name:       "Gold Spot (XAUUSD)",
 				Namespace:  "commodity",
 				EntityType: pb.EntityType_ENTITY_TYPE_INSTRUMENT,
 				Tags:       []string{"precious_metal", "gold", "safe_haven", "real_rates"},
@@ -92,9 +93,9 @@ func buildRegistration() *pb.RegisterPluginRequest {
 			},
 			{
 				Id:          "metal.precious.gold",
-				Name:        "Gold PM Fix ($/oz)",
-				Description: "LBMA Gold Price PM fix in USD per troy ounce",
-				Unit:        "USD/oz",
+				Name:        "Gold Spot (XAUUSD, USD/troy oz)",
+				Description: "Physical spot gold quoted as XAUUSD by Alpha Vantage, in USD per troy ounce",
+				Unit:        "USD/troy oz",
 				Frequency:   "daily",
 				EntityId:    "GOLD",
 			},
@@ -141,6 +142,6 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Description:  "Copper declining 5+ days—potential industrial slowdown signal",
 			},
 		},
-		ChangeLog: "Initial commodities domain: WTI oil, IMF primary copper (monthly USD/mt), PM gold spot from FRED",
+		ChangeLog: "Replaced unavailable FRED gold series with Alpha Vantage XAUUSD spot/history; WTI and copper remain on FRED",
 	}
 }

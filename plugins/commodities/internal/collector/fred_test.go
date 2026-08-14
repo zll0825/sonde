@@ -51,7 +51,7 @@ func TestFREDCommoditiesCollector_ClassifiesUpstreamSnapshotsAsReal(t *testing.T
 
 func TestFREDCommoditiesCollector_ReturnsPartialSnapshotsAndError(t *testing.T) {
 	testClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		if req.URL.Query().Get("series_id") == "GOLDAMGBD228NLBM" {
+		if req.URL.Query().Get("series_id") == "PCOPPUSDM" {
 			return &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader("upstream unavailable")), Header: make(http.Header)}, nil
 		}
 		body := `{"observations":[{"date":"2026-08-01","value":"75.5"}]}`
@@ -62,17 +62,17 @@ func TestFREDCommoditiesCollector_ReturnsPartialSnapshotsAndError(t *testing.T) 
 	}, testClient)}
 
 	snaps, err := f.GetSnapshots(context.Background())
-	if err == nil || len(snaps) != 2 {
-		t.Fatalf("partial result = %d snapshots, error %v; want 2 and non-nil", len(snaps), err)
+	if err == nil || len(snaps) != 1 {
+		t.Fatalf("partial result = %d snapshots, error %v; want 1 and non-nil", len(snaps), err)
 	}
-	if !strings.Contains(err.Error(), "fred/metal.precious.gold") || strings.Contains(err.Error(), "test-secret") {
+	if !strings.Contains(err.Error(), "fred/metal.industrial.copper") || strings.Contains(err.Error(), "test-secret") {
 		t.Fatalf("partial error = %q", err)
 	}
 }
 
 func TestFREDCommoditiesCollector_BackfillReturnsPartialSnapshotsAndError(t *testing.T) {
 	testClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		if req.URL.Query().Get("series_id") == "GOLDAMGBD228NLBM" {
+		if req.URL.Query().Get("series_id") == "PCOPPUSDM" {
 			return &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader("upstream unavailable")), Header: make(http.Header)}, nil
 		}
 		body := `{"observations":[{"date":"2026-08-01","value":"75.5"}]}`
@@ -83,10 +83,10 @@ func TestFREDCommoditiesCollector_BackfillReturnsPartialSnapshotsAndError(t *tes
 	}, testClient)}
 
 	snaps, err := f.GetSnapshotsForWindow(context.Background(), time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC))
-	if err == nil || len(snaps) != 2 {
-		t.Fatalf("partial backfill = %d snapshots, error %v; want 2 and non-nil", len(snaps), err)
+	if err == nil || len(snaps) != 1 {
+		t.Fatalf("partial backfill = %d snapshots, error %v; want 1 and non-nil", len(snaps), err)
 	}
-	if !strings.Contains(err.Error(), "fred/metal.precious.gold") || strings.Contains(err.Error(), "test-secret") {
+	if !strings.Contains(err.Error(), "fred/metal.industrial.copper") || strings.Contains(err.Error(), "test-secret") {
 		t.Fatalf("partial backfill error = %q", err)
 	}
 }
@@ -129,23 +129,11 @@ func TestParseFREDValue_CopperCents(t *testing.T) {
 	}
 }
 
-func TestParseFREDValue_GoldDollars(t *testing.T) {
-	// Gold in USD/oz — identity scale.
-	v, ok := parseFREDValue("2350.10", 1)
-	if !ok {
-		t.Fatal("parseFREDValue(\"2350.10\", 1) should return ok=true")
-	}
-	if v != 2350.10 {
-		t.Errorf("parseFREDValue(\"2350.10\", 1) = %v, want 2350.10", v)
-	}
-}
-
 func TestCommoditiesSeriesListOrder(t *testing.T) {
-	// The series list should cover all three commodity dimensions: oil, copper, gold.
+	// Gold is intentionally not a FRED leg; it is owned by Alpha Vantage.
 	want := []string{
 		"oil.energy.wti",
 		"metal.industrial.copper",
-		"metal.precious.gold",
 	}
 	if len(fredSeriesList) != len(want) {
 		t.Fatalf("fredSeriesList has %d entries, want %d", len(fredSeriesList), len(want))
@@ -158,11 +146,10 @@ func TestCommoditiesSeriesListOrder(t *testing.T) {
 }
 
 func TestCommoditiesSeriesFrequencyConsistency(t *testing.T) {
-	// Oil and gold are daily; copper (PCOPPUSDM) is a monthly IMF series.
+	// Oil is daily; copper (PCOPPUSDM) is a monthly IMF series.
 	want := map[string]string{
 		"oil.energy.wti":          "daily",
 		"metal.industrial.copper": "monthly",
-		"metal.precious.gold":     "daily",
 	}
 	for _, entry := range fredSeriesList {
 		expected, ok := want[entry.MetricID]

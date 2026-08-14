@@ -32,7 +32,7 @@ plugins/<name>/
 │       └── main.go              # 程序入口 + BuildRegistration
 └── internal/
     └── collector/
-        ├── fred.go              # 真实采集器（FRED / Yahoo / CoinGecko …）
+        ├── fred.go              # 真实采集器（FRED / Yahoo / CoinGecko / Alpha Vantage …）
         ├── fred_test.go         # 真实采集器单元测试（mock HTTP transport）
         └── mock.go              # 离线 mock（Local dev / CI 兜底）
 ```
@@ -98,7 +98,7 @@ type WindowedProvider interface {
 **所有外网请求**必须通过 `pkg/provider.SafeHTTPClient`，不要 `http.Get`：
 
 ```go
-cfg := provider.FREDConfig()            // 预设：FREDConfig/YahooFinanceConfig/CoinGeckoConfig/…
+cfg := provider.FREDConfig() // 预设：FREDConfig/AlphaVantageConfig/YahooFinanceConfig/…
 client := provider.NewSafeHTTPClient(cfg)
 // 或者注入 mock transport：
 client := provider.NewSafeHTTPClientWithHTTPClient(cfg, &http.Client{Transport: mockRT})
@@ -127,6 +127,7 @@ testCfg := provider.Config{
 
 每个外网来源应该通过环境变量注入：
 - `FRED_API_KEY` — 用于 FRED (fred.stlouisfed.org)
+- `ALPHAVANTAGE_API_KEY` — 用于 Alpha Vantage；免费层 25 次/天，调用方必须设置保留余量的采集周期
 - `COINGECKO_API_KEY` (optional; 免费版可缺省)
 
 `NewXXXCollector()` **应该 fail-fast**（`os.Getenv == ""` 直接 `return error`）；不要写 silent fallback 到 mock。
@@ -190,7 +191,7 @@ if len(snaps) == 0 {
 ```bash
 cd plugins/<name>
 PROVIDER=mock go run ./cmd/<name>        # 离线 mock 模式
-PROVIDER=real FRED_API_KEY=xxx go run ./cmd/<name>
+PROVIDER=real FRED_API_KEY=xxx ALPHAVANTAGE_API_KEY=xxx go run ./cmd/<name>
 COLLECTION_INTERVAL=30s go run ./cmd/<name>
 ```
 
@@ -215,4 +216,4 @@ go work use ./plugins/<name>
 | ETF       | Yahoo Finance | `plugins/etf/internal/collector/yahoo.go` | 单一 provider + SafeHTTPClient 基础用法 |
 | Crypto    | CoinGecko / Mempool / Blockchain | `plugins/crypto/internal/collector/{coingecko,blockchain_info}.go` | 多 client、多 bearer/private token、单位缩放 |
 | Macro     | FRED          | `plugins/macro/internal/collector/fred.go` | FRED 标准模式、系列化 fetchRange、429/Retry-After、弹性 unit scale |
-| Commodities | FRED          | `plugins/commodities/internal/collector/fred.go` | 多 series、partial failure 兜底、`test-friendly` RPS 配置 |
+| Commodities | FRED + Alpha Vantage | `plugins/commodities/internal/collector/{fred,alpha_vantage,real}.go` | FRED WTI/铜与 XAUUSD 现货/历史组合、partial failure、凭据安全错误 |

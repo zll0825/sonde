@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -117,6 +118,54 @@ func TestNewSafeHTTPClientWithHTTPClient_PreservesConfiguredTimeout(t *testing.T
 	}
 	if elapsed := time.Since(started); elapsed > time.Second {
 		t.Fatalf("configured timeout was not applied; request took %s", elapsed)
+	}
+}
+
+func TestSafeHTTPClient_SanitizesCredentialedTransportError(t *testing.T) {
+	cfg := DefaultConfig("credentialed-test")
+	cfg.RPS = 0
+	cfg.MaxRetries = 0
+	safe := NewSafeHTTPClientWithHTTPClient(cfg, &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return nil, errors.New("dial failed")
+	})})
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://test.example/data?apikey=do-not-log", nil)
+	_, err := safe.Do(req)
+	if err == nil {
+		t.Fatal("Do returned nil error")
+	}
+	if strings.Contains(err.Error(), "do-not-log") || strings.Contains(err.Error(), "test.example") {
+		t.Fatalf("transport error leaked credentialed URL: %q", err)
+	}
+	if !strings.Contains(err.Error(), "dial failed") {
+		t.Fatalf("transport error lost root cause: %q", err)
+	}
+}
+
+func TestSanitizeTransportErrorPreservesUnderlyingError(t *testing.T) {
+	root := context.DeadlineExceeded
+	err := &url.Error{Op: "Get", URL: "https://test.example/data?apikey=secret", Err: root}
+	got := SanitizeTransportError(err)
+	if !errors.Is(got, root) || strings.Contains(got.Error(), "secret") {
+		t.Fatalf("SanitizeTransportError() = %q", got)
+	}
+}
+
+func TestReadAllBoundedRejectsOversizedResponse(t *testing.T) {
+	resp := &http.Response{Body: io.NopCloser(strings.NewReader("12345"))}
+	body, err := ReadAllBounded(resp, 4)
+	if !errors.Is(err, ErrResponseTooLarge) || body != nil {
+		t.Fatalf("ReadAllBounded() = %q, %v; want nil, ErrResponseTooLarge", body, err)
+	}
+}
+
+func TestAlphaVantageConfigBoundsFreeTierRetries(t *testing.T) {
+	cfg := AlphaVantageConfig()
+	if cfg.ProviderName != "alpha_vantage" || cfg.Burst != 1 || cfg.MaxRetries != 1 || cfg.Timeout <= 0 || cfg.RPS <= 0 {
+		t.Fatalf("AlphaVantageConfig() = %+v", cfg)
+	}
+	if cfg.MaxConcurrent != 1 {
+		t.Fatalf("Alpha Vantage max concurrency = %d, want 1", cfg.MaxConcurrent)
 	}
 }
 

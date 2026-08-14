@@ -1,15 +1,13 @@
-// Package collector 提供 commodities 插件的数据采集器：FRED 真实源与离线 mock。
-// WTI 原油、IMF 初级铜价（月度）、LBMA 下午金——统一通过 FRED series 接口获取。
+// Package collector provides the commodities plugin's real and mock collectors.
+// FRED remains the source for WTI oil and IMF primary copper.
 package collector
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
-	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -53,7 +51,6 @@ var fredSeriesList = []struct {
 }{
 	{"oil.energy.wti", fredSeries{"DCOILWTICO", 1, "daily"}},
 	{"metal.industrial.copper", fredSeries{"PCOPPUSDM", 1, "monthly"}},
-	{"metal.precious.gold", fredSeries{"GOLDAMGBD228NLBM", 1, "daily"}},
 }
 
 // FREDCollector fetches real commodity data from the Federal Reserve Economic
@@ -303,11 +300,7 @@ func (f *FREDCollector) doGet(ctx context.Context, reqURL string) ([]byte, error
 
 	resp, err := f.client.Do(req)
 	if err != nil {
-		var uerr *url.Error
-		if errors.As(err, &uerr) {
-			err = uerr.Err
-		}
-		return nil, fmt.Errorf("http GET %s: %w", req.URL.Path, err)
+		return nil, fmt.Errorf("http GET %s: %w", req.URL.Path, provider.SanitizeTransportError(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 

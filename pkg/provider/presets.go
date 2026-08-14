@@ -85,6 +85,29 @@ func FREDConfig() Config {
 	}
 }
 
+// AlphaVantageConfig returns config for Alpha Vantage's free API tier.
+// The free tier permits 25 calls/day. Callers must pair this preset with a
+// collection cadence that stays within that daily budget; retries are kept to
+// one so transient failures cannot create an unbounded request burst.
+func AlphaVantageConfig() Config {
+	return Config{
+		ProviderName:  "alpha_vantage",
+		Timeout:       15 * time.Second,
+		RPS:           0.02, // at most one wire attempt per 50 seconds
+		Burst:         1,
+		MaxRetries:    1,
+		BaseDelay:     5 * time.Second,
+		MaxDelay:      60 * time.Second,
+		JitterRatio:   0.25,
+		MaxConcurrent: 1,
+		Circuit: CircuitBreakerConfig{
+			FailureThreshold:    3,
+			OpenDuration:        120 * time.Second,
+			HalfOpenMaxRequests: 1,
+		},
+	}
+}
+
 // BlockchainInfoConfig returns config for blockchain.com charts API.
 // No official rate limit documented; conservative polling recommended.
 func BlockchainInfoConfig() Config {

@@ -191,6 +191,7 @@ func (s *SafeHTTPClient) Do(req *http.Request) (*http.Response, error) {
 
 		// Step 4: Handle response
 		if err != nil {
+			err = SanitizeTransportError(err)
 			if quota != nil {
 				_ = quota.RecordFailure(req.Context(), providerName)
 			}
@@ -338,4 +339,21 @@ func ReadAll(resp *http.Response, limit int64) ([]byte, error) {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, limit))
 	_ = resp.Body.Close()
 	return body, err
+}
+
+// ReadAllBounded reads a response body and rejects payloads that exceed limit
+// instead of accepting a truncated document.
+func ReadAllBounded(resp *http.Response, limit int64) ([]byte, error) {
+	if limit <= 0 {
+		limit = 1 << 20
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	_ = resp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return nil, ErrResponseTooLarge
+	}
+	return body, nil
 }

@@ -12,13 +12,14 @@ make clean-data
 
 # 2. 配置密钥（FRED 必需；Telegram 可选但强烈建议——否则告警只落库不推送）
 export FRED_API_KEY=            # 免费注册 https://fred.stlouisfed.org
+export ALPHAVANTAGE_API_KEY=    # Commodities 黄金现货；免费层 25 次/天
 export TELEGRAM_BOT_TOKEN=      # @BotFather 创建 bot 获取
 export TELEGRAM_CHAT_ID=        # @userinfobot 获取数字 chat ID
 
-# 3. 启动全栈（DB + Core + API + ETF/Macro/Crypto 三插件）
+# 3. 启动全栈（DB + Core + API + ETF/Macro/Crypto/Commodities 四插件）
 make dev-up
 
-# 4. 验证链路（几分钟内应看到 fred / coingecko / yahoo 来源的观测入库）
+# 4. 验证链路（应看到 fred / alpha_vantage / coingecko / yahoo 来源的观测入库）
 psql postgres://capital:capital_dev@localhost:5432/capital_observatory \
   -c "SELECT metric_uid, value, source_provider, quality_grade, ingested_at
       FROM observations ORDER BY ingested_at DESC LIMIT 20;"
@@ -43,7 +44,8 @@ Core 日志每小时输出一次噪音预算状态，超预算时打 WARN（`mak
 
 **Soak 注意事项：**
 
-- `FRED_API_KEY` 缺失时 macro 插件按设计**快速失败**并进入退避重连循环（上限 60s），日志会明确提示——这是故意的，防止 mock 数据冒充真实数据入库。
+- `FRED_API_KEY` 缺失时 macro/commodities 插件按设计**快速失败**；`ALPHAVANTAGE_API_KEY` 缺失时 commodities 同样快速失败。真实模式绝不回退到 mock。
+- Commodities 默认每 2 小时采集一次 XAUUSD 现货黄金（每天 12 次），为 Alpha Vantage 免费层的 25 次/天限制保留重连、验证和显式回填余量；历史回填不参与周期调度。
 - `btc.ass.exchange_balance` 无免费真实源，实时路径仍为 mock 随机游走，且挂有两条规则（阈值 + 7 天连跌趋势）。**该指标产生的告警不计入校准结论**；若干扰明显，建议禁用这两条规则。
 - 回填命令（Backfill）对 crypto 的 price / hash_rate 有意不产出历史（拒绝用 mock 造假基线），percentile / trend 规则依赖 soak 期自然积累约 5 个周期后生效。
 
@@ -62,7 +64,8 @@ make clean-data  # 停止并删除数据卷（破坏性）
 
 | 变量 | 作用域 | 必需 | 说明 |
 |------|--------|------|------|
-| `FRED_API_KEY` | macro 插件 | ✅ | FRED 数据源密钥，缺失则插件快速失败 |
+| `FRED_API_KEY` | macro / commodities 插件 | ✅ | FRED 数据源密钥，缺失则插件快速失败 |
+| `ALPHAVANTAGE_API_KEY` | commodities 插件 | ✅ | XAUUSD 黄金现货/历史 API 密钥；免费层 25 次/天 |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | core | 可选 | 两者齐备时启用 Telegram 告警推送 |
 | `WEBHOOK_URL` / `WEBHOOK_TOKEN` | core | 可选 | 通用 webhook 通道（Telegram 优先级更高） |
 | `API_TOKEN` | api | 建议 | 控制端点（sync/backfill）的 Bearer 令牌；未配置时写操作被拒绝 |
@@ -100,6 +103,8 @@ make run-api
 make run-etf
 make run-macro        # 需要 FRED_API_KEY
 make run-macro-mock
+make run-commodities  # 需要 FRED_API_KEY + ALPHAVANTAGE_API_KEY
+make run-commodities-mock
 make run-crypto       # CoinGecko + mempool.space，无需密钥
 make run-crypto-mock
 ```
