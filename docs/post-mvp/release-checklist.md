@@ -4,18 +4,20 @@ Phase 3 acceptance criteria for the domain-complete real-data coverage release.
 
 ## Metric Inventory (Final)
 
-### ETF Plugin (2 metrics, all real)
+### ETF Plugin (3 metrics, all real)
 | Metric ID | Unit | Frequency | Source | Provider |
 |-----------|------|-----------|--------|----------|
-| gld.ass.price | USD | hourly* | Yahoo Finance | yahoo_finance |
-| gld.ass.volume | shares | hourly* | Yahoo Finance | yahoo_finance |
+| gld.ass.price | USD | daily* | Yahoo Finance | yahoo_finance |
+| gld.ass.volume | shares | daily* | Yahoo Finance | yahoo_finance |
+| gld.ass.flow_proxy | shares | daily* | Yahoo Finance | yahoo_finance |
 
-### Crypto Plugin (3 metrics, all real)
+### Crypto Plugin (4 metrics, all real)
 | Metric ID | Unit | Frequency | Source | Provider |
 |-----------|------|-----------|--------|----------|
 | btc.ass.price | USD | hourly* | CoinGecko | coingecko |
 | btc.ass.hash_rate | EH/s | hourly* | mempool.space | mempool_space |
 | btc.ass.tx_count | transactions | daily* | blockchain.com | blockchain_com |
+| btc.ass.flow_proxy | % | daily* | blockchain.com | blockchain_com |
 
 ### Macro Plugin (6 metrics, all real)
 | Metric ID | Unit | Frequency | Source | Provider |
@@ -26,6 +28,13 @@ Phase 3 acceptance criteria for the domain-complete real-data coverage release.
 | us.mkt.usd_cny | CNY/USD | daily* | FRED DEXCHUS | fred |
 | us.mkt.cpi | index | monthly* | FRED CPIAUCSL | fred |
 | us.mkt.inflation_yoy | % | monthly* | FRED CPIAUCSL_PCH | fred |
+
+### Commodities Plugin (3 metrics, all real)
+| Metric ID | Unit | Frequency | Source | Provider |
+|-----------|------|-----------|--------|----------|
+| metal.precious.gold | USD | 2h* | Alpha Vantage | alpha_vantage |
+| oil.energy.wti | USD | daily* | FRED DCOILWTICO | fred |
+| metal.industrial.copper | cents/lb | monthly* | FRED PCOPPUSDM | fred |
 
 *\*Collection interval = `DefaultInterval` (1h for all). Actual data freshness depends on publisher cadence. Metrics continue to report even if source data is stale (lag measured by `fetched_at - timestamp`).*
 

@@ -46,8 +46,8 @@ Core 日志每小时输出一次噪音预算状态，超预算时打 WARN（`mak
 
 - `FRED_API_KEY` 缺失时 macro/commodities 插件按设计**快速失败**；`ALPHAVANTAGE_API_KEY` 缺失时 commodities 同样快速失败。真实模式绝不回退到 mock。
 - Commodities 默认每 2 小时采集一次 XAUUSD 现货黄金（每天 12 次），为 Alpha Vantage 免费层的 25 次/天限制保留重连、验证和显式回填余量；历史回填不参与周期调度。
-- `btc.ass.exchange_balance` 无免费真实源，实时路径仍为 mock 随机游走，且挂有两条规则（阈值 + 7 天连跌趋势）。**该指标产生的告警不计入校准结论**；若干扰明显，建议禁用这两条规则。
-- 回填命令（Backfill）对 crypto 的 price / hash_rate 有意不产出历史（拒绝用 mock 造假基线），percentile / trend 规则依赖 soak 期自然积累约 5 个周期后生效。
+- 生产环境已全面淘汰合成 Mock 指标（退役 `btc.ass.exchange_balance` 与合成 ETF flow），全系统 100% 接入真实或代理数据源（Yahoo Finance、FRED、CoinGecko、mempool.space、blockchain.com、Alpha Vantage）。
+- 回填命令（Backfill）对各真实数据源遵循各自 API 历史窗口规则（FRED 原生支持 90 天窗口，Alpha Vantage 支持 30 天现货历史），拒绝用 mock 造假基线。
 
 ## 快速开始
 
@@ -126,31 +126,38 @@ API command_log → CommandDispatcher → Sync/BackfillCommand → Plugin → �
 ```
 
 ## 数据源真实性
-
+ 
 | 插件 | 指标 | 来源 | 真实性 |
 |------|------|------|--------|
-| etf | `gld.ass.price` | Yahoo Finance | ✅ 真实 |
-| etf | `gld.ass.daily_flow` / `eth.ass.daily_flow` | 合成 | ⚠️ mock（无免费源） |
+| etf | `gld.ass.price` | Yahoo Finance | ✅ 真实 (价格) |
+| etf | `gld.ass.volume` | Yahoo Finance | ✅ 真实 (交易量) |
+| etf | `gld.ass.flow_proxy` | Yahoo Finance | ✅ 真实 (3月日均量代理) |
 | macro | `fed.ins.balance_sheet` (WALCL) | FRED | ✅ 真实（周频） |
 | macro | `us.mkt.ten_year_yield` (DGS10) | FRED | ✅ 真实（日频） |
 | macro | `us.mkt.dollar_index` (DTWEXBGS) | FRED | ✅ 真实（日频） |
 | macro | `us.mkt.usd_cny` (DEXCHUS) | FRED | ✅ 真实（日频） |
-| crypto | `btc.ass.price` | CoinGecko | ✅ 真实 |
-| crypto | `btc.ass.hash_rate` | mempool.space | ✅ 真实 |
-| crypto | `btc.ass.exchange_balance` | 合成 | ⚠️ mock（免费源仅付费的 Glassnode/CryptoQuant 提供） |
-
-macro 支持真实历史回填（FRED 原生窗口查询，单次上限 90 天）；crypto 的 price / hash_rate 有意不支持 mock 回填（见 Soak 注意事项）。
-
+| macro | `us.mkt.cpi` (CPIAUCSL) | FRED | ✅ 真实（月频 CPI） |
+| macro | `us.mkt.inflation_yoy` (CPIAUCSL_PCH) | FRED | ✅ 真实（月频通胀率） |
+| crypto | `btc.ass.price` | CoinGecko | ✅ 真实 (现货价格) |
+| crypto | `btc.ass.hash_rate` | mempool.space | ✅ 真实 (全网算力) |
+| crypto | `btc.ass.tx_count` | blockchain.com | ✅ 真实 (每日交易数) |
+| crypto | `btc.ass.flow_proxy` | blockchain.com | ✅ 真实 (活跃地址7日变动代理) |
+| commodities | `metal.precious.gold` | Alpha Vantage | ✅ 真实 (XAUUSD 现货) |
+| commodities | `oil.energy.wti` | FRED | ✅ 真实 (WTI 原油) |
+| commodities | `metal.industrial.copper` | FRED | ✅ 真实 (铜现货价格) |
+ 
+全系统共 16 项指标，已全部切换为真实或基于真实数据的代理源，合成 Mock 指标已彻底淘汰。
+ 
 ## 测试
-
+ 
 ```bash
 make test        # 全量测试（全 workspace 模块）
 make lint        # gofmt + go vet + buf lint
 make build       # 编译 core + api
 ```
-
+ 
 ## 项目状态
-
+ 
 | 里程碑 | 状态 | 备注 |
 |--------|------|------|
 | M0 Repository | ✅ | compose / migrations / CI |
@@ -159,14 +166,15 @@ make build       # 编译 core + api
 | M3 Rule Evaluation | ✅ | Threshold / Percentile / Trend 三类探测器 |
 | M4 Research Read | ✅ | Assembly + Snapshot + Review |
 | M5 Control + Frontend | ✅ | 命令通路 + Capital Radar |
-| 真实数据源接入 | ✅ | Yahoo / FRED / CoinGecko / mempool.space |
+| 真实数据源接入 (Phase 3) | ✅ | Yahoo / FRED / CoinGecko / mempool / blockchain.com / Alpha Vantage |
 | 告警通知通道 | ✅ | Telegram / Webhook（outbox 重试托管） |
 | B6 噪音预算校准 | ✅ | 72 小时风险验收通过；真实告警每天 ≤10 条 |
-
+ 
 ## 已知限制
-
+ 
 - 控制端点（`/api/control/*`）强制要求 `API_TOKEN`（未配置时拒绝写操作）；读端点无鉴权，仅适合本机 / 可信内网部署。
-- `btc.ass.exchange_balance` 与 ETF flow 为合成数据（无免费真实源）。
+- FRED 部分宏观月频指标（如 CPI）存在 2~4 周的官方发布时滞。
+- Alpha Vantage 免费 API Key 每日调用上限为 25 次，受 `provider_quota` 保护。
 - 通知失败由 outbox 重试机制托管（退避 + 终态失败阈值），无独立死信告警。
 
 ## 文档
