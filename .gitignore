@@ -22,8 +22,18 @@ node_modules/
 .env.*
 !.env.example
 
-# Local per-machine agent settings
-.claude/settings.local.json
+# Agent tooling — local only. Trellis / Claude / Codex / Pi regenerate these.
+# A leading "./trellis" does NOT match ".trellis/"; already-tracked files also
+# ignore gitignore until they are removed from the index (`git rm --cached`).
+.trellis/
+.agents/
+.claude/
+.codex/
+.pi/
+.idea/
+.meituan-catpaw/
+AGENTS.md
+CLAUDE.md
 
 # Logs
 *.log
