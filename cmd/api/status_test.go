@@ -308,8 +308,8 @@ func TestQueryTodayAlertCounts_OnlyRealDrivesBudget(t *testing.T) {
 }
 
 // TestStatusHandler_EmptyDB_JSONShape exercises the full HTTP path (httptest,
-// mirroring middleware_test.go) against an empty database: 200, all four
-// top-level keys, arrays serialize as [] rather than null.
+// mirroring middleware_test.go) against an empty database: 200, frozen plus
+// additive expected_plugins keys, arrays serialize as [] rather than null.
 func TestStatusHandler_EmptyDB_JSONShape(t *testing.T) {
 	db := &fakeDB{}
 	db.stub(newFakeRows())                  // plugins
@@ -342,6 +342,10 @@ func TestStatusHandler_EmptyDB_JSONShape(t *testing.T) {
 	var plugins []any
 	if err := json.Unmarshal(body["plugins"], &plugins); err != nil || plugins == nil {
 		t.Errorf("plugins = %s, want []", body["plugins"])
+	}
+	var expected []any
+	if err := json.Unmarshal(body["expected_plugins"], &expected); err != nil || expected == nil {
+		t.Errorf("expected_plugins = %s, want []", body["expected_plugins"])
 	}
 	var metrics []any
 	if err := json.Unmarshal(body["metrics"], &metrics); err != nil || metrics == nil {

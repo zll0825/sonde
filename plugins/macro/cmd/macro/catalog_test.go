@@ -10,31 +10,51 @@ import (
 
 func TestBuildRegistrationFromYAML(t *testing.T) {
 	reg := buildRegistration()
-	if reg.GetInfo().GetName() != "macro" {
-		t.Fatalf("name=%q", reg.GetInfo().GetName())
+	if reg.GetInfo().GetName() != "macro" || reg.GetInfo().GetVersion() != "0.2.0" {
+		t.Fatalf("info=%+v", reg.GetInfo())
 	}
-	if !reg.GetCapabilities().GetWindowedBackfill() {
-		t.Fatal("macro must declare windowedBackfill")
+	if !reg.GetCapabilities().GetWindowedBackfill() || reg.GetCapabilities().GetMaxBackfillDays() != 3650 {
+		t.Fatalf("capabilities=%+v", reg.GetCapabilities())
 	}
-	if got := len(reg.GetMetrics()); got != 6 {
-		t.Fatalf("metrics=%d, want 6", got)
+	if got := len(reg.GetEntities()); got != 2 {
+		t.Fatalf("entities=%d, want 2", got)
 	}
-	want := []string{
-		"fed.ins.balance_sheet",
-		"us.mkt.ten_year_yield",
-		"us.mkt.dollar_index",
-		"us.mkt.usd_cny",
-		"us.mkt.cpi",
-		"us.mkt.inflation_yoy",
+	if reg.GetEntities()[0].GetId() != "FED" || reg.GetEntities()[1].GetId() != "US" {
+		t.Fatalf("entities=%v", reg.GetEntities())
 	}
-	for i, id := range want {
-		if reg.GetMetrics()[i].GetId() != id {
-			t.Errorf("metrics[%d]=%q, want %q", i, reg.GetMetrics()[i].GetId(), id)
+	wantMetrics := []struct{ id, unit, freq, entity string }{
+		{"fed.ins.balance_sheet", "USD", "weekly", "FED"},
+		{"us.mkt.ten_year_yield", "%", "daily", "US"},
+		{"us.mkt.dollar_index", "index", "daily", "US"},
+		{"us.mkt.usd_cny", "CNY per USD", "daily", "US"},
+		{"us.mkt.cpi", "index", "monthly", "US"},
+		{"us.mkt.inflation_yoy", "%", "monthly", "US"},
+	}
+	if got := len(reg.GetMetrics()); got != len(wantMetrics) {
+		t.Fatalf("metrics=%d, want %d", got, len(wantMetrics))
+	}
+	for i, want := range wantMetrics {
+		m := reg.GetMetrics()[i]
+		if m.GetId() != want.id || m.GetUnit() != want.unit || m.GetFrequency() != want.freq || m.GetEntityId() != want.entity {
+			t.Errorf("metrics[%d]=%+v, want %+v", i, m, want)
 		}
 	}
-	for _, relation := range reg.GetRelations() {
-		if relation.GetRelationType() != "causes" {
-			t.Errorf("relation type = %q, want causes", relation.GetRelationType())
+	if len(reg.GetRelations()) != 1 || reg.GetRelations()[0].GetRelationType() != "causes" {
+		t.Fatalf("relations=%v", reg.GetRelations())
+	}
+	wantRules := []struct{ name, metric, detector, config string }{
+		{"fed_balance_drop", "fed.ins.balance_sheet", "trend", `{"direction":"down","consecutive":4}`},
+		{"yield_spike_percentile", "us.mkt.ten_year_yield", "percentile", `{"percentile":90,"consecutive":2}`},
+		{"usd_index_extreme", "us.mkt.dollar_index", "threshold", `{"operator":"gt","value":105}`},
+		{"inflation_above_target", "us.mkt.inflation_yoy", "threshold", `{"operator":"gt","value":3.0,"consecutive":2}`},
+	}
+	if got := len(reg.GetRules()); got != len(wantRules) {
+		t.Fatalf("rules=%d, want %d", got, len(wantRules))
+	}
+	for i, want := range wantRules {
+		r := reg.GetRules()[i]
+		if r.GetName() != want.name || r.GetMetricId() != want.metric || r.GetDetectorName() != want.detector || string(r.GetConfig()) != want.config {
+			t.Errorf("rules[%d]=%+v, want %+v", i, r, want)
 		}
 	}
 }
@@ -56,6 +76,12 @@ func TestBindingsMatchRegistrationMetrics(t *testing.T) {
 		if bindings[i].MetricID != reg.GetMetrics()[i].GetId() {
 			t.Errorf("binding[%d]=%q metric=%q", i, bindings[i].MetricID, reg.GetMetrics()[i].GetId())
 		}
+	}
+	if bindings[0].SeriesID != "WALCL" || bindings[0].UnitScale != 1e6 {
+		t.Errorf("WALCL binding = %+v, want scale 1e6", bindings[0])
+	}
+	if bindings[5].SeriesID != "CPIAUCSL" || bindings[5].Units != "pc1" {
+		t.Errorf("inflation_yoy binding = %+v, want units=pc1", bindings[5])
 	}
 }
 

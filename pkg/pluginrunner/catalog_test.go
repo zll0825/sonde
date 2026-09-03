@@ -68,6 +68,12 @@ func TestValidateCapabilities_AcceptsWindowed(t *testing.T) {
 	}
 }
 
+func TestValidateCapabilities_OldPluginZeroValue(t *testing.T) {
+	if err := ValidateCapabilities(&pb.RegisterPluginRequest{}, stubProvider{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 type stubProvider struct{}
 
 func (stubProvider) GetSnapshots(context.Context) ([]Snapshot, error) { return nil, nil }

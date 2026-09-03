@@ -9,11 +9,11 @@ import (
 
 func TestBuildRegistrationFromYAML(t *testing.T) {
 	reg := buildRegistration()
-	if reg.GetInfo().GetName() != "commodities" {
-		t.Fatalf("name=%q", reg.GetInfo().GetName())
+	if reg.GetInfo().GetName() != "commodities" || reg.GetInfo().GetVersion() != "0.2.0" {
+		t.Fatalf("info=%+v", reg.GetInfo())
 	}
-	if !reg.GetCapabilities().GetWindowedBackfill() {
-		t.Fatal("commodities must declare windowedBackfill")
+	if !reg.GetCapabilities().GetWindowedBackfill() || reg.GetCapabilities().GetMaxBackfillDays() != 3650 {
+		t.Fatalf("capabilities=%+v", reg.GetCapabilities())
 	}
 	secrets := reg.GetCapabilities().GetRequiresSecrets()
 	foundFRED, foundAV := false, false
@@ -27,6 +27,32 @@ func TestBuildRegistrationFromYAML(t *testing.T) {
 	}
 	if !foundFRED || !foundAV {
 		t.Fatalf("requiresSecrets=%v", secrets)
+	}
+	if got := len(reg.GetEntities()); got != 3 {
+		t.Fatalf("entities=%d, want 3", got)
+	}
+	wantMetrics := []string{"oil.energy.wti", "metal.industrial.copper", "metal.precious.gold"}
+	if got := len(reg.GetMetrics()); got != len(wantMetrics) {
+		t.Fatalf("metrics=%d, want %d", got, len(wantMetrics))
+	}
+	for i, id := range wantMetrics {
+		if reg.GetMetrics()[i].GetId() != id {
+			t.Errorf("metrics[%d]=%q, want %q", i, reg.GetMetrics()[i].GetId(), id)
+		}
+	}
+	wantRules := []struct{ name, metric, detector, config string }{
+		{"wti_spike_threshold", "oil.energy.wti", "threshold", `{"operator":"gt","value":100}`},
+		{"gold_percentile_surge", "metal.precious.gold", "percentile", `{"percentile":90,"consecutive":2}`},
+		{"copper_downtrend", "metal.industrial.copper", "trend", `{"direction":"down","consecutive":5}`},
+	}
+	if got := len(reg.GetRules()); got != len(wantRules) {
+		t.Fatalf("rules=%d, want %d", got, len(wantRules))
+	}
+	for i, want := range wantRules {
+		r := reg.GetRules()[i]
+		if r.GetName() != want.name || r.GetMetricId() != want.metric || r.GetDetectorName() != want.detector || string(r.GetConfig()) != want.config {
+			t.Errorf("rules[%d]=%+v, want %+v", i, r, want)
+		}
 	}
 }
 

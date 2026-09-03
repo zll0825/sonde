@@ -36,8 +36,9 @@ type Config struct {
 
 	// SetupCollector 在每次会话建立后调用，返回本插件的数据采集器。
 	// 插件在这里决定使用 mock 还是真实数据源（PROVIDER 环境变量）。
-	// 是否支持窗口回填（WindowedProvider）由 lifecycle 统一做类型断言判定，
-	// 插件侧无需自行声明。
+	// Catalog windowedBackfill must match a WindowedProvider or the session
+	// refuses to start. Lifecycle still type-asserts WindowedProvider when
+	// executing Backfill commands.
 	SetupCollector func(ctx context.Context) (Provider, error)
 }
 

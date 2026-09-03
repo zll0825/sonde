@@ -57,3 +57,8 @@ func mustBindingsYAML() []byte {
 func buildRegistration() *pb.RegisterPluginRequest {
 	return mustRegistration()
 }
+
+var (
+	_ pluginrunner.Provider         = (*collector.RealCollector)(nil)
+	_ pluginrunner.WindowedProvider = (*collector.RealCollector)(nil)
+)
