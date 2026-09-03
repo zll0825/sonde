@@ -23,12 +23,12 @@ type RealCollector struct {
 }
 
 // NewRealCollector requires credentials for both real providers.
-func NewRealCollector() (*RealCollector, error) {
+func NewRealCollector(fredBindingsYAML []byte) (*RealCollector, error) {
 	gold, err := NewAlphaVantageGoldCollector()
 	if err != nil {
 		return nil, err
 	}
-	baseCommodities, err := NewFREDCollector()
+	baseCommodities, err := NewFREDCollector(fredBindingsYAML)
 	if err != nil {
 		return nil, err
 	}

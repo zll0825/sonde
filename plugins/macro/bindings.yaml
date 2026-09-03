@@ -1,0 +1,28 @@
+provider: fred
+latestLookbackDays: 30
+series:
+  - metric: fed.ins.balance_sheet
+    series: WALCL
+    scale: 1.0e6
+    frequency: weekly
+  - metric: us.mkt.ten_year_yield
+    series: DGS10
+    scale: 1
+    frequency: daily
+  - metric: us.mkt.dollar_index
+    series: DTWEXBGS
+    scale: 1
+    frequency: daily
+  - metric: us.mkt.usd_cny
+    series: DEXCHUS
+    scale: 1
+    frequency: daily
+  - metric: us.mkt.cpi
+    series: CPIAUCSL
+    scale: 1
+    frequency: monthly
+  - metric: us.mkt.inflation_yoy
+    series: CPIAUCSL
+    scale: 1
+    frequency: monthly
+    units: pc1

@@ -70,13 +70,13 @@ func TestRealCollector_PreservesGoldWhenFREDFails(t *testing.T) {
 func TestNewRealCollector_RequiresBothCredentials(t *testing.T) {
 	t.Setenv("ALPHAVANTAGE_API_KEY", "")
 	t.Setenv("FRED_API_KEY", "fred-fixture-key")
-	if _, err := NewRealCollector(); err == nil || !strings.Contains(err.Error(), "ALPHAVANTAGE_API_KEY") {
+	if _, err := NewRealCollector([]byte(testFREDBindings)); err == nil || !strings.Contains(err.Error(), "ALPHAVANTAGE_API_KEY") {
 		t.Fatalf("missing Alpha Vantage key error = %v", err)
 	}
 
 	t.Setenv("ALPHAVANTAGE_API_KEY", "alpha-fixture-key")
 	t.Setenv("FRED_API_KEY", "")
-	if _, err := NewRealCollector(); err == nil || !strings.Contains(err.Error(), "FRED_API_KEY") {
+	if _, err := NewRealCollector([]byte(testFREDBindings)); err == nil || !strings.Contains(err.Error(), "FRED_API_KEY") {
 		t.Fatalf("missing FRED key error = %v", err)
 	}
 }

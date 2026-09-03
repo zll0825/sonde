@@ -139,6 +139,14 @@ message RuleReview {
   string reason = 3;
 }
 
+// Domain: Plugin.capabilities — declared topology, not inferred by type assert.
+message PluginCapabilities {
+  bool windowed_backfill = 1;
+  int32 max_backfill_days = 2;
+  repeated string requires_secrets = 3;
+  bool mock_available = 4;
+}
+
 message RegisterPluginRequest {
   PluginInfo info = 1;
   repeated EntityDeclaration entities = 2;
@@ -146,6 +154,7 @@ message RegisterPluginRequest {
   repeated MetricDeclaration metrics = 4;
   repeated RuleSuggestion rules = 5;
   string change_log = 10;
+  PluginCapabilities capabilities = 11;
 }
 
 message RegisterPluginResponse {

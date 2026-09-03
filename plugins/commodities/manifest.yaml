@@ -1,0 +1,74 @@
+name: commodities
+version: "0.2.0"
+description: WTI oil, IMF primary copper, and XAUUSD spot gold for growth, demand, and safe-haven research
+capabilities:
+  windowedBackfill: true
+  maxBackfillDays: 3650
+  requiresSecrets: [FRED_API_KEY, ALPHAVANTAGE_API_KEY]
+  mockAvailable: true
+entities:
+  - id: OIL
+    name: Crude Oil (WTI)
+    namespace: commodity
+    type: instrument
+    tags: [energy, oil, wti, us]
+  - id: COPPER
+    name: Copper (IMF Primary)
+    namespace: commodity
+    type: instrument
+    tags: [industrial_metal, copper, pmi_proxy]
+  - id: GOLD
+    name: Gold Spot (XAUUSD)
+    namespace: commodity
+    type: instrument
+    tags: [precious_metal, gold, safe_haven, real_rates]
+metrics:
+  - id: oil.energy.wti
+    name: WTI Crude Oil Spot ($/bbl)
+    description: West Texas Intermediate crude oil spot price in USD per barrel
+    unit: USD/bbl
+    frequency: daily
+    entity: OIL
+  - id: metal.industrial.copper
+    name: COMEX Copper (IMF Primary, USD/mt)
+    description: Copper price from IMF Primary Commodity Prices (PCOPPUSDM), USD per metric ton, monthly
+    unit: USD/mt
+    frequency: monthly
+    entity: COPPER
+  - id: metal.precious.gold
+    name: Gold Spot (XAUUSD, USD/troy oz)
+    description: Physical spot gold quoted as XAUUSD by Alpha Vantage, in USD per troy ounce
+    unit: USD/troy oz
+    frequency: daily
+    entity: GOLD
+relations:
+  - source: OIL
+    target: GOLD
+    type: correlates
+    direction: forward
+    description: Surging oil prices often coincide with safe-haven gold demand (inflation signal)
+  - source: COPPER
+    target: GOLD
+    type: correlates
+    direction: forward
+    description: Copper-gold ratio is a classic growth-vs-safe-haven regime indicator
+rules:
+  - name: wti_spike_threshold
+    metric: oil.energy.wti
+    detector: threshold
+    severity: warning
+    config: '{"operator":"gt","value":100}'
+    description: WTI oil above $100/bbl—extreme price levels causing demand destruction
+  - name: gold_percentile_surge
+    metric: metal.precious.gold
+    detector: percentile
+    severity: warning
+    config: '{"percentile":90,"consecutive":2}'
+    description: Gold at/above 90th percentile for 2+ days—possible safe-haven stress
+  - name: copper_downtrend
+    metric: metal.industrial.copper
+    detector: trend
+    severity: info
+    config: '{"direction":"down","consecutive":5}'
+    description: Copper declining 5+ days—potential industrial slowdown signal
+changeLog: YAML catalog; WTI and copper on FRED; gold on Alpha Vantage XAUUSD

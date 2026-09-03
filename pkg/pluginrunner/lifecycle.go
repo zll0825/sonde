@@ -117,6 +117,11 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 		return fmt.Errorf("setup collector: %w", err)
 	}
 
+	reg := l.cfg.BuildRegistration()
+	if err := ValidateCapabilities(reg, collector); err != nil {
+		return err
+	}
+
 	conn, err := grpc.NewClient(coreAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return fmt.Errorf("failed to dial core at %s: %w", coreAddr, err)
@@ -130,7 +135,7 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 	client := pb.NewPluginHostClient(conn)
 	runner := New(l.cfg.PluginName, l.cfg.Version, client)
 
-	pluginID, err := runner.Register(ctx, l.cfg.BuildRegistration())
+	pluginID, err := runner.Register(ctx, reg)
 	if err != nil {
 		return fmt.Errorf("registration failed: %w", err)
 	}

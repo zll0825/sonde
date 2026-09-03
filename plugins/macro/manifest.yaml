@@ -1,0 +1,88 @@
+name: macro
+version: "0.2.0"
+description: Fed balance sheet, US yields, USD index, USDCNY, CPI & inflation tracker
+capabilities:
+  windowedBackfill: true
+  maxBackfillDays: 3650
+  requiresSecrets: [FRED_API_KEY]
+  mockAvailable: true
+entities:
+  - id: FED
+    name: Federal Reserve
+    namespace: fed
+    type: institution
+    tags: [central_bank, us]
+  - id: US
+    name: United States
+    namespace: us
+    type: market
+    tags: [us]
+metrics:
+  - id: fed.ins.balance_sheet
+    name: Fed Balance Sheet (USD)
+    description: Total assets held by the Federal Reserve in USD
+    unit: USD
+    frequency: weekly
+    entity: FED
+  - id: us.mkt.ten_year_yield
+    name: US 10Y Treasury Yield (%)
+    description: Yield on the 10-year US Treasury note
+    unit: "%"
+    frequency: daily
+    entity: US
+  - id: us.mkt.dollar_index
+    name: US Dollar Index
+    description: DXY US Dollar Index
+    unit: index
+    frequency: daily
+    entity: US
+  - id: us.mkt.usd_cny
+    name: USD/CNY Exchange Rate
+    description: Offshore USD to CNY exchange rate
+    unit: CNY per USD
+    frequency: daily
+    entity: US
+  - id: us.mkt.cpi
+    name: US Consumer Price Index
+    description: Consumer Price Index for All Urban Consumers (CPI-U), seasonally adjusted
+    unit: index
+    frequency: monthly
+    entity: US
+  - id: us.mkt.inflation_yoy
+    name: US YoY Inflation Rate (%)
+    description: CPI-based year-over-year percent change in consumer prices
+    unit: "%"
+    frequency: monthly
+    entity: US
+relations:
+  - source: FED
+    target: US
+    type: causes
+    direction: forward
+    description: Fed policy causes changes in US macro conditions
+rules:
+  - name: fed_balance_drop
+    metric: fed.ins.balance_sheet
+    detector: trend
+    severity: info
+    config: '{"direction":"down","consecutive":4}'
+    description: Fed balance sheet shrinking 4+ weeks in a row (QT signal)
+  - name: yield_spike_percentile
+    metric: us.mkt.ten_year_yield
+    detector: percentile
+    severity: warning
+    config: '{"percentile":90,"consecutive":2}'
+    description: 10Y yield at/above 90th percentile for 2+ days
+  - name: usd_index_extreme
+    metric: us.mkt.dollar_index
+    detector: threshold
+    severity: info
+    config: '{"operator":"gt","value":105}'
+    description: DXY above 105
+  - name: inflation_above_target
+    metric: us.mkt.inflation_yoy
+    detector: threshold
+    severity: warning
+    config: '{"operator":"gt","value":3.0,"consecutive":2}'
+    description: YoY inflation above 3% for 2+ consecutive months (above Fed target)
+changeLog: YAML catalog; CPI (us.mkt.cpi) and YoY inflation (us.mkt.inflation_yoy); inflation_above_target rule

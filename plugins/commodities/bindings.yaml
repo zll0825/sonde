@@ -1,0 +1,11 @@
+provider: fred
+latestLookbackDays: 45
+series:
+  - metric: oil.energy.wti
+    series: DCOILWTICO
+    scale: 1
+    frequency: daily
+  - metric: metal.industrial.copper
+    series: PCOPPUSDM
+    scale: 1
+    frequency: monthly

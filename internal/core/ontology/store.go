@@ -75,16 +75,22 @@ func (s *Store) RegisterPlugin(ctx context.Context, req *pb.RegisterPluginReques
 	// 1. Ensure the plugins row (registration_version starts at 0 and is bumped
 	// below once we know whether this registration changed anything).
 	var regVersion int
+	capsJSON, err := marshalPluginCapabilities(req.GetCapabilities())
+	if err != nil {
+		return "", 0, fmt.Errorf("marshal capabilities: %w", err)
+	}
+
 	err = tx.QueryRow(ctx, `
-		INSERT INTO plugins (id, name, version, description, registration_version, updated_at)
-		VALUES ($1, $2, $3, $4, 0, NOW())
+		INSERT INTO plugins (id, name, version, description, capabilities, registration_version, updated_at)
+		VALUES ($1, $2, $3, $4, $5, 0, NOW())
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			version = EXCLUDED.version,
 			description = EXCLUDED.description,
+			capabilities = EXCLUDED.capabilities,
 			updated_at = NOW()
 		RETURNING registration_version
-	`, pluginID, info.GetName(), info.GetVersion(), info.GetDescription()).Scan(&regVersion)
+	`, pluginID, info.GetName(), info.GetVersion(), info.GetDescription(), capsJSON).Scan(&regVersion)
 	if err != nil {
 		return "", 0, fmt.Errorf("upsert plugin: %w", err)
 	}
@@ -799,4 +805,20 @@ func severityToString(s pb.Severity) string {
 	default:
 		return "warning"
 	}
+}
+
+func marshalPluginCapabilities(caps *pb.PluginCapabilities) ([]byte, error) {
+	if caps == nil {
+		return []byte("{}"), nil
+	}
+	secrets := caps.GetRequiresSecrets()
+	if secrets == nil {
+		secrets = []string{}
+	}
+	return json.Marshal(map[string]any{
+		"windowed_backfill": caps.GetWindowedBackfill(),
+		"max_backfill_days": caps.GetMaxBackfillDays(),
+		"requires_secrets":  secrets,
+		"mock_available":    caps.GetMockAvailable(),
+	})
 }

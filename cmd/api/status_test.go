@@ -178,6 +178,9 @@ func TestLoadStatus_EmptyDB(t *testing.T) {
 	if p.LatestDataAt != nil {
 		t.Errorf("latest_data_at = %v, want nil on empty db", p.LatestDataAt)
 	}
+	if p.ExpectedPlugins == nil || len(p.ExpectedPlugins) != 0 {
+		t.Errorf("expected_plugins = %#v, want empty non-nil slice", p.ExpectedPlugins)
+	}
 }
 
 func TestLoadStatus_JoinAndFreshness(t *testing.T) {
@@ -185,8 +188,8 @@ func TestLoadStatus_JoinAndFreshness(t *testing.T) {
 
 	db := &fakeDB{}
 	db.stub(newFakeRows( // plugins
-		[]any{"plg_etf", "etf", true, true, "running", now.Add(-2 * time.Hour), 125, 3, "", 0},
-		[]any{"plg_crypto", "crypto", true, false, "running", nil, 320, 0, "coingecko/btc.price: timeout", 2},
+		[]any{"plg_etf", "etf", true, true, "running", now.Add(-2 * time.Hour), 125, 3, "", 0, []byte(`{}`)},
+		[]any{"plg_crypto", "crypto", true, false, "running", nil, 320, 0, "coingecko/btc.price: timeout", 2, []byte(`{"windowed_backfill":true,"max_backfill_days":365,"requires_secrets":["COINGECKO_KEY"],"mock_available":true}`)},
 	))
 	db.stub(newFakeRows( // metric definitions
 		[]any{"gld.ass.price", "mtr_aaa", "GLD Price", "USD", "daily"},
@@ -226,6 +229,15 @@ func TestLoadStatus_JoinAndFreshness(t *testing.T) {
 	}
 	if p.Plugins[0].LastCollectAt == nil || !p.Plugins[0].LastCollectAt.Equal(now.Add(-2*time.Hour)) {
 		t.Errorf("plugins[0].LastCollectAt = %v, want 2h ago", p.Plugins[0].LastCollectAt)
+	}
+	if len(p.ExpectedPlugins) != 2 {
+		t.Fatalf("expected_plugins len = %d, want 2", len(p.ExpectedPlugins))
+	}
+	if p.ExpectedPlugins[1].Name != "crypto" || !p.ExpectedPlugins[1].Capabilities.WindowedBackfill {
+		t.Errorf("expected_plugins[1] = %+v", p.ExpectedPlugins[1])
+	}
+	if p.ExpectedPlugins[1].SecretsPresent["COINGECKO_KEY"] {
+		t.Errorf("secrets_present should be false when env is unset: %+v", p.ExpectedPlugins[1].SecretsPresent)
 	}
 
 	if p.Budget.Today != 2 {
@@ -322,7 +334,7 @@ func TestStatusHandler_EmptyDB_JSONShape(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("response is not valid JSON: %v", err)
 	}
-	for _, k := range []string{"plugins", "budget", "latest_data_at", "metrics"} {
+	for _, k := range []string{"plugins", "expected_plugins", "budget", "latest_data_at", "metrics"} {
 		if _, ok := body[k]; !ok {
 			t.Errorf("response missing key %q (body: %s)", k, rec.Body.String())
 		}
