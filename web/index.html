@@ -21,9 +21,40 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
         }
         h1 { font-size: 1.4rem; font-weight: 600; color: #64ffda; }
         .subtitle { font-size: 0.85rem; color: #8892b0; margin-top: 2px; }
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+        .lang-switch {
+            display: inline-flex;
+            background: #131a2e;
+            border: 1px solid #2a3450;
+            border-radius: 20px;
+            padding: 2px;
+        }
+        .lang-btn {
+            background: transparent;
+            border: none;
+            color: #8892b0;
+            font-size: 0.75rem;
+            font-weight: 500;
+            padding: 2px 8px;
+            border-radius: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .lang-btn:hover { color: #e0e6f0; }
+        .lang-btn.active {
+            background: #1e2a45;
+            color: #64ffda;
+        }
         main { padding: 2rem; max-width: 1200px; margin: 0 auto; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
         .card {
@@ -223,7 +254,7 @@
         #signal-quality-chart { width: 100%; height: 200px; }
 
         @media (max-width: 640px) {
-            header { padding: 1rem; gap: 1rem; }
+            header { padding: 1rem; gap: 0.75rem; }
             main { padding: 1rem; min-width: 0; }
             .grid { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
             .card { padding: 1rem; min-width: 0; overflow-x: auto; }
@@ -237,20 +268,28 @@
             .tab-btn { flex: 0 0 auto; padding: 0.7rem 0.8rem; }
             .ontology-form { grid-template-columns: minmax(0, 1fr); }
             .data-table { min-width: 520px; }
+            .header-actions { width: 100%; justify-content: space-between; }
         }
     </style>
 </head>
 <body>
     <header>
         <div>
-            <h1>Capital Observatory</h1>
-            <div class="subtitle">Anomaly Detection for Capital Markets</div>
+            <h1 data-i18n="header.title">Capital Observatory</h1>
+            <div class="subtitle" data-i18n="header.subtitle">Anomaly Detection for Capital Markets</div>
         </div>
-        <span class="status-pill" id="status-pill">connecting...</span>
+        <div class="header-actions">
+            <div class="lang-switch">
+                <button type="button" id="btn-lang-zh" class="lang-btn">中文</button>
+                <button type="button" id="btn-lang-en" class="lang-btn">EN</button>
+            </div>
+            <span class="status-pill" id="status-pill">connecting...</span>
+        </div>
     </header>
-    <!-- R1: low-contrast ambient status bar; fetch failure flips it to 连接中断 -->
+
+    <!-- R1: low-contrast ambient status bar; fetch failure flips it to connection interrupted -->
     <div id="status-bar">
-        <span id="sb-plugins">连接中…</span>
+        <span id="sb-plugins">—</span>
         <span class="sep">·</span>
         <span id="sb-metrics">—</span>
         <span class="sep">·</span>
@@ -261,12 +300,12 @@
     <div id="plugin-detail" class="hidden"></div>
     <!-- Tab bar -->
     <nav class="tab-bar">
-        <button class="tab-btn active" data-tab="alerts">Alerts</button>
-        <button class="tab-btn" data-tab="clusters">Clusters</button>
-        <button class="tab-btn" data-tab="research">Research</button>
-        <button class="tab-btn" data-tab="ontology">Ontology</button>
-        <button class="tab-btn" data-tab="signal">Signal Quality</button>
-        <button class="tab-btn" data-tab="rules">Rules</button>
+        <button class="tab-btn active" data-tab="alerts" data-i18n="tabs.alerts">Alerts</button>
+        <button class="tab-btn" data-tab="clusters" data-i18n="tabs.clusters">Clusters</button>
+        <button class="tab-btn" data-tab="research" data-i18n="tabs.research">Research</button>
+        <button class="tab-btn" data-tab="ontology" data-i18n="tabs.ontology">Ontology</button>
+        <button class="tab-btn" data-tab="signal" data-i18n="tabs.signal">Signal Quality</button>
+        <button class="tab-btn" data-tab="rules" data-i18n="tabs.rules">Rules</button>
     </nav>
 
     <main>
@@ -274,19 +313,19 @@
         <div id="alerts-tab" class="tab-content active">
             <div class="grid">
                 <div class="card">
-                    <h2>Active Alerts</h2>
+                    <h2 data-i18n="alerts.active_title">Active Alerts</h2>
                     <div id="alerts-list">
-                        <div class="empty">Loading...</div>
+                        <div class="empty" data-i18n="alerts.loading">Loading...</div>
                     </div>
                 </div>
                 <div class="card">
-                    <h2>Alert Detail & Trend</h2>
+                    <h2 data-i18n="alerts.detail_title">Alert Detail & Trend</h2>
                     <div id="alert-detail">
                         <p id="detail-title" style="font-weight:600; margin-bottom:0.5rem;"></p>
                         <p id="detail-summary" style="font-size:0.85rem; color:#8892b0; margin-bottom:1rem;"></p>
                         <div id="trend-chart"></div>
                         <div id="relations-section" style="margin-top:1rem;">
-                            <h3 style="font-size:0.85rem; color:#64ffda;">Related Entities</h3>
+                            <h3 style="font-size:0.85rem; color:#64ffda;" data-i18n="alerts.related_entities">Related Entities</h3>
                             <ul id="relations-list" style="font-size:0.8rem; margin-top:0.5rem;"></ul>
                         </div>
                     </div>
@@ -294,7 +333,7 @@
             </div>
             <!-- R2: Metric Pulse cards below the alerts block -->
             <section id="pulse-section">
-                <h2>Metric Pulse</h2>
+                <h2 data-i18n="alerts.metric_pulse">Metric Pulse</h2>
                 <div id="pulse-grid"></div>
             </section>
         </div>
@@ -303,11 +342,11 @@
         <div id="clusters-tab" class="tab-content">
             <div class="card">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-                    <h2 style="margin:0;">Event Clusters</h2>
-                    <button id="btn-refresh-clusters" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;">Refresh Clusters</button>
+                    <h2 style="margin:0;" data-i18n="clusters.title">Event Clusters</h2>
+                    <button id="btn-refresh-clusters" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;" data-i18n="clusters.refresh">Refresh Clusters</button>
                 </div>
                 <div id="clusters-list">
-                    <div class="empty">Click "Refresh Clusters" to load.</div>
+                    <div class="empty" data-i18n="clusters.empty_hint">Click "Refresh Clusters" to load.</div>
                 </div>
             </div>
         </div>
@@ -315,36 +354,36 @@
         <!-- Research tab -->
         <div id="research-tab" class="tab-content">
             <div class="card" style="max-width:380px; margin-bottom:1.5rem;">
-                <h2>Load Research</h2>
+                <h2 data-i18n="research.load_card_title">Load Research</h2>
                 <div style="display:flex; gap:0.5rem; align-items:flex-end;">
                     <div style="flex:1;">
-                        <label for="research-alert-id" style="font-size:0.72rem; color:#8892b0;">Alert ID</label>
-                        <input type="text" id="research-alert-id" placeholder="e.g. abc123"
+                        <label for="research-alert-id" style="font-size:0.72rem; color:#8892b0;" data-i18n="research.alert_id_label">Alert ID</label>
+                        <input type="text" id="research-alert-id" placeholder="e.g. abc123" data-i18n-placeholder="research.alert_id_placeholder"
                                style="background:#1a2340; border:1px solid #2a3450; color:#e0e6f0; padding:0.45rem 0.6rem; border-radius:6px; font-size:0.82rem; width:100%; box-sizing:border-box; margin-top:0.25rem;">
                     </div>
-                    <button id="btn-load-research" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.5rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;">Load Research</button>
+                    <button id="btn-load-research" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.5rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;" data-i18n="research.btn_load">Load Research</button>
                 </div>
             </div>
             <div id="research-detail">
-                <div class="empty">Enter an alert ID above and click "Load Research" to view research context.</div>
+                <div class="empty" data-i18n="research.empty_hint">Enter an alert ID above and click "Load Research" to view research context.</div>
             </div>
         </div>
 
         <!-- Ontology tab -->
         <div id="ontology-tab" class="tab-content">
             <div class="card">
-                <h2>Manage Relations</h2>
+                <h2 data-i18n="ontology.manage_title">Manage Relations</h2>
                 <form class="ontology-form" id="ontology-form">
                     <div>
-                        <label for="ont-source-id">Source Entity</label>
-                        <input type="text" id="ont-source-id" placeholder="e.g. btc" required>
+                        <label for="ont-source-id" data-i18n="ontology.source_label">Source Entity</label>
+                        <input type="text" id="ont-source-id" placeholder="e.g. btc" data-i18n-placeholder="ontology.source_placeholder" required>
                     </div>
                     <div>
-                        <label for="ont-target-id">Target Entity</label>
-                        <input type="text" id="ont-target-id" placeholder="e.g. gld" required>
+                        <label for="ont-target-id" data-i18n="ontology.target_label">Target Entity</label>
+                        <input type="text" id="ont-target-id" placeholder="e.g. gld" data-i18n-placeholder="ontology.target_placeholder" required>
                     </div>
                     <div>
-                        <label for="ont-relation-type">Relation Type</label>
+                        <label for="ont-relation-type" data-i18n="ontology.type_label">Relation Type</label>
                         <select id="ont-relation-type" required>
                             <option value="tracks">tracks</option>
                             <option value="component_of">component_of</option>
@@ -362,33 +401,33 @@
                         </select>
                     </div>
                     <div>
-                        <label for="ont-direction">Direction</label>
+                        <label for="ont-direction" data-i18n="ontology.direction_label">Direction</label>
                         <select id="ont-direction" required>
-                            <option value="forward">forward</option>
-                            <option value="undirected">undirected</option>
+                            <option value="forward" data-i18n="ontology.direction_forward">forward</option>
+                            <option value="undirected" data-i18n="ontology.direction_undirected">undirected</option>
                         </select>
                     </div>
                     <div>
-                        <label for="ont-token">API Token</label>
-                        <input type="password" id="ont-token" placeholder="API_TOKEN（写操作必填，读操作可留空）">
+                        <label for="ont-token" data-i18n="ontology.token_label">API Token</label>
+                        <input type="password" id="ont-token" placeholder="API_TOKEN (required for mutations, optional for reads)" data-i18n-placeholder="ontology.token_placeholder">
                     </div>
                     <div>
-                        <button type="submit">Add Relation</button>
+                        <button type="submit" data-i18n="ontology.btn_add">Add Relation</button>
                     </div>
                 </form>
                 <div id="ontology-list">
-                    <div class="empty">Loading relations...</div>
+                    <div class="empty" data-i18n="ontology.loading_relations">Loading relations...</div>
                 </div>
             </div>
             <!-- Discover Candidates card -->
             <div class="card" style="margin-top:1.5rem;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-                    <h2 style="margin:0;">Discover Candidates</h2>
-                    <button id="btn-discover-candidates" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;">Run Discovery</button>
+                    <h2 style="margin:0;" data-i18n="ontology.discover_title">Discover Candidates</h2>
+                    <button id="btn-discover-candidates" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;" data-i18n="ontology.btn_discover">Run Discovery</button>
                 </div>
                 <div id="ontology-candidates-summary" style="font-size:0.78rem; color:#8892b0; margin-bottom:0.5rem;"></div>
                 <div id="ontology-candidates-list">
-                    <div class="empty">Click "Run Discovery" to find new relation candidates.</div>
+                    <div class="empty" data-i18n="ontology.empty_candidates_hint">Click "Run Discovery" to find new relation candidates.</div>
                 </div>
             </div>
         </div>
@@ -397,17 +436,17 @@
         <div id="signal-tab" class="tab-content">
             <div class="grid">
                 <div class="card">
-                    <h2>Signal Quality Timeline</h2>
-                    <label for="signal-metric-uid" style="font-size:0.78rem; color:#8892b0;">Metric UID</label>
-                    <input type="text" id="signal-metric-uid" placeholder="e.g. fed_bs_total_assets"
+                    <h2 data-i18n="signal.timeline_title">Signal Quality Timeline</h2>
+                    <label for="signal-metric-uid" style="font-size:0.78rem; color:#8892b0;" data-i18n="signal.metric_uid_label">Metric UID</label>
+                    <input type="text" id="signal-metric-uid" placeholder="e.g. fed_bs_total_assets" data-i18n-placeholder="signal.metric_uid_placeholder"
                            style="background:#1a2340; border:1px solid #2a3450; color:#e0e6f0; padding:0.45rem 0.6rem; border-radius:6px; font-size:0.82rem; width:100%; max-width:320px; box-sizing:border-box; margin-top:0.25rem;">
-                    <button onclick="loadSignalQuality()" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer; margin-top:0.5rem;">Load</button>
+                    <button onclick="loadSignalQuality()" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer; margin-top:0.5rem;" data-i18n="signal.btn_load">Load</button>
                     <div id="signal-quality-chart" style="margin-top:1rem;"></div>
                 </div>
                 <div class="card">
-                    <h2>Quality Data Points</h2>
+                    <h2 data-i18n="signal.points_title">Quality Data Points</h2>
                     <div id="signal-quality-list">
-                        <div class="empty">Enter a metric UID and click Load.</div>
+                        <div class="empty" data-i18n="signal.empty_hint">Enter a metric UID and click Load.</div>
                     </div>
                 </div>
             </div>
@@ -417,12 +456,12 @@
         <div id="rules-tab" class="tab-content">
             <div class="card">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-                    <h2 style="margin:0;">Rules</h2>
-                    <button id="btn-refresh-rules" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;">Refresh Rules</button>
+                    <h2 style="margin:0;" data-i18n="rules.title">Rules</h2>
+                    <button id="btn-refresh-rules" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;" data-i18n="rules.refresh">Refresh Rules</button>
                 </div>
                 <div id="rules-summary" style="font-size:0.78rem; color:#8892b0; margin-bottom:0.5rem;"></div>
                 <div id="rules-list">
-                    <div class="empty">Click "Refresh Rules" to load.</div>
+                    <div class="empty" data-i18n="rules.empty_hint">Click "Refresh Rules" to load.</div>
                 </div>
             </div>
         </div>
@@ -433,36 +472,484 @@
         const SEVERITIES = ['critical', 'warning', 'info'];
         let trendChart = null;
 
-        // Pulse-dashboard state: latest /api/status payload (null until first
-        // successful fetch). Used by the alerts empty-state text too.
+        // ══════════════════════════════════════════════════════════════════════
+        // ── i18n Dictionary & Helpers ─────────────────────────────────────────
+        // ══════════════════════════════════════════════════════════════════════
+        const TRANSLATIONS = {
+            zh: {
+                'header.title': 'Capital Observatory',
+                'header.subtitle': '资本市场异常检测系统',
+                'status.connecting': '连接中...',
+                'status.online': '在线',
+                'status.offline': '离线',
+                'status.interrupted': '连接中断',
+                'status.plugins_online': '{n} 插件在线',
+                'status.plugins_degraded': '{n} 采集异常',
+                'status.metrics_count': '{n} 指标',
+                'status.budget_detailed': '真实 {today}/{limit} · 模拟 {mock} · 测试 {test} · 未分类 {unknown}',
+                'status.budget_simple': '今日告警 {today}/{limit}',
+                'status.latest_data': '最新数据 {time}',
+                'status.no_data': '暂无数据',
+                'status.plugin_tooltip': '{name}: {status} · 最后采集 {time} · {count} 条{err}',
+                'status.plugin_error': '采集错误：{err} · {count} 次连续失败 · {duration} ms',
+                'status.plugin_healthy': '正常',
+                'status.plugin_unhealthy': '采集异常',
+                'status.plugin_offline': '离线',
+
+                'time.just_now': '刚刚',
+                'time.within_1m': '1 分钟内',
+                'time.minutes_ago': '{n} 分钟前',
+                'time.hours_ago': '{n} 小时前',
+                'time.days_ago': '{n} 天前',
+
+                'tabs.alerts': '告警监控',
+                'tabs.clusters': '事件聚类',
+                'tabs.research': '研报洞察',
+                'tabs.ontology': '本体关系',
+                'tabs.signal': '信号质量',
+                'tabs.rules': '规则管理',
+
+                'alerts.active_title': '活跃告警',
+                'alerts.loading': '加载中...',
+                'alerts.empty_silent': '✓ 系统静默运行中 · 最新数据 {time}',
+                'alerts.empty_silent_simple': '✓ 系统静默运行中',
+                'alerts.error_api': '无法连接 API',
+                'alerts.detail_title': '告警详情与趋势',
+                'alerts.research_pending': '研报上下文暂不可用（告警触发时自动创建快照）',
+                'alerts.research_summary': '{name} — 当前值: {current}, 阈值: {threshold}',
+                'alerts.error_detail': '加载详情失败',
+                'alerts.no_trend': '暂无近期趋势数据',
+                'alerts.related_entities': '相关实体',
+                'alerts.none': '无',
+                'alerts.metric_pulse': '指标脉搏',
+
+                'clusters.title': '事件聚类',
+                'clusters.refresh': '刷新聚类',
+                'clusters.loading': '正在加载聚类...',
+                'clusters.empty_hint': '点击“刷新聚类”加载。',
+                'clusters.empty_none': '暂无聚类。当告警在时间窗口内集中触发时将形成聚类。',
+                'clusters.expand': '展开',
+                'clusters.collapse': '收起',
+                'clusters.alerts_count': '告警列表 ({n})',
+                'clusters.no_alerts': '此聚类中暂无告警。',
+                'clusters.merge_trail': '合并轨迹',
+                'clusters.merge_none': '详细合并记录暂不可用',
+                'clusters.raw_json': '▸ 原始 JSON (调试)',
+                'clusters.raw_json_open': '▾ 原始 JSON (调试)',
+                'clusters.th_id': 'ID',
+                'clusters.th_entity': '核心实体',
+                'clusters.th_size': '规模',
+                'clusters.th_priority': '优先级',
+                'clusters.th_coalesced': '已合并',
+                'clusters.th_actions': '操作',
+                'clusters.yes': '是',
+                'clusters.no': '否',
+
+                'research.load_card_title': '加载研报',
+                'research.alert_id_label': '告警 ID',
+                'research.alert_id_placeholder': '例如：abc123',
+                'research.btn_load': '加载研报',
+                'research.loading_btn': '加载中...',
+                'research.empty_hint': '在上方输入告警 ID 并点击“加载研报”查看上下文。',
+                'research.prompt_enter_id': '请输入告警 ID',
+                'research.loading_data': '正在加载研报数据...',
+                'research.metric_label': '指标：{name}',
+                'research.metric_id_label': '指标 ID：{id}',
+                'research.timeline_title': '时间线趋势 (recent_trend)',
+                'research.overlays_title': '相关覆盖图 ({n})',
+                'research.relations_title': '关联关系',
+                'research.provenance_title': '来源与证据',
+                'research.analogs_title': '历史类似事件',
+                'research.relevance': '相关度 {r}',
+                'research.feedback_title': '研报质量反馈',
+                'research.rationale_label': '反馈理由 (选填)',
+                'research.rationale_placeholder': '记录见解、背景说明或判定原因...',
+                'research.btn_worth': '★ 有研究价值',
+                'research.btn_irrelevant': '✗ 无关/误报',
+                'research.btn_duplicate': '≈ 重复告警',
+                'research.submitting': '正在提交...',
+                'research.submitted': '✓ 反馈已提交：{verdict}',
+                'research.verdict_worth': '有研究价值',
+                'research.verdict_irrelevant': '无关',
+                'research.verdict_duplicate': '重复',
+
+                'ontology.manage_title': '关系管理',
+                'ontology.source_label': '源实体 (Source Entity)',
+                'ontology.source_placeholder': '例如：btc',
+                'ontology.target_label': '目标实体 (Target Entity)',
+                'ontology.target_placeholder': '例如：gld',
+                'ontology.type_label': '关系类型 (Relation Type)',
+                'ontology.direction_label': '方向 (Direction)',
+                'ontology.direction_forward': '单向 (forward)',
+                'ontology.direction_undirected': '无向 (undirected)',
+                'ontology.token_label': 'API Token',
+                'ontology.token_placeholder': 'API_TOKEN（写操作必填，读操作可留空）',
+                'ontology.btn_add': '添加关系',
+                'ontology.loading_relations': '正在加载关系...',
+                'ontology.empty_relations': '暂无已定义的关系。请使用上方表单添加。',
+                'ontology.th_rel_id': '关系 ID',
+                'ontology.th_source': '源实体',
+                'ontology.th_target': '目标实体',
+                'ontology.th_type': '类型',
+                'ontology.th_direction': '方向',
+                'ontology.th_created': '创建时间',
+                'ontology.discover_title': '发现候选关系',
+                'ontology.btn_discover': '运行发现',
+                'ontology.discovering': '正在发现候选关系...',
+                'ontology.btn_running': '运行中...',
+                'ontology.updated_at': '更新时间：{time}',
+                'ontology.empty_candidates': '暂无待审核的候选关系',
+                'ontology.empty_candidates_hint': '点击“运行发现”寻找新的候选关系。',
+                'ontology.candidates_pending_count': '{n} 条候选关系待审核',
+                'ontology.th_confidence': '置信度',
+                'ontology.th_pvalue': 'P值',
+                'ontology.th_sample': '样本量',
+                'ontology.th_lookback': '回溯天数',
+                'ontology.th_actions': '操作',
+                'ontology.btn_accept': '采纳',
+                'ontology.btn_reject': '拒绝',
+                'ontology.reject_prompt': '请输入拒绝原因 (选填)：',
+
+                'signal.timeline_title': '信号质量时间线',
+                'signal.metric_uid_label': '指标 UID',
+                'signal.metric_uid_placeholder': '例如：fed_bs_total_assets',
+                'signal.btn_load': '加载',
+                'signal.prompt_enter_uid': '请输入指标 UID',
+                'signal.points_title': '质量数据点',
+                'signal.empty_hint': '输入指标 UID 并点击加载。',
+                'signal.not_available': '信号质量数据不可用。',
+                'signal.no_observations': '该指标暂无观测数据。',
+                'signal.th_time': '时间',
+                'signal.th_source': '数据源',
+                'signal.th_grade': '评级',
+                'signal.th_quality': '质量分',
+
+                'rules.title': '规则管理',
+                'rules.refresh': '刷新规则',
+                'rules.loading': '正在加载规则...',
+                'rules.empty_hint': '点击“刷新规则”加载。',
+                'rules.summary': '{active} 条启用 · {disabled} 条禁用',
+                'rules.empty': '未找到规则。',
+                'rules.th_id': 'ID',
+                'rules.th_name': '名称 / Slug',
+                'rules.th_scope': '范围',
+                'rules.th_enabled': '启用状态',
+                'rules.th_threshold': '置信度阈值',
+                'rules.th_source': '源实体',
+                'rules.th_target': '目标实体',
+                'rules.th_actions': '操作',
+                'rules.on': '已开启',
+                'rules.off': '已关闭',
+                'rules.btn_history': '审计历史',
+                'rules.btn_hide': '收起',
+                'rules.loading_history': '正在加载历史...',
+                'rules.history_title': '审计历史 ({n})',
+                'rules.no_history': '暂无历史记录。',
+                'rules.th_hist_time': '时间',
+                'rules.th_hist_action': '操作 / 字段',
+                'rules.th_hist_actor': '操作者',
+                'rules.th_hist_details': '详情',
+                'rules.toggle_error': '切换规则状态失败：{err}',
+                'rules.history_error': '加载历史记录失败：{err}',
+                'common.error': '错误：{err}',
+                'common.network_error': '网络错误：{err}'
+            },
+            en: {
+                'header.title': 'Capital Observatory',
+                'header.subtitle': 'Anomaly Detection for Capital Markets',
+                'status.connecting': 'connecting...',
+                'status.online': 'online',
+                'status.offline': 'offline',
+                'status.interrupted': 'Connection Interrupted',
+                'status.plugins_online': '{n} plugins online',
+                'status.plugins_degraded': '{n} degraded',
+                'status.metrics_count': '{n} metrics',
+                'status.budget_detailed': 'Real {today}/{limit} · Mock {mock} · Test {test} · Unknown {unknown}',
+                'status.budget_simple': 'Today Alerts {today}/{limit}',
+                'status.latest_data': 'Latest data {time}',
+                'status.no_data': 'No data',
+                'status.plugin_tooltip': '{name}: {status} · Last collect {time} · {count} items{err}',
+                'status.plugin_error': 'Collect error: {err} · {count} consecutive errors · {duration} ms',
+                'status.plugin_healthy': 'Healthy',
+                'status.plugin_unhealthy': 'Degraded',
+                'status.plugin_offline': 'Offline',
+
+                'time.just_now': 'just now',
+                'time.within_1m': '<1m ago',
+                'time.minutes_ago': '{n}m ago',
+                'time.hours_ago': '{n}h ago',
+                'time.days_ago': '{n}d ago',
+
+                'tabs.alerts': 'Alerts',
+                'tabs.clusters': 'Clusters',
+                'tabs.research': 'Research',
+                'tabs.ontology': 'Ontology',
+                'tabs.signal': 'Signal Quality',
+                'tabs.rules': 'Rules',
+
+                'alerts.active_title': 'Active Alerts',
+                'alerts.loading': 'Loading...',
+                'alerts.empty_silent': '✓ Silent running · Latest data {time}',
+                'alerts.empty_silent_simple': '✓ Silent running',
+                'alerts.error_api': 'Cannot reach API',
+                'alerts.detail_title': 'Alert Detail & Trend',
+                'alerts.research_pending': 'Research context not yet available (snapshot is created when alert triggers)',
+                'alerts.research_summary': '{name} — current: {current}, threshold: {threshold}',
+                'alerts.error_detail': 'Error loading detail',
+                'alerts.no_trend': 'No recent trend data',
+                'alerts.related_entities': 'Related Entities',
+                'alerts.none': 'None',
+                'alerts.metric_pulse': 'Metric Pulse',
+
+                'clusters.title': 'Event Clusters',
+                'clusters.refresh': 'Refresh Clusters',
+                'clusters.loading': 'Loading clusters...',
+                'clusters.empty_hint': 'Click "Refresh Clusters" to load.',
+                'clusters.empty_none': 'No clusters yet. Clusters form when alerts fire within the time window.',
+                'clusters.expand': 'Expand',
+                'clusters.collapse': 'Collapse',
+                'clusters.alerts_count': 'Alerts ({n})',
+                'clusters.no_alerts': 'No alerts in this cluster.',
+                'clusters.merge_trail': 'Merge Trail',
+                'clusters.merge_none': 'Detailed merge trail not available',
+                'clusters.raw_json': '▸ Raw JSON (debug)',
+                'clusters.raw_json_open': '▾ Raw JSON (debug)',
+                'clusters.th_id': 'ID',
+                'clusters.th_entity': 'Primary Entity',
+                'clusters.th_size': 'Size',
+                'clusters.th_priority': 'Priority',
+                'clusters.th_coalesced': 'Coalesced',
+                'clusters.th_actions': 'Actions',
+                'clusters.yes': 'yes',
+                'clusters.no': 'no',
+
+                'research.load_card_title': 'Load Research',
+                'research.alert_id_label': 'Alert ID',
+                'research.alert_id_placeholder': 'e.g. abc123',
+                'research.btn_load': 'Load Research',
+                'research.loading_btn': 'Loading...',
+                'research.empty_hint': 'Enter an alert ID above and click "Load Research" to view research context.',
+                'research.prompt_enter_id': 'Please enter an alert ID',
+                'research.loading_data': 'Loading research data...',
+                'research.metric_label': 'Metric: {name}',
+                'research.metric_id_label': 'Metric ID: {id}',
+                'research.timeline_title': 'Timeline (recent_trend)',
+                'research.overlays_title': 'Overlays ({n})',
+                'research.relations_title': 'Relations',
+                'research.provenance_title': 'Provenance',
+                'research.analogs_title': 'Historical Analogs',
+                'research.relevance': 'relevance {r}',
+                'research.feedback_title': 'Research Feedback',
+                'research.rationale_label': 'Rationale (optional)',
+                'research.rationale_placeholder': 'Notes, context, why this verdict...',
+                'research.btn_worth': '★ Worth Researching',
+                'research.btn_irrelevant': '✗ Irrelevant',
+                'research.btn_duplicate': '≈ Duplicate',
+                'research.submitting': 'Submitting...',
+                'research.submitted': '✓ Feedback submitted: {verdict}',
+                'research.verdict_worth': 'worth_researching',
+                'research.verdict_irrelevant': 'irrelevant',
+                'research.verdict_duplicate': 'duplicate',
+
+                'ontology.manage_title': 'Manage Relations',
+                'ontology.source_label': 'Source Entity',
+                'ontology.source_placeholder': 'e.g. btc',
+                'ontology.target_label': 'Target Entity',
+                'ontology.target_placeholder': 'e.g. gld',
+                'ontology.type_label': 'Relation Type',
+                'ontology.direction_label': 'Direction',
+                'ontology.direction_forward': 'forward',
+                'ontology.direction_undirected': 'undirected',
+                'ontology.token_label': 'API Token',
+                'ontology.token_placeholder': 'API_TOKEN (required for mutations, optional for reads)',
+                'ontology.btn_add': 'Add Relation',
+                'ontology.loading_relations': 'Loading relations...',
+                'ontology.empty_relations': 'No relations defined. Use the form above to add one.',
+                'ontology.th_rel_id': 'Relation ID',
+                'ontology.th_source': 'Source',
+                'ontology.th_target': 'Target',
+                'ontology.th_type': 'Type',
+                'ontology.th_direction': 'Direction',
+                'ontology.th_created': 'Created',
+                'ontology.discover_title': 'Discover Candidates',
+                'ontology.btn_discover': 'Run Discovery',
+                'ontology.discovering': 'Discovering candidates...',
+                'ontology.btn_running': 'Running...',
+                'ontology.updated_at': 'Updated at: {time}',
+                'ontology.empty_candidates': 'No pending candidates',
+                'ontology.empty_candidates_hint': 'Click "Run Discovery" to find new relation candidates.',
+                'ontology.candidates_pending_count': '{n} candidate(s) pending review',
+                'ontology.th_confidence': 'Confidence',
+                'ontology.th_pvalue': 'P-Value',
+                'ontology.th_sample': 'Sample',
+                'ontology.th_lookback': 'Lookback',
+                'ontology.th_actions': 'Actions',
+                'ontology.btn_accept': 'Accept',
+                'ontology.btn_reject': 'Reject',
+                'ontology.reject_prompt': 'Reason for rejection (optional):',
+
+                'signal.timeline_title': 'Signal Quality Timeline',
+                'signal.metric_uid_label': 'Metric UID',
+                'signal.metric_uid_placeholder': 'e.g. fed_bs_total_assets',
+                'signal.btn_load': 'Load',
+                'signal.prompt_enter_uid': 'Please enter a metric UID',
+                'signal.points_title': 'Quality Data Points',
+                'signal.empty_hint': 'Enter a metric UID and click Load.',
+                'signal.not_available': 'Signal quality data not available.',
+                'signal.no_observations': 'No observations for this metric.',
+                'signal.th_time': 'Time',
+                'signal.th_source': 'Source',
+                'signal.th_grade': 'Grade',
+                'signal.th_quality': 'Quality',
+
+                'rules.title': 'Rules',
+                'rules.refresh': 'Refresh Rules',
+                'rules.loading': 'Loading rules...',
+                'rules.empty_hint': 'Click "Refresh Rules" to load.',
+                'rules.summary': '{active} active · {disabled} disabled',
+                'rules.empty': 'No rules found.',
+                'rules.th_id': 'ID',
+                'rules.th_name': 'Name / Slug',
+                'rules.th_scope': 'Scope',
+                'rules.th_enabled': 'Enabled',
+                'rules.th_threshold': 'Confidence Threshold',
+                'rules.th_source': 'Source Entity',
+                'rules.th_target': 'Target Entity',
+                'rules.th_actions': 'Actions',
+                'rules.on': 'on',
+                'rules.off': 'off',
+                'rules.btn_history': 'History',
+                'rules.btn_hide': 'Hide',
+                'rules.loading_history': 'Loading history...',
+                'rules.history_title': 'Audit History ({n})',
+                'rules.no_history': 'No history entries.',
+                'rules.th_hist_time': 'Timestamp',
+                'rules.th_hist_action': 'Action',
+                'rules.th_hist_actor': 'Actor',
+                'rules.th_hist_details': 'Details',
+                'rules.toggle_error': 'Error toggling rule: {err}',
+                'rules.history_error': 'Error loading history: {err}',
+                'common.error': 'Error: {err}',
+                'common.network_error': 'Network error: {err}'
+            }
+        };
+
+        let currentLang = 'en';
+
+        function t(key, params) {
+            const dict = TRANSLATIONS[currentLang] || TRANSLATIONS['en'] || {};
+            let str = dict[key] !== undefined ? dict[key] : (TRANSLATIONS['en'][key] !== undefined ? TRANSLATIONS['en'][key] : key);
+            if (params && typeof params === 'object') {
+                for (const k in params) {
+                    str = str.replace(new RegExp('\{' + k + '\}', 'g'), params[k]);
+                }
+            }
+            return str;
+        }
+
+        function applyStaticTranslations() {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.dataset.i18n;
+                if (key) el.textContent = t(key);
+            });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+                const key = el.dataset.i18nPlaceholder;
+                if (key) el.placeholder = t(key);
+            });
+            document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
+        }
+
+        function setLanguage(lang) {
+            currentLang = (lang === 'zh' || lang === 'zh-CN') ? 'zh' : 'en';
+            try {
+                localStorage.setItem('capital_lang', currentLang);
+            } catch (e) { /* ignore localStorage block */ }
+
+            const btnZh = document.getElementById('btn-lang-zh');
+            const btnEn = document.getElementById('btn-lang-en');
+            if (btnZh && btnEn) {
+                btnZh.classList.toggle('active', currentLang === 'zh');
+                btnEn.classList.toggle('active', currentLang === 'en');
+            }
+
+            applyStaticTranslations();
+
+            const statusPill = document.getElementById('status-pill');
+            if (statusPill) {
+                if (hasFetched) {
+                    statusPill.textContent = isOnline ? t('status.online') : t('status.offline');
+                } else {
+                    statusPill.textContent = t('status.connecting');
+                }
+            }
+
+            // Refresh dynamic views with cached data if available
+            if (statusData) renderStatus(statusData);
+            if (alertsList) renderAlerts(alertsList);
+            if (cachedClusters) renderClusters(cachedClusters);
+            if (cachedRules) renderRules(cachedRules);
+            if (cachedOntology) renderOntologyTable(cachedOntology);
+            if (cachedCandidates) renderCandidates(cachedCandidates, cachedCandidatesUpdatedAt);
+            if (cachedSignalPoints) renderSignalTable(cachedSignalPoints);
+            if (cachedResearch) renderResearchDetail(cachedResearch);
+        }
+
+        function initLanguage() {
+            let saved = null;
+            try {
+                saved = localStorage.getItem('capital_lang');
+            } catch (e) { /* ignore */ }
+
+            if (saved === 'zh' || saved === 'en') {
+                currentLang = saved;
+            } else {
+                const navLang = (navigator.language || navigator.userLanguage || '').toLowerCase();
+                currentLang = navLang.startsWith('zh') ? 'zh' : 'en';
+            }
+
+            const btnZh = document.getElementById('btn-lang-zh');
+            const btnEn = document.getElementById('btn-lang-en');
+            if (btnZh) btnZh.addEventListener('click', () => setLanguage('zh'));
+            if (btnEn) btnEn.addEventListener('click', () => setLanguage('en'));
+
+            setLanguage(currentLang);
+        }
+
+        // Cache for dynamic data to re-render smoothly on language switch
         let statusData = null;
-        let alertsList = null; // last /api/alerts result (for empty-state refresh)
+        let alertsList = null;
+        let cachedClusters = null;
+        let cachedRules = null;
+        let cachedOntology = null;
+        let cachedCandidates = null;
+        let cachedCandidatesUpdatedAt = null;
+        let cachedSignalPoints = null;
+        let cachedResearch = null;
+        let hasFetched = false;
+        let isOnline = false;
+
+
         const FRESH_CLASSES = ['green', 'yellow', 'red'];
 
-        // Client-side relative time. latest_at arrives as ISO8601 UTC; the
-        // difference is computed from Date.now() so no server timezone leaks in.
+        // Client-side relative time using i18n
         function relativeTime(iso) {
             if (!iso) return null;
             const ms = Date.now() - Date.parse(iso);
-            if (!isFinite(ms) || ms < 0) return '刚刚';
+            if (!isFinite(ms) || ms < 0) return t('time.just_now');
             const min = Math.floor(ms / 60000);
-            if (min < 1) return '1 分钟内';
-            if (min < 60) return min + ' 分钟前';
+            if (min < 1) return t('time.within_1m');
+            if (min < 60) return t('time.minutes_ago', { n: min });
             const hr = Math.floor(min / 60);
-            if (hr < 24) return hr + ' 小时前';
-            return Math.floor(hr / 24) + ' 天前';
+            if (hr < 24) return t('time.hours_ago', { n: hr });
+            return t('time.days_ago', { n: Math.floor(hr / 24) });
         }
 
-        // Compact large numbers (Fed balance sheet ≈ 6.7e12 → 6.74B) and
-        // group thousands; values come from observations (plugin-sourced).
         function formatValue(v) {
             if (typeof v !== 'number' || !isFinite(v)) return '—';
             if (Math.abs(v) >= 1e9) return (v / 1e9).toFixed(2) + 'B';
             return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
         }
 
-        // Escape untrusted API data before inserting into innerHTML.
-        // Alert titles/ids originate from plugin-suggested rules — treat as hostile.
         function esc(value) {
             return String(value).replace(/[&<>"']/g, c => ({
                 '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -483,25 +970,27 @@
                 const alerts = await resp.json();
                 alertsList = alerts;
                 renderAlerts(alerts);
-                document.getElementById('status-pill').textContent = 'online';
+                hasFetched = true;
+                isOnline = true;
+                document.getElementById('status-pill').textContent = t('status.online');
             } catch (err) {
-                document.getElementById('status-pill').textContent = 'offline';
+                hasFetched = true;
+                isOnline = false;
+                document.getElementById('status-pill').textContent = t('status.offline');
                 document.getElementById('alerts-list').innerHTML =
-                    '<div class="empty">Cannot reach API</div>';
+                    '<div class="empty">' + esc(t('alerts.error_api')) + '</div>';
             }
         }
 
         function renderAlerts(alerts) {
             const list = document.getElementById('alerts-list');
             if (!alerts || alerts.length === 0) {
-                // R3: silent-running empty state with a vital sign, instead of
-                // the ambiguous "No active alerts".
                 const rel = statusData && statusData.latest_data_at
                     ? relativeTime(statusData.latest_data_at)
                     : null;
                 list.innerHTML = rel
-                    ? '<div class="empty">✓ 系统静默运行中 · 最新数据 ' + esc(rel) + '</div>'
-                    : '<div class="empty">✓ 系统静默运行中</div>';
+                    ? '<div class="empty">' + esc(t('alerts.empty_silent', { time: rel })) + '</div>'
+                    : '<div class="empty">' + esc(t('alerts.empty_silent_simple')) + '</div>';
                 return;
             }
             list.innerHTML = alerts.map(a => {
@@ -524,43 +1013,41 @@
                 const resp = await fetch(API_BASE + '/api/research/' + encodeURIComponent(alertID));
                 if (!resp.ok) {
                     document.getElementById('detail-title').textContent = alertID;
-                    document.getElementById('detail-summary').textContent = 'Research context not yet available (snapshot is created when alert triggers)';
+                    document.getElementById('detail-summary').textContent = t('alerts.research_pending');
                     return;
                 }
                 const rc = await resp.json();
                 document.getElementById('detail-title').textContent = rc.alert_id || alertID;
-                document.getElementById('detail-summary').textContent =
-                    (rc.metric_name || rc.metric_id) + ' — current: ' + (rc.current_value ?? 'N/A') + ', threshold: ' + (rc.threshold ?? 'N/A');
+                document.getElementById('detail-summary').textContent = t('alerts.research_summary', {
+                    name: rc.metric_name || rc.metric_id || '—',
+                    current: rc.current_value ?? 'N/A',
+                    threshold: rc.threshold ?? 'N/A'
+                });
 
-                // Render trend chart.
                 if (rc.recent_trend && rc.recent_trend.length > 0) {
                     renderTrend(rc.recent_trend);
                 } else {
                     if (trendChart) { trendChart.dispose(); trendChart = null; }
                     document.getElementById('trend-chart').innerHTML =
-                        '<div class="empty" style="height:150px;">No recent trend data</div>';
+                        '<div class="empty" style="height:150px;">' + esc(t('alerts.no_trend')) + '</div>';
                 }
 
-                // Render relations.
                 const relList = document.getElementById('relations-list');
                 if (rc.relations && rc.relations.length > 0) {
                     relList.innerHTML = rc.relations.map(r =>
                         '<li>' + esc(r.source_id) + ' &rarr; ' + esc(r.target_id) + ' (' + esc(r.relation_type) + ')</li>'
                     ).join('');
                 } else {
-                    relList.innerHTML = '<li>None</li>';
+                    relList.innerHTML = '<li>' + esc(t('alerts.none')) + '</li>';
                 }
             } catch (err) {
                 document.getElementById('detail-title').textContent = alertID;
-                document.getElementById('detail-summary').textContent = 'Error loading detail';
+                document.getElementById('detail-summary').textContent = t('alerts.error_detail');
             }
         }
 
         function renderTrend(points) {
             const el = document.getElementById('trend-chart');
-            // The empty-state branch replaces this element's children with a
-            // plain div, killing echarts' canvas — always rebuild from scratch
-            // so the Nth click renders exactly like the first.
             if (trendChart) {
                 trendChart.dispose();
                 trendChart = null;
@@ -593,21 +1080,23 @@
         }
 
         // ── R1/R2: /api/status aggregate ──────────────────────────────────────
-        // One fetch drives the status bar + pulse cards. Freshness verdicts are
-        // computed server-side; the client only maps the string to a color.
         async function fetchStatus() {
             try {
                 const resp = await fetch(API_BASE + '/api/status');
                 if (!resp.ok) throw new Error('status ' + resp.status);
                 statusData = await resp.json();
                 renderStatus(statusData);
-                // Keep the silent-running empty state's "最新数据 Y 分钟前" fresh
-                // even when no alert fires in between.
                 if (alertsList && alertsList.length === 0) renderAlerts(alertsList);
+                hasFetched = true;
+                isOnline = true;
+                document.getElementById('status-pill').textContent = t('status.online');
             } catch (err) {
+                hasFetched = true;
+                isOnline = false;
                 renderStatusBarError();
             }
         }
+
 
         function renderStatus(data) {
             const bar = document.getElementById('status-bar');
@@ -617,13 +1106,22 @@
             const connected = plugins.filter(p => p.connected).length;
             const degraded = plugins.filter(p => p.connected && !p.healthy).length;
             const pluginsEl = document.getElementById('sb-plugins');
-            pluginsEl.textContent = connected + ' 插件在线' + (degraded ? ' · ' + degraded + ' 采集异常' : '');
+            const degradedTxt = degraded ? ' · ' + t('status.plugins_degraded', { n: degraded }) : '';
+            pluginsEl.textContent = t('status.plugins_online', { n: connected }) + degradedTxt;
             pluginsEl.title = plugins.map(p =>
-                p.name + ': ' + pluginHealthLabel(p) + ' · 最后采集 ' + (p.last_collect_at ? relativeTime(p.last_collect_at) : '—') + ' · ' + p.last_collect_count + ' 条' + (p.last_collect_error ? ' · ' + p.last_collect_error : '')
+                t('status.plugin_tooltip', {
+                    name: p.name,
+                    status: pluginHealthLabel(p),
+                    time: p.last_collect_at ? relativeTime(p.last_collect_at) : '—',
+                    count: p.last_collect_count,
+                    err: p.last_collect_error ? ' · ' + p.last_collect_error : ''
+                })
             ).join('\n');
 
+
+
             const metricsEl = document.getElementById('sb-metrics');
-            metricsEl.textContent = (data.metrics || []).length + ' 指标';
+            metricsEl.textContent = t('status.metrics_count', { n: (data.metrics || []).length });
 
             const budget = data.budget || {};
             const today = Number.isFinite(budget.real_today) ? budget.real_today : (budget.today || 0);
@@ -631,14 +1129,20 @@
             const hasDetailedBudget = Number.isFinite(budget.real_today);
             const budgetEl = document.getElementById('sb-budget');
             budgetEl.textContent = hasDetailedBudget
-                ? '真实 ' + today + '/' + limit + ' · 模拟 ' + (budget.mock_today || 0) + ' · 测试 ' + (budget.test_today || 0) + ' · 未分类 ' + (budget.unknown_today || 0)
-                : '今日告警 ' + today + '/' + limit;
+                ? t('status.budget_detailed', {
+                    today: today,
+                    limit: limit,
+                    mock: budget.mock_today || 0,
+                    test: budget.test_today || 0,
+                    unknown: budget.unknown_today || 0
+                })
+                : t('status.budget_simple', { today: today, limit: limit });
             budgetEl.classList.toggle('warn', today >= 8 && today <= limit);
             budgetEl.classList.toggle('danger', budget.real_over_budget === true || today > limit);
 
             const rel = relativeTime(data.latest_data_at);
             document.getElementById('sb-latest').textContent =
-                rel ? '最新数据 ' + rel : '暂无数据';
+                rel ? t('status.latest_data', { time: rel }) : t('status.no_data');
 
             renderPluginDetail(plugins);
             renderPulseGrid(data.metrics || []);
@@ -647,16 +1151,15 @@
         function renderStatusBarError() {
             const bar = document.getElementById('status-bar');
             bar.classList.add('offline');
-            document.getElementById('sb-plugins').textContent = '连接中断';
+            document.getElementById('sb-plugins').textContent = t('status.interrupted');
             document.getElementById('sb-metrics').textContent = '';
             document.getElementById('sb-budget').textContent = '';
             document.getElementById('sb-latest').textContent = '';
         }
 
-        // Per-plugin detail (R1): hover shows a tooltip; click toggles the strip.
         function pluginHealthLabel(plugin) {
-            if (!plugin.connected) return '离线';
-            return plugin.healthy ? '正常' : '采集异常';
+            if (!plugin.connected) return t('status.plugin_offline');
+            return plugin.healthy ? t('status.plugin_healthy') : t('status.plugin_unhealthy');
         }
 
         function renderPluginDetail(plugins) {
@@ -671,12 +1174,16 @@
                 li.appendChild(name);
                 const meta = document.createElement('span');
                 meta.className = p.healthy ? '' : 'offline';
-                meta.textContent = ' · ' + pluginHealthLabel(p) + ' · 最后采集 ' + (p.last_collect_at ? relativeTime(p.last_collect_at) : '—') + ' · ' + p.last_collect_count + ' 条';
+                meta.textContent = ' · ' + pluginHealthLabel(p) + ' · ' + (p.last_collect_at ? relativeTime(p.last_collect_at) : '—') + ' · ' + p.last_collect_count;
                 li.appendChild(meta);
                 if (p.last_collect_error) {
                     const error = document.createElement('div');
                     error.className = 'offline';
-                    error.textContent = '采集错误：' + p.last_collect_error + ' · ' + (p.consecutive_errors || 0) + ' 次连续失败 · ' + (p.last_collect_duration_ms || 0) + ' ms';
+                    error.textContent = t('status.plugin_error', {
+                        err: p.last_collect_error,
+                        count: p.consecutive_errors || 0,
+                        duration: p.last_collect_duration_ms || 0
+                    });
                     li.appendChild(error);
                 }
                 ul.appendChild(li);
@@ -697,9 +1204,6 @@
             for (const m of metrics) grid.appendChild(buildPulseCard(m));
         }
 
-        // Cards are built with DOM APIs and textContent for every value that
-        // originates from the database (names, providers, values) — never
-        // innerHTML string concatenation (XSS; plugin-suggested data is hostile).
         function buildPulseCard(m) {
             const card = document.createElement('div');
             card.className = 'pulse-card';
@@ -744,9 +1248,6 @@
             return card;
         }
 
-        // Hand-drawn SVG sparkline (100×28 viewBox, no chart library). Points
-        // are normalized to min/max with 2px padding; flat or sparse series get
-        // a dashed placeholder line instead of a misleading trend.
         function buildSparkline(series, noData) {
             const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             svg.setAttribute('viewBox', '0 0 100 28');
@@ -794,7 +1295,6 @@
                 btn.classList.add('active');
                 const tabId = btn.dataset.tab + '-tab';
                 document.getElementById(tabId).classList.add('active');
-                // Lazy-load tab content on first activation.
                 if (btn.dataset.tab === 'clusters') loadClusters();
                 if (btn.dataset.tab === 'ontology') loadOntology();
                 if (btn.dataset.tab === 'rules') loadRules();
@@ -809,14 +1309,15 @@
             const list = document.getElementById('clusters-list');
             const btn = document.getElementById('btn-refresh-clusters');
             if (btn) btn.disabled = true;
-            list.innerHTML = '<div class="empty">Loading clusters...</div>';
+            list.innerHTML = '<div class="empty">' + esc(t('clusters.loading')) + '</div>';
             try {
                 const resp = await fetch(API_BASE + '/api/clusters/');
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 const clusters = await resp.json();
+                cachedClusters = clusters;
                 renderClusters(clusters);
             } catch (err) {
-                list.innerHTML = '<div class="empty">Error: ' + esc(err.message) + '</div>';
+                list.innerHTML = '<div class="empty">' + esc(t('common.error', { err: err.message })) + '</div>';
             } finally {
                 if (btn) btn.disabled = false;
             }
@@ -825,7 +1326,7 @@
         function renderClusters(clusters) {
             const list = document.getElementById('clusters-list');
             if (!clusters || clusters.length === 0) {
-                list.innerHTML = '<div class="empty">No clusters yet. Clusters form when alerts fire within the time window.</div>';
+                list.innerHTML = '<div class="empty">' + esc(t('clusters.empty_none')) + '</div>';
                 return;
             }
 
@@ -834,7 +1335,14 @@
             table.className = 'data-table';
             const thead = document.createElement('thead');
             const headerRow = document.createElement('tr');
-            ['ID', 'Primary Entity', 'Size', 'Priority', 'Coalesced', ''].forEach(txt => {
+            [
+                t('clusters.th_id'),
+                t('clusters.th_entity'),
+                t('clusters.th_size'),
+                t('clusters.th_priority'),
+                t('clusters.th_coalesced'),
+                t('clusters.th_actions')
+            ].forEach(txt => {
                 const th = document.createElement('th');
                 th.textContent = txt;
                 headerRow.appendChild(th);
@@ -863,12 +1371,12 @@
                 tr.appendChild(tdPrio);
 
                 const tdCoal = document.createElement('td');
-                tdCoal.textContent = c.coalesced ? 'yes' : 'no';
+                tdCoal.textContent = c.coalesced ? t('clusters.yes') : t('clusters.no');
                 tr.appendChild(tdCoal);
 
                 const tdAction = document.createElement('td');
                 const expandBtn = document.createElement('button');
-                expandBtn.textContent = '展开';
+                expandBtn.textContent = t('clusters.expand');
                 expandBtn.style.cssText = 'background:#2a3450; color:#64ffda; border:1px solid #64ffda; padding:0.25rem 0.6rem; border-radius:4px; font-size:0.75rem; cursor:pointer;';
                 expandBtn.addEventListener('click', () => toggleClusterDetail(c, tr, expandBtn));
                 tdAction.appendChild(expandBtn);
@@ -881,11 +1389,10 @@
         }
 
         function toggleClusterDetail(cluster, row, btn) {
-            // If detail row already exists, remove it (toggle off).
             const existing = row.nextElementSibling;
             if (existing && existing.classList.contains('cluster-detail-row')) {
                 existing.remove();
-                btn.textContent = '展开';
+                btn.textContent = t('clusters.expand');
                 return;
             }
 
@@ -898,11 +1405,11 @@
             const panel = document.createElement('div');
             panel.style.cssText = 'font-size:0.8rem;';
 
-            // ── Alerts list
+            // Alerts list
             const hAlerts = document.createElement('h4');
             hAlerts.style.cssText = 'color:#64ffda; margin-bottom:0.4rem;';
             const alertIDs = cluster.merged_alert_ids || [];
-            hAlerts.textContent = 'Alerts (' + alertIDs.length + ')';
+            hAlerts.textContent = t('clusters.alerts_count', { n: alertIDs.length });
             panel.appendChild(hAlerts);
 
             if (alertIDs.length > 0) {
@@ -918,14 +1425,14 @@
             } else {
                 const pNone = document.createElement('p');
                 pNone.style.cssText = 'color:#4a5570; font-size:0.75rem; margin-bottom:0.8rem;';
-                pNone.textContent = 'No alerts in this cluster.';
+                pNone.textContent = t('clusters.no_alerts');
                 panel.appendChild(pNone);
             }
 
-            // ── Merge trail
+            // Merge trail
             const hMerge = document.createElement('h4');
             hMerge.style.cssText = 'color:#64ffda; margin-bottom:0.4rem;';
-            hMerge.textContent = 'Merge Trail';
+            hMerge.textContent = t('clusters.merge_trail');
             panel.appendChild(hMerge);
 
             const mergeEntries = cluster.merge_trail && Array.isArray(cluster.merge_trail.entries)
@@ -943,14 +1450,14 @@
             } else {
                 const pMerge = document.createElement('p');
                 pMerge.style.cssText = 'color:#4a5570; font-size:0.75rem; margin-bottom:0.8rem;';
-                pMerge.textContent = '详细合并记录暂不可用';
+                pMerge.textContent = t('clusters.merge_none');
                 panel.appendChild(pMerge);
             }
 
-            // ── Raw JSON (collapsible)
+            // Raw JSON
             const hJson = document.createElement('h4');
             hJson.style.cssText = 'color:#64ffda; margin-bottom:0.4rem; cursor:pointer;';
-            hJson.textContent = '▸ Raw JSON (debug)';
+            hJson.textContent = t('clusters.raw_json');
             panel.appendChild(hJson);
 
             const preJson = document.createElement('pre');
@@ -961,13 +1468,13 @@
             hJson.addEventListener('click', () => {
                 const isOpen = preJson.style.display !== 'none';
                 preJson.style.display = isOpen ? 'none' : 'block';
-                hJson.textContent = (isOpen ? '▸' : '▾') + ' Raw JSON (debug)';
+                hJson.textContent = isOpen ? t('clusters.raw_json') : t('clusters.raw_json_open');
             });
 
             detailTd.appendChild(panel);
             detailTr.appendChild(detailTd);
             row.after(detailTr);
-            btn.textContent = '收起';
+            btn.textContent = t('clusters.collapse');
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -980,24 +1487,25 @@
             const alertIDInput = document.getElementById('research-alert-id');
             const alertID = alertIDInput.value.trim();
             if (!alertID) {
-                alert('Please enter an alert ID');
+                alert(t('research.prompt_enter_id'));
                 return;
             }
             const detail = document.getElementById('research-detail');
             const btn = document.getElementById('btn-load-research');
             btn.disabled = true;
-            btn.textContent = 'Loading...';
-            detail.innerHTML = '<div class="empty">Loading research data...</div>';
+            btn.textContent = t('research.loading_btn');
+            detail.innerHTML = '<div class="empty">' + esc(t('research.loading_data')) + '</div>';
             try {
                 const resp = await fetch(API_BASE + '/api/research/' + encodeURIComponent(alertID));
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 const rc = await resp.json();
+                cachedResearch = rc;
                 renderResearchDetail(rc);
             } catch (err) {
-                detail.innerHTML = '<div class="empty">Error: ' + esc(err.message) + '</div>';
+                detail.innerHTML = '<div class="empty">' + esc(t('common.error', { err: err.message })) + '</div>';
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Load Research';
+                btn.textContent = t('research.btn_load');
             }
         }
 
@@ -1005,7 +1513,6 @@
             const detail = document.getElementById('research-detail');
             const sections = [];
 
-            // ── Detail card (always shown)
             const detailCard = document.createElement('div');
             detailCard.className = 'card';
             detailCard.style.cssText = 'margin-bottom:1.5rem;';
@@ -1018,13 +1525,13 @@
             if (rc.metric_name) {
                 const pMetric = document.createElement('p');
                 pMetric.style.cssText = 'font-size:0.82rem; color:#a8b2d1;';
-                pMetric.textContent = 'Metric: ' + rc.metric_name;
+                pMetric.textContent = t('research.metric_label', { name: rc.metric_name });
                 detailCard.appendChild(pMetric);
             }
             if (rc.metric_id && rc.metric_id !== rc.metric_name) {
                 const pMid = document.createElement('p');
                 pMid.style.cssText = 'font-size:0.78rem; color:#8892b0;';
-                pMid.textContent = 'Metric ID: ' + rc.metric_id;
+                pMid.textContent = t('research.metric_id_label', { id: rc.metric_id });
                 detailCard.appendChild(pMid);
             }
             if (rc.research_question) {
@@ -1041,31 +1548,30 @@
 
             sections.push(detailCard);
 
-            // ── Timeline chart
+            // Timeline chart
             if (rc.recent_trend && rc.recent_trend.length > 0) {
                 const timelineCard = document.createElement('div');
                 timelineCard.className = 'card';
                 timelineCard.style.cssText = 'margin-bottom:1.5rem;';
                 const hTimeline = document.createElement('h3');
                 hTimeline.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.9rem;';
-                hTimeline.textContent = 'Timeline (recent_trend)';
+                hTimeline.textContent = t('research.timeline_title');
                 timelineCard.appendChild(hTimeline);
                 const chartDiv = document.createElement('div');
                 chartDiv.style.cssText = 'width:100%; height:250px;';
                 timelineCard.appendChild(chartDiv);
                 sections.push(timelineCard);
-                // Render chart after DOM insertion
                 setTimeout(() => renderResearchTrend(rc.recent_trend, chartDiv), 0);
             }
 
-            // ── Overlays (mini sparklines)
+            // Overlays
             if (rc.overlays && rc.overlays.length > 0) {
                 const overlayCard = document.createElement('div');
                 overlayCard.className = 'card';
                 overlayCard.style.cssText = 'margin-bottom:1.5rem;';
                 const hOverlay = document.createElement('h3');
                 hOverlay.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.9rem;';
-                hOverlay.textContent = 'Overlays (' + rc.overlays.length + ')';
+                hOverlay.textContent = t('research.overlays_title', { n: rc.overlays.length });
                 overlayCard.appendChild(hOverlay);
 
                 const overlayGrid = document.createElement('div');
@@ -1097,14 +1603,14 @@
                 sections.push(overlayCard);
             }
 
-            // ── Relations
+            // Relations
             if (rc.relations && rc.relations.length > 0) {
                 const relCard = document.createElement('div');
                 relCard.className = 'card';
                 relCard.style.cssText = 'margin-bottom:1.5rem;';
                 const hRel = document.createElement('h3');
                 hRel.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.9rem;';
-                hRel.textContent = 'Relations';
+                hRel.textContent = t('research.relations_title');
                 relCard.appendChild(hRel);
                 const ulRel = document.createElement('ul');
                 ulRel.style.cssText = 'list-style:none; font-size:0.8rem;';
@@ -1118,14 +1624,14 @@
                 sections.push(relCard);
             }
 
-            // ── Provenance
+            // Provenance
             if (rc.provenance) {
                 const provCard = document.createElement('div');
                 provCard.className = 'card';
                 provCard.style.cssText = 'margin-bottom:1.5rem;';
                 const hProv = document.createElement('h3');
                 hProv.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.9rem;';
-                hProv.textContent = 'Provenance';
+                hProv.textContent = t('research.provenance_title');
                 provCard.appendChild(hProv);
                 const pProv = document.createElement('p');
                 pProv.style.cssText = 'font-size:0.8rem; color:#a8b2d1; white-space:pre-wrap;';
@@ -1134,14 +1640,14 @@
                 sections.push(provCard);
             }
 
-            // ── Historical analogs
+            // Historical analogs
             if (rc.historical_analogs && rc.historical_analogs.length > 0) {
                 const analogCard = document.createElement('div');
                 analogCard.className = 'card';
                 analogCard.style.cssText = 'margin-bottom:1.5rem;';
                 const hAnalog = document.createElement('h3');
                 hAnalog.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.9rem;';
-                hAnalog.textContent = 'Historical Analogs';
+                hAnalog.textContent = t('research.analogs_title');
                 analogCard.appendChild(hAnalog);
                 const ulAnalog = document.createElement('ul');
                 ulAnalog.style.cssText = 'list-style:none; font-size:0.8rem;';
@@ -1151,45 +1657,45 @@
                     const year = a.year || a.date || '';
                     const event = a.title || a.event || a.name || '';
                     const relevance = a.relevance != null ? Number(a.relevance).toFixed(2) : '';
-                    li.textContent = (year ? year + ' — ' : '') + event + (relevance ? ' · 相关度 ' + relevance : '') + (a.source ? ' · ' + a.source : '');
+                    li.textContent = (year ? year + ' — ' : '') + event + (relevance ? ' · ' + t('research.relevance', { r: relevance }) : '') + (a.source ? ' · ' + a.source : '');
                     ulAnalog.appendChild(li);
                 }
                 analogCard.appendChild(ulAnalog);
                 sections.push(analogCard);
             }
 
-            // ── Verdict buttons + rationale
+            // Verdict buttons + rationale
             const verdictCard = document.createElement('div');
             verdictCard.className = 'card';
             verdictCard.style.cssText = 'margin-bottom:1.5rem;';
             const hVerdict = document.createElement('h3');
             hVerdict.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.9rem;';
-            hVerdict.textContent = 'Research Feedback';
+            hVerdict.textContent = t('research.feedback_title');
             verdictCard.appendChild(hVerdict);
 
             const labelRationale = document.createElement('label');
             labelRationale.style.cssText = 'font-size:0.72rem; color:#8892b0;';
-            labelRationale.textContent = 'Rationale (optional)';
+            labelRationale.textContent = t('research.rationale_label');
             verdictCard.appendChild(labelRationale);
 
             const taRationale = document.createElement('textarea');
             taRationale.style.cssText = 'background:#1a2340; border:1px solid #2a3450; color:#e0e6f0; padding:0.45rem 0.6rem; border-radius:6px; font-size:0.82rem; width:100%; box-sizing:border-box; margin-top:0.25rem; min-height:60px; resize:vertical;';
-            taRationale.placeholder = 'Notes, context, why this verdict...';
+            taRationale.placeholder = t('research.rationale_placeholder');
             verdictCard.appendChild(taRationale);
 
             const btnRow = document.createElement('div');
-            btnRow.style.cssText = 'display:flex; gap:0.5rem; margin-top:0.75rem;';
+            btnRow.style.cssText = 'display:flex; gap:0.5rem; margin-top:0.75rem; flex-wrap:wrap;';
 
             const btnWorth = document.createElement('button');
-            btnWorth.textContent = '★ Worth Researching';
+            btnWorth.textContent = t('research.btn_worth');
             btnWorth.style.cssText = 'background:#2dd4a7; color:#0a0e1a; border:none; padding:0.5rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;';
 
             const btnIrrelevant = document.createElement('button');
-            btnIrrelevant.textContent = '✗ Irrelevant';
+            btnIrrelevant.textContent = t('research.btn_irrelevant');
             btnIrrelevant.style.cssText = 'background:#f59e0b; color:#0a0e1a; border:none; padding:0.5rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;';
 
             const btnDup = document.createElement('button');
-            btnDup.textContent = '≈ Duplicate';
+            btnDup.textContent = t('research.btn_duplicate');
             btnDup.style.cssText = 'background:#3b82f6; color:#fff; border:none; padding:0.5rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;';
 
             const statusP = document.createElement('p');
@@ -1201,7 +1707,7 @@
                 btnIrrelevant.disabled = true;
                 btnDup.disabled = true;
                 statusP.style.display = 'block';
-                statusP.textContent = 'Submitting...';
+                statusP.textContent = t('research.submitting');
                 try {
                     const resp = await fetch(API_BASE + '/api/research/' + encodeURIComponent(rc.alert_id) + '/feedback', {
                         method: 'POST',
@@ -1209,10 +1715,12 @@
                         body: JSON.stringify({ verdict, rationale })
                     });
                     if (!resp.ok) throw new Error('HTTP ' + resp.status);
-                    statusP.textContent = '✓ Feedback submitted: ' + verdict;
+                    const verdictLabel = verdict === 'worth_researching' ? t('research.verdict_worth')
+                        : (verdict === 'irrelevant' ? t('research.verdict_irrelevant') : t('research.verdict_duplicate'));
+                    statusP.textContent = t('research.submitted', { verdict: verdictLabel });
                     statusP.style.color = '#2dd4a7';
                 } catch (err) {
-                    statusP.textContent = 'Error: ' + err.message;
+                    statusP.textContent = t('common.error', { err: err.message });
                     statusP.style.color = '#e85a5a';
                 } finally {
                     btnWorth.disabled = false;
@@ -1232,7 +1740,6 @@
             verdictCard.appendChild(statusP);
             sections.push(verdictCard);
 
-            // ── Render
             detail.textContent = '';
             for (const sec of sections) detail.appendChild(sec);
         }
@@ -1324,9 +1831,10 @@
                 try {
                     const resp = await fetch(API_BASE + '/api/ontology/relations/');
                     const rels = await resp.json();
+                    cachedOntology = rels;
                     renderOntologyTable(rels);
                 } catch (err) {
-                    list.innerHTML = '<div class="empty">Cannot reach API</div>';
+                    list.innerHTML = '<div class="empty">' + esc(t('alerts.error_api')) + '</div>';
                 }
             }
         }
@@ -1334,7 +1842,7 @@
         function renderOntologyTable(rels) {
             const list = document.getElementById('ontology-list');
             if (!rels || rels.length === 0) {
-                list.innerHTML = '<div class="empty">No relations defined. Use the form above to add one.</div>';
+                list.innerHTML = '<div class="empty">' + esc(t('ontology.empty_relations')) + '</div>';
                 return;
             }
             list.innerHTML = '';
@@ -1342,7 +1850,14 @@
             table.className = 'data-table';
             const thead = document.createElement('thead');
             const hRow = document.createElement('tr');
-            ['Relation ID', 'Source', 'Target', 'Type', 'Direction', 'Created'].forEach(txt => {
+            [
+                t('ontology.th_rel_id'),
+                t('ontology.th_source'),
+                t('ontology.th_target'),
+                t('ontology.th_type'),
+                t('ontology.th_direction'),
+                t('ontology.th_created')
+            ].forEach(txt => {
                 const th = document.createElement('th');
                 th.textContent = txt;
                 hRow.appendChild(th);
@@ -1376,10 +1891,9 @@
             const summary = document.getElementById('ontology-candidates-summary');
             const btn = document.getElementById('btn-discover-candidates');
             btn.disabled = true;
-            btn.textContent = 'Running...';
-            container.innerHTML = '<div class="empty">Discovering candidates...</div>';
+            btn.textContent = t('ontology.btn_running');
+            container.innerHTML = '<div class="empty">' + esc(t('ontology.discovering')) + '</div>';
             try {
-                // Try POST first; if 404/405, fall back to GET.
                 let candidates = null;
                 let updatedAt = null;
                 try {
@@ -1401,7 +1915,6 @@
                 }
 
                 if (!candidates) {
-                    // Last resort: try GET without query param
                     const res3 = await fetch(API_BASE + '/api/ontology/candidates');
                     if (res3.ok) {
                         const data3 = await res3.json();
@@ -1410,12 +1923,14 @@
                     }
                 }
 
-                renderCandidates(candidates || [], updatedAt);
+                cachedCandidates = candidates || [];
+                cachedCandidatesUpdatedAt = updatedAt;
+                renderCandidates(cachedCandidates, cachedCandidatesUpdatedAt);
             } catch (err) {
-                container.innerHTML = '<div class="empty">Error: ' + esc(err.message) + '</div>';
+                container.innerHTML = '<div class="empty">' + esc(t('common.error', { err: err.message })) + '</div>';
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Run Discovery';
+                btn.textContent = t('ontology.btn_discover');
             }
         }
 
@@ -1424,27 +1939,37 @@
             const summary = document.getElementById('ontology-candidates-summary');
 
             if (updatedAt) {
-                summary.textContent = 'Update at: ' + new Date(updatedAt).toLocaleString();
+                summary.textContent = t('ontology.updated_at', { time: new Date(updatedAt).toLocaleString() });
             } else {
                 summary.textContent = '';
             }
 
             if (!candidates || candidates.length === 0) {
-                container.innerHTML = '<div class="empty">No pending candidates</div>';
+                container.innerHTML = '<div class="empty">' + esc(t('ontology.empty_candidates')) + '</div>';
                 return;
             }
 
             container.textContent = '';
             const info = document.createElement('p');
             info.style.cssText = 'font-size:0.78rem; color:#8892b0; margin-bottom:0.5rem;';
-            info.textContent = candidates.length + ' candidate(s) pending review';
+            info.textContent = t('ontology.candidates_pending_count', { n: candidates.length });
             container.appendChild(info);
 
             const table = document.createElement('table');
             table.className = 'data-table';
             const thead = document.createElement('thead');
             const hRow = document.createElement('tr');
-            ['Source', 'Target', 'Relation Type', 'Direction', 'Confidence', 'P-Value', 'Sample', 'Lookback', 'Actions'].forEach(txt => {
+            [
+                t('ontology.th_source'),
+                t('ontology.th_target'),
+                t('ontology.th_type'),
+                t('ontology.th_direction'),
+                t('ontology.th_confidence'),
+                t('ontology.th_pvalue'),
+                t('ontology.th_sample'),
+                t('ontology.th_lookback'),
+                t('ontology.th_actions')
+            ].forEach(txt => {
                 const th = document.createElement('th');
                 th.textContent = txt;
                 hRow.appendChild(th);
@@ -1457,27 +1982,22 @@
                 const tr = document.createElement('tr');
                 const id = c.id || c.candidate_id || '';
 
-                // Source
                 const tdSrc = document.createElement('td');
                 tdSrc.textContent = c.source_id || c.source || '—';
                 tr.appendChild(tdSrc);
 
-                // Target
                 const tdTgt = document.createElement('td');
                 tdTgt.textContent = c.target_id || c.target || '—';
                 tr.appendChild(tdTgt);
 
-                // Relation Type
                 const tdType = document.createElement('td');
                 tdType.textContent = c.relation_type || c.relation || '—';
                 tr.appendChild(tdType);
 
-                // Direction
                 const tdDir = document.createElement('td');
                 tdDir.textContent = c.direction || '—';
                 tr.appendChild(tdDir);
 
-                // Confidence (progress bar)
                 const tdConf = document.createElement('td');
                 const confVal = c.confidence != null ? Number(c.confidence) : 0;
                 const confPct = Math.max(0, Math.min(100, confVal * 100));
@@ -1490,7 +2010,6 @@
                 tdConf.appendChild(barWrap);
                 tr.appendChild(tdConf);
 
-                // P-Value (scientific notation)
                 const tdPVal = document.createElement('td');
                 if (c.p_value != null && typeof c.p_value === 'number') {
                     tdPVal.textContent = c.p_value.toExponential(2);
@@ -1500,26 +2019,23 @@
                 tdPVal.style.fontSize = '0.72rem';
                 tr.appendChild(tdPVal);
 
-                // Sample Size
                 const tdSample = document.createElement('td');
                 tdSample.textContent = c.sample_size != null ? c.sample_size : (c.n != null ? c.n : '—');
                 tr.appendChild(tdSample);
 
-                // Lookback Days
                 const tdLookback = document.createElement('td');
                 tdLookback.textContent = c.lookback_days != null ? c.lookback_days + 'd' : (c.lookback != null ? c.lookback : '—');
                 tr.appendChild(tdLookback);
 
-                // Actions
                 const tdActions = document.createElement('td');
                 tdActions.style.cssText = 'white-space:nowrap;';
 
                 const btnAccept = document.createElement('button');
-                btnAccept.textContent = 'Accept';
+                btnAccept.textContent = t('ontology.btn_accept');
                 btnAccept.style.cssText = 'background:#2dd4a7; color:#0a0e1a; border:none; padding:0.25rem 0.5rem; border-radius:4px; font-size:0.7rem; font-weight:600; cursor:pointer; margin-right:0.3rem;';
 
                 const btnReject = document.createElement('button');
-                btnReject.textContent = 'Reject';
+                btnReject.textContent = t('ontology.btn_reject');
                 btnReject.style.cssText = 'background:#e85a5a; color:#fff; border:none; padding:0.25rem 0.5rem; border-radius:4px; font-size:0.7rem; font-weight:600; cursor:pointer;';
 
                 btnAccept.addEventListener('click', () => submitCandidateVerdict(id, 'accept', tr, btnAccept, btnReject));
@@ -1540,7 +2056,7 @@
             btnReject.disabled = true;
             let reason = null;
             if (verdict === 'reject') {
-                reason = prompt('Reason for rejection (optional):') || '';
+                reason = prompt(t('ontology.reject_prompt')) || '';
             }
             try {
                 const resp = await fetch(API_BASE + '/api/ontology/candidates/' + encodeURIComponent(candidateId) + '/' + verdict, {
@@ -1553,7 +2069,7 @@
                 row.style.opacity = '0';
                 setTimeout(() => row.remove(), 300);
             } catch (err) {
-                alert('Error: ' + err.message);
+                alert(t('common.error', { err: err.message }));
                 btnAccept.disabled = false;
                 btnReject.disabled = false;
             }
@@ -1580,7 +2096,7 @@
                 });
                 if (!resp.ok) {
                     const err = await resp.json();
-                    alert('Error: ' + (err.error || 'unknown'));
+                    alert(t('common.error', { err: err.error || 'unknown' }));
                     return;
                 }
                 document.getElementById('ontology-form').reset();
@@ -1588,7 +2104,7 @@
                 ontologyLoaded = false;
                 await loadOntology();
             } catch (err) {
-                alert('Network error: ' + err.message);
+                alert(t('common.network_error', { err: err.message }));
             }
         });
 
@@ -1601,20 +2117,21 @@
             const summary = document.getElementById('rules-summary');
             const btn = document.getElementById('btn-refresh-rules');
             btn.disabled = true;
-            btn.textContent = 'Loading...';
-            list.innerHTML = '<div class="empty">Loading rules...</div>';
+            btn.textContent = t('rules.loading');
+            list.innerHTML = '<div class="empty">' + esc(t('rules.loading')) + '</div>';
             try {
                 const resp = await fetch(API_BASE + '/api/rules');
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 const rules = await resp.json();
                 const arr = Array.isArray(rules) ? rules : (rules.rules || []);
+                cachedRules = arr;
                 renderRules(arr);
             } catch (err) {
-                list.innerHTML = '<div class="empty">Error: ' + esc(err.message) + '</div>';
+                list.innerHTML = '<div class="empty">' + esc(t('common.error', { err: err.message })) + '</div>';
                 summary.textContent = '';
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Refresh Rules';
+                btn.textContent = t('rules.refresh');
             }
         }
 
@@ -1624,10 +2141,10 @@
 
             const active = rules.filter(r => r.enabled !== false).length;
             const disabled = rules.length - active;
-            summary.textContent = active + ' active · ' + disabled + ' disabled';
+            summary.textContent = t('rules.summary', { active, disabled });
 
             if (!rules || rules.length === 0) {
-                list.innerHTML = '<div class="empty">No rules found.</div>';
+                list.innerHTML = '<div class="empty">' + esc(t('rules.empty')) + '</div>';
                 return;
             }
 
@@ -1636,7 +2153,16 @@
             table.className = 'data-table';
             const thead = document.createElement('thead');
             const hRow = document.createElement('tr');
-            ['ID', 'Name / Slug', 'Scope', 'Enabled', 'Confidence Threshold', 'Source Entity', 'Target Entity', 'Actions'].forEach(txt => {
+            [
+                t('rules.th_id'),
+                t('rules.th_name'),
+                t('rules.th_scope'),
+                t('rules.th_enabled'),
+                t('rules.th_threshold'),
+                t('rules.th_source'),
+                t('rules.th_target'),
+                t('rules.th_actions')
+            ].forEach(txt => {
                 const th = document.createElement('th');
                 th.textContent = txt;
                 hRow.appendChild(th);
@@ -1649,22 +2175,18 @@
                 const tr = document.createElement('tr');
                 const id = rule.id || rule.rule_id || '';
 
-                // ID
                 const tdId = document.createElement('td');
                 tdId.textContent = String(id).substring(0, 10);
                 tr.appendChild(tdId);
 
-                // Name / Slug
                 const tdName = document.createElement('td');
                 tdName.textContent = rule.name || rule.slug || rule.rule_name || '—';
                 tr.appendChild(tdName);
 
-                // Scope
                 const tdScope = document.createElement('td');
                 tdScope.textContent = rule.scope || '—';
                 tr.appendChild(tdScope);
 
-                // Enabled dot
                 const tdEnabled = document.createElement('td');
                 const enabled = rule.enabled !== false;
                 const dot = document.createElement('span');
@@ -1672,41 +2194,37 @@
                 tdEnabled.appendChild(dot);
                 tr.appendChild(tdEnabled);
 
-                // Confidence Threshold
                 const tdConf = document.createElement('td');
                 tdConf.textContent = rule.confidence_threshold != null ? Number(rule.confidence_threshold).toFixed(2) : '—';
                 tr.appendChild(tdConf);
 
-                // Source Entity
                 const tdSrc = document.createElement('td');
                 tdSrc.textContent = rule.source_entity || rule.source || '—';
                 tr.appendChild(tdSrc);
 
-                // Target Entity
                 const tdTgt = document.createElement('td');
                 tdTgt.textContent = rule.target_entity || rule.target || '—';
                 tr.appendChild(tdTgt);
 
-                // Actions
                 const tdActions = document.createElement('td');
                 tdActions.style.cssText = 'white-space:nowrap;';
 
-                // Toggle
                 const toggleLabel = document.createElement('label');
                 toggleLabel.style.cssText = 'display:inline-flex; align-items:center; gap:0.3rem; cursor:pointer; margin-right:0.5rem; font-size:0.75rem;';
                 const toggleInput = document.createElement('input');
                 toggleInput.type = 'checkbox';
                 toggleInput.checked = enabled;
-                toggleInput.addEventListener('change', () => toggleRule(id, toggleInput.checked, toggleInput));
-                toggleLabel.appendChild(toggleInput);
                 const toggleTxt = document.createElement('span');
-                toggleTxt.textContent = enabled ? 'on' : 'off';
+                toggleTxt.textContent = enabled ? t('rules.on') : t('rules.off');
+                toggleInput.addEventListener('change', () => {
+                    toggleRule(id, toggleInput.checked, toggleInput, toggleTxt);
+                });
+                toggleLabel.appendChild(toggleInput);
                 toggleLabel.appendChild(toggleTxt);
                 tdActions.appendChild(toggleLabel);
 
-                // History button
                 const btnHistory = document.createElement('button');
-                btnHistory.textContent = 'History';
+                btnHistory.textContent = t('rules.btn_history');
                 btnHistory.style.cssText = 'background:#2a3450; color:#64ffda; border:1px solid #64ffda; padding:0.2rem 0.5rem; border-radius:4px; font-size:0.72rem; cursor:pointer;';
                 btnHistory.addEventListener('click', () => toggleRuleHistory(id, tr, btnHistory));
                 tdActions.appendChild(btnHistory);
@@ -1718,7 +2236,7 @@
             list.appendChild(table);
         }
 
-        async function toggleRule(ruleId, enabled, checkbox) {
+        async function toggleRule(ruleId, enabled, checkbox, labelSpan) {
             checkbox.disabled = true;
             try {
                 const resp = await fetch(API_BASE + '/api/rules/' + encodeURIComponent(ruleId), {
@@ -1727,9 +2245,11 @@
                     body: JSON.stringify({ enabled })
                 });
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                if (labelSpan) labelSpan.textContent = enabled ? t('rules.on') : t('rules.off');
             } catch (err) {
-                alert('Error toggling rule: ' + err.message);
+                alert(t('rules.toggle_error', { err: err.message }));
                 checkbox.checked = !enabled;
+                if (labelSpan) labelSpan.textContent = !enabled ? t('rules.on') : t('rules.off');
             } finally {
                 checkbox.disabled = false;
             }
@@ -1739,7 +2259,7 @@
             const existing = row.nextElementSibling;
             if (existing && existing.classList.contains('rule-history-row')) {
                 existing.remove();
-                btn.textContent = 'History';
+                btn.textContent = t('rules.btn_history');
                 return;
             }
 
@@ -1751,11 +2271,11 @@
 
             const loadingP = document.createElement('p');
             loadingP.style.cssText = 'font-size:0.78rem; color:#8892b0;';
-            loadingP.textContent = 'Loading history...';
+            loadingP.textContent = t('rules.loading_history');
             historyTd.appendChild(loadingP);
             historyTr.appendChild(historyTd);
             row.after(historyTr);
-            btn.textContent = 'Hide';
+            btn.textContent = t('rules.btn_hide');
 
             try {
                 const resp = await fetch(API_BASE + '/api/rules/' + encodeURIComponent(ruleId) + '/history');
@@ -1764,7 +2284,7 @@
                 const entries = Array.isArray(data) ? data : (data.history || data.entries || []);
                 renderRuleHistory(entries, historyTd);
             } catch (err) {
-                loadingP.textContent = 'Error loading history: ' + err.message;
+                loadingP.textContent = t('rules.history_error', { err: err.message });
                 loadingP.style.color = '#e85a5a';
             }
         }
@@ -1773,13 +2293,13 @@
             container.textContent = '';
             const h = document.createElement('h4');
             h.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.85rem;';
-            h.textContent = 'Audit History (' + entries.length + ')';
+            h.textContent = t('rules.history_title', { n: entries.length });
             container.appendChild(h);
 
             if (!entries || entries.length === 0) {
                 const p = document.createElement('p');
                 p.style.cssText = 'font-size:0.78rem; color:#4a5570;';
-                p.textContent = 'No history entries.';
+                p.textContent = t('rules.no_history');
                 container.appendChild(p);
                 return;
             }
@@ -1789,7 +2309,12 @@
             table.style.fontSize = '0.75rem';
             const thead = document.createElement('thead');
             const hRow = document.createElement('tr');
-            ['Timestamp', 'Action', 'Actor', 'Details'].forEach(txt => {
+            [
+                t('rules.th_hist_time'),
+                t('rules.th_hist_action'),
+                t('rules.th_hist_actor'),
+                t('rules.th_hist_details')
+            ].forEach(txt => {
                 const th = document.createElement('th');
                 th.textContent = txt;
                 hRow.appendChild(th);
@@ -1827,56 +2352,69 @@
         let signalChart = null;
         async function loadSignalQuality() {
             const metricUID = document.getElementById('signal-metric-uid').value.trim();
-            if (!metricUID) { alert('Please enter a metric UID'); return; }
+            if (!metricUID) { alert(t('signal.prompt_enter_uid')); return; }
             const list = document.getElementById('signal-quality-list');
             try {
                 const resp = await fetch(API_BASE + '/api/signal/quality/' + encodeURIComponent(metricUID));
                 if (!resp.ok) {
-                    list.innerHTML = '<div class="empty">Signal quality data not available.</div>';
+                    list.innerHTML = '<div class="empty">' + esc(t('signal.not_available')) + '</div>';
                     return;
                 }
                 const points = await resp.json();
+                cachedSignalPoints = points;
                 if (!points || points.length === 0) {
-                    list.innerHTML = '<div class="empty">No observations for this metric.</div>';
+                    list.innerHTML = '<div class="empty">' + esc(t('signal.no_observations')) + '</div>';
                     return;
                 }
-                // Render table.
-                list.innerHTML = '';
-                const table = document.createElement('table');
-                table.className = 'data-table';
-                table.style.fontSize = '0.75rem';
-                const thead = document.createElement('thead');
-                const hRow = document.createElement('tr');
-                ['Time', 'Source', 'Grade', 'Quality'].forEach(txt => {
-                    const th = document.createElement('th');
-                    th.textContent = txt;
-                    hRow.appendChild(th);
-                });
-                thead.appendChild(hRow);
-                table.appendChild(thead);
-                const tbody = document.createElement('tbody');
-                for (const p of points.slice(0, 20)) {
-                    const tr = document.createElement('tr');
-                    const cells = [
-                        new Date(p.time).toLocaleString(),
-                        p.source_class || '—',
-                        p.grade || '—',
-                        p.quality_score != null ? Number(p.quality_score).toFixed(1) : '—'
-                    ];
-                    for (const c of cells) {
-                        const td = document.createElement('td');
-                        td.textContent = c;
-                        tr.appendChild(td);
-                    }
-                    tbody.appendChild(tr);
-                }
-                table.appendChild(tbody);
-                list.appendChild(table);
-                // Render chart.
+                renderSignalTable(points);
                 renderSignalChart(points);
             } catch (err) {
-                list.innerHTML = '<div class="empty">Cannot reach API</div>';
+                list.innerHTML = '<div class="empty">' + esc(t('alerts.error_api')) + '</div>';
             }
+        }
+
+        function renderSignalTable(points) {
+            const list = document.getElementById('signal-quality-list');
+            if (!points || points.length === 0) {
+                list.innerHTML = '<div class="empty">' + esc(t('signal.no_observations')) + '</div>';
+                return;
+            }
+            list.innerHTML = '';
+            const table = document.createElement('table');
+            table.className = 'data-table';
+            table.style.fontSize = '0.75rem';
+            const thead = document.createElement('thead');
+            const hRow = document.createElement('tr');
+            [
+                t('signal.th_time'),
+                t('signal.th_source'),
+                t('signal.th_grade'),
+                t('signal.th_quality')
+            ].forEach(txt => {
+                const th = document.createElement('th');
+                th.textContent = txt;
+                hRow.appendChild(th);
+            });
+            thead.appendChild(hRow);
+            table.appendChild(thead);
+            const tbody = document.createElement('tbody');
+            for (const p of points.slice(0, 20)) {
+                const tr = document.createElement('tr');
+                const cells = [
+                    new Date(p.time).toLocaleString(),
+                    p.source_class || '—',
+                    p.grade || '—',
+                    p.quality_score != null ? Number(p.quality_score).toFixed(1) : '—'
+                ];
+                for (const c of cells) {
+                    const td = document.createElement('td');
+                    td.textContent = c;
+                    tr.appendChild(td);
+                }
+                tbody.appendChild(tr);
+            }
+            table.appendChild(tbody);
+            list.appendChild(table);
         }
 
         function renderSignalChart(points) {
@@ -1917,13 +2455,17 @@
         document.getElementById('btn-refresh-clusters').addEventListener('click', loadClusters);
         document.getElementById('btn-discover-candidates').addEventListener('click', discoverCandidates);
         document.getElementById('btn-refresh-rules').addEventListener('click', loadRules);
+        document.getElementById('sb-plugins').addEventListener('click', togglePluginDetail);
 
+        // Initialize i18n
+        initLanguage();
+
+        // Initial fetch
         loadAlerts();
         fetchStatus();
         setInterval(() => { loadAlerts(); fetchStatus(); }, 30000);
-        document.getElementById('sb-plugins').addEventListener('click', togglePluginDetail);
 
-        // Responsive chart.
+        // Responsive chart
         window.addEventListener('resize', () => {
             if (trendChart) trendChart.resize();
             if (signalChart) signalChart.resize();
