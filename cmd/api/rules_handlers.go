@@ -244,8 +244,10 @@ func (s *rulesStore) historyHandler(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := s.db.Query(r.Context(), `
 		SELECT audit.id, audit.rule_id, audit.scope, audit.field, audit.old_value,
-		       audit.new_value, audit.actor, audit.reason, audit.created_at
+		       audit.new_value, audit.actor, audit.reason, audit.created_at,
+		       COALESCE(src.version, 0)
 		FROM rule_audit_log AS audit
+		LEFT JOIN rules AS src ON src.id = audit.rule_id
 		WHERE audit.rule_id IN (
 			SELECT logical.id
 			FROM rules AS anchor
@@ -274,6 +276,7 @@ func (s *rulesStore) historyHandler(w http.ResponseWriter, r *http.Request) {
 		Actor     string          `json:"actor"`
 		Reason    *string         `json:"reason,omitempty"`
 		CreatedAt time.Time       `json:"created_at"`
+		Version   int             `json:"version"`
 	}
 
 	var entries []auditRow
@@ -282,7 +285,7 @@ func (s *rulesStore) historyHandler(w http.ResponseWriter, r *http.Request) {
 		var reason *string
 		if err := rows.Scan(
 			&e.ID, &e.RuleID, &e.Scope, &e.Field, &e.OldValue, &e.NewValue,
-			&e.Actor, &reason, &e.CreatedAt,
+			&e.Actor, &reason, &e.CreatedAt, &e.Version,
 		); err != nil {
 			log.Error().Err(err).Int("rule_id", id).Msg("scan rule audit log failed")
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})

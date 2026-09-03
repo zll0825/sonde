@@ -41,6 +41,7 @@ type expectedPluginStatus struct {
 	Name           string           `json:"name"`
 	Capabilities   capabilityStatus `json:"capabilities"`
 	SecretsPresent map[string]bool  `json:"secrets_present,omitempty"`
+	Ready          bool             `json:"ready"`
 }
 
 type capabilityStatus struct {
@@ -325,11 +326,16 @@ func queryPlugins(ctx context.Context, db statusQuerier) ([]pluginStatus, []expe
 			ID:           p.ID,
 			Name:         p.Name,
 			Capabilities: parseCapabilityJSON(caps),
+			Ready:        true,
 		}
 		if len(exp.Capabilities.RequiresSecrets) > 0 {
 			exp.SecretsPresent = make(map[string]bool, len(exp.Capabilities.RequiresSecrets))
 			for _, key := range exp.Capabilities.RequiresSecrets {
-				exp.SecretsPresent[key] = os.Getenv(key) != ""
+				present := os.Getenv(key) != ""
+				exp.SecretsPresent[key] = present
+				if !present {
+					exp.Ready = false
+				}
 			}
 		}
 		expected = append(expected, exp)

@@ -11,11 +11,19 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 
 	"capital_observatory/pkg/model"
 )
+
+// controlDB is the query/exec surface sync and backfill need. Production
+// passes *pgxpool.Pool; tests pass a fake.
+type controlDB interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
 
 // writeJSON writes a JSON response with the given status code.
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
@@ -245,7 +253,7 @@ func bearerActorIdentifier(r *http.Request) string {
 }
 
 // syncHandler triggers a manual sync for a given plugin+metrics.
-func syncHandler(db *pgxpool.Pool) http.HandlerFunc {
+func syncHandler(db controlDB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "POST required"})
@@ -286,7 +294,7 @@ func syncHandler(db *pgxpool.Pool) http.HandlerFunc {
 }
 
 // backfillHandler triggers a manual backfill for a given plugin+window.
-func backfillHandler(db *pgxpool.Pool) http.HandlerFunc {
+func backfillHandler(db controlDB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "POST required"})
@@ -312,7 +320,22 @@ func backfillHandler(db *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		_, err := db.Exec(r.Context(), `
+		found, allowed, err := pluginDeclaresWindowedBackfill(r.Context(), db, req.PluginID)
+		if err != nil {
+			log.Error().Err(err).Str("plugin_id", req.PluginID).Msg("lookup backfill capability failed")
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
+			return
+		}
+		if !found {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "plugin not registered"})
+			return
+		}
+		if !allowed {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "plugin does not declare windowedBackfill"})
+			return
+		}
+
+		_, err = db.Exec(r.Context(), `
 			INSERT INTO command_log
 			(command_id, command_type, target_plugin, requested_by, status,
 			 metric_ids, window_start, window_end)
@@ -329,6 +352,24 @@ func backfillHandler(db *pgxpool.Pool) http.HandlerFunc {
 			"message": "backfill command queued",
 		})
 	}
+}
+
+func pluginDeclaresWindowedBackfill(ctx context.Context, db controlDB, pluginID string) (found, allowed bool, err error) {
+	var raw []byte
+	err = db.QueryRow(ctx, `
+		SELECT COALESCE(capabilities, '{}'::jsonb)
+		FROM plugins
+		WHERE id = $1 OR name = $1
+		LIMIT 1
+	`, pluginID).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	caps := parseCapabilityJSON(raw)
+	return true, caps.WindowedBackfill, nil
 }
 
 // generateCommandID creates a unique command identifier. command_id is the

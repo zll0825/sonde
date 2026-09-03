@@ -495,6 +495,20 @@
                 'status.plugin_healthy': '正常',
                 'status.plugin_unhealthy': '采集异常',
                 'status.plugin_offline': '离线',
+                'status.plugin_not_ready': '密钥未就绪',
+                'status.missing_secrets': '缺少密钥：{keys}',
+                'status.plugins_not_ready': '{n} 密钥未就绪',
+                'status.btn_sync': '同步',
+                'status.btn_backfill': '回填',
+                'status.backfill_disabled': '未声明 windowedBackfill，回填已禁用',
+                'status.sync_ok': '同步命令已排队',
+                'status.backfill_ok': '回填命令已排队',
+                'status.sync_need_online': '插件离线，无法同步',
+                'rules.confirm_toggle': '将规则 {id} 从 {from} 改为 {to}？',
+                'rules.confirm_restore': '将规则 {id} 恢复为版本 {version}？',
+                'rules.btn_restore': '恢复此版本',
+                'ontology.confirm_create': '创建关系 {source} → {target}（{type} / {direction}）？',
+                'ontology.confirm_accept': '采纳候选 {id} 为正式关系？',
 
                 'time.just_now': '刚刚',
                 'time.within_1m': '1 分钟内',
@@ -673,6 +687,20 @@
                 'status.plugin_healthy': 'Healthy',
                 'status.plugin_unhealthy': 'Degraded',
                 'status.plugin_offline': 'Offline',
+                'status.plugin_not_ready': 'secrets missing',
+                'status.missing_secrets': 'Missing secrets: {keys}',
+                'status.plugins_not_ready': '{n} missing secrets',
+                'status.btn_sync': 'Sync',
+                'status.btn_backfill': 'Backfill',
+                'status.backfill_disabled': 'windowedBackfill not declared; Backfill disabled',
+                'status.sync_ok': 'Sync command queued',
+                'status.backfill_ok': 'Backfill command queued',
+                'status.sync_need_online': 'Plugin is offline; cannot sync',
+                'rules.confirm_toggle': 'Change rule {id} from {from} to {to}?',
+                'rules.confirm_restore': 'Restore rule {id} to version {version}?',
+                'rules.btn_restore': 'Restore this version',
+                'ontology.confirm_create': 'Create relation {source} → {target} ({type} / {direction})?',
+                'ontology.confirm_accept': 'Accept candidate {id} as a relation?',
 
                 'time.just_now': 'just now',
                 'time.within_1m': '<1m ago',
@@ -1103,11 +1131,14 @@
             bar.classList.remove('offline');
 
             const plugins = data.plugins || [];
+            const expected = data.expected_plugins || [];
             const connected = plugins.filter(p => p.connected).length;
             const degraded = plugins.filter(p => p.connected && !p.healthy).length;
+            const notReady = expected.filter(p => p.ready === false).length;
             const pluginsEl = document.getElementById('sb-plugins');
             const degradedTxt = degraded ? ' · ' + t('status.plugins_degraded', { n: degraded }) : '';
-            pluginsEl.textContent = t('status.plugins_online', { n: connected }) + degradedTxt;
+            const notReadyTxt = notReady ? ' · ' + t('status.plugins_not_ready', { n: notReady }) : '';
+            pluginsEl.textContent = t('status.plugins_online', { n: connected }) + degradedTxt + notReadyTxt;
             pluginsEl.title = plugins.map(p =>
                 t('status.plugin_tooltip', {
                     name: p.name,
@@ -1144,7 +1175,7 @@
             document.getElementById('sb-latest').textContent =
                 rel ? t('status.latest_data', { time: rel }) : t('status.no_data');
 
-            renderPluginDetail(plugins);
+            renderPluginDetail(data);
             renderPulseGrid(data.metrics || []);
         }
 
@@ -1162,39 +1193,111 @@
             return plugin.healthy ? t('status.plugin_healthy') : t('status.plugin_unhealthy');
         }
 
-        function renderPluginDetail(plugins) {
+        function renderPluginDetail(data) {
             const wrap = document.getElementById('plugin-detail');
             if (wrap.classList.contains('hidden')) return;
             wrap.textContent = '';
+            const views = mergePluginViews(data || {});
             const ul = document.createElement('ul');
-            for (const p of plugins) {
+            for (const view of views) {
+                const live = view.live || {};
+                const exp = view.expected || {};
                 const li = document.createElement('li');
                 const name = document.createElement('strong');
-                name.textContent = p.name;
+                name.textContent = live.name || exp.name || view.id;
                 li.appendChild(name);
+                const ready = exp.ready !== false;
                 const meta = document.createElement('span');
-                meta.className = p.healthy ? '' : 'offline';
-                meta.textContent = ' · ' + pluginHealthLabel(p) + ' · ' + (p.last_collect_at ? relativeTime(p.last_collect_at) : '—') + ' · ' + p.last_collect_count;
+                meta.className = (live.healthy && ready) ? '' : 'offline';
+                const readyLabel = ready ? pluginHealthLabel(live) : t('status.plugin_not_ready');
+                meta.textContent = ' · ' + readyLabel + ' · ' + (live.last_collect_at ? relativeTime(live.last_collect_at) : '—') + ' · ' + (live.last_collect_count || 0);
                 li.appendChild(meta);
-                if (p.last_collect_error) {
+                if (!ready) {
+                    const missing = Object.keys(exp.secrets_present || {}).filter(k => !exp.secrets_present[k]);
+                    const warn = document.createElement('div');
+                    warn.className = 'offline';
+                    warn.textContent = t('status.missing_secrets', { keys: missing.join(', ') || '—' });
+                    li.appendChild(warn);
+                }
+                if (live.last_collect_error) {
                     const error = document.createElement('div');
                     error.className = 'offline';
                     error.textContent = t('status.plugin_error', {
-                        err: p.last_collect_error,
-                        count: p.consecutive_errors || 0,
-                        duration: p.last_collect_duration_ms || 0
+                        err: live.last_collect_error,
+                        count: live.consecutive_errors || 0,
+                        duration: live.last_collect_duration_ms || 0
                     });
                     li.appendChild(error);
                 }
+                const actions = document.createElement('div');
+                actions.style.cssText = 'margin-top:0.35rem; display:flex; gap:0.4rem; flex-wrap:wrap;';
+                const pluginID = live.id || exp.id;
+                const syncBtn = document.createElement('button');
+                syncBtn.textContent = t('status.btn_sync');
+                syncBtn.style.cssText = 'background:#2a3450; color:#64ffda; border:1px solid #64ffda; padding:0.15rem 0.45rem; border-radius:4px; font-size:0.72rem; cursor:pointer;';
+                syncBtn.disabled = !live.connected;
+                syncBtn.title = live.connected ? '' : t('status.sync_need_online');
+                syncBtn.addEventListener('click', () => postControl('sync', pluginID, syncBtn));
+                actions.appendChild(syncBtn);
+                const backfillBtn = document.createElement('button');
+                const canBackfill = !!(exp.capabilities && exp.capabilities.windowed_backfill);
+                backfillBtn.textContent = t('status.btn_backfill');
+                backfillBtn.style.cssText = 'background:#2a3450; color:#64ffda; border:1px solid #64ffda; padding:0.15rem 0.45rem; border-radius:4px; font-size:0.72rem; cursor:pointer;';
+                backfillBtn.disabled = !canBackfill;
+                backfillBtn.title = canBackfill ? '' : t('status.backfill_disabled');
+                backfillBtn.addEventListener('click', () => postControl('backfill', pluginID, backfillBtn));
+                actions.appendChild(backfillBtn);
+                li.appendChild(actions);
                 ul.appendChild(li);
             }
             wrap.appendChild(ul);
         }
 
+        function mergePluginViews(data) {
+            const map = {};
+            (data.plugins || []).forEach(p => {
+                map[p.id || p.name] = { id: p.id, live: p };
+            });
+            (data.expected_plugins || []).forEach(e => {
+                const key = e.id || e.name;
+                if (!map[key]) map[key] = { id: key };
+                map[key].expected = e;
+                if (!map[key].live) map[key].id = e.id;
+            });
+            return Object.keys(map).map(k => map[k]);
+        }
+
+        async function postControl(kind, pluginID, btn) {
+            if (!pluginID) return;
+            const body = { plugin_id: pluginID };
+            if (kind === 'backfill') {
+                const end = Math.floor(Date.now() / 1000);
+                body.window_start = end - 30 * 24 * 3600;
+                body.window_end = end;
+            }
+            btn.disabled = true;
+            try {
+                const resp = await fetch(API_BASE + '/api/control/' + kind, {
+                    method: 'POST',
+                    headers: mutationHeaders(),
+                    body: JSON.stringify(body)
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ error: 'HTTP ' + resp.status }));
+                    throw new Error(err.error || ('HTTP ' + resp.status));
+                }
+                alert(kind === 'backfill' ? t('status.backfill_ok') : t('status.sync_ok'));
+            } catch (err) {
+                alert(t('common.error', { err: err.message }));
+            } finally {
+                btn.disabled = kind === 'backfill' ? !(statusData && (statusData.expected_plugins || []).some(e => (e.id === pluginID || e.name === pluginID) && e.capabilities && e.capabilities.windowed_backfill)) : false;
+            }
+        }
+
         function togglePluginDetail() {
             const wrap = document.getElementById('plugin-detail');
             wrap.classList.toggle('hidden');
-            if (!wrap.classList.contains('hidden')) renderPluginDetail(statusData ? statusData.plugins || [] : []);
+            if (!wrap.classList.contains('hidden')) renderPluginDetail(statusData || {});
         }
 
         // ── R2: Metric Pulse cards ───────────────────────────────────────────
@@ -2038,7 +2141,10 @@
                 btnReject.textContent = t('ontology.btn_reject');
                 btnReject.style.cssText = 'background:#e85a5a; color:#fff; border:none; padding:0.25rem 0.5rem; border-radius:4px; font-size:0.7rem; font-weight:600; cursor:pointer;';
 
-                btnAccept.addEventListener('click', () => submitCandidateVerdict(id, 'accept', tr, btnAccept, btnReject));
+                btnAccept.addEventListener('click', () => {
+                    if (!confirm(t('ontology.confirm_accept', { id: id }))) return;
+                    submitCandidateVerdict(id, 'accept', tr, btnAccept, btnReject);
+                });
                 btnReject.addEventListener('click', () => submitCandidateVerdict(id, 'reject', tr, btnAccept, btnReject));
 
                 tdActions.appendChild(btnAccept);
@@ -2083,6 +2189,9 @@
             const direction = document.getElementById('ont-direction').value;
             const tokenInput = document.getElementById('ont-token');
             const token = tokenInput.value.trim();
+            if (!confirm(t('ontology.confirm_create', {
+                source: sourceID, target: targetID, type: relationType, direction: direction
+            }))) return;
             try {
                 const resp = await fetch(API_BASE + '/api/ontology/relations/', {
                     method: 'POST',
@@ -2237,6 +2346,12 @@
         }
 
         async function toggleRule(ruleId, enabled, checkbox, labelSpan) {
+            const from = enabled ? t('rules.off') : t('rules.on');
+            const to = enabled ? t('rules.on') : t('rules.off');
+            if (!confirm(t('rules.confirm_toggle', { id: ruleId, from: from, to: to }))) {
+                checkbox.checked = !enabled;
+                return;
+            }
             checkbox.disabled = true;
             try {
                 const resp = await fetch(API_BASE + '/api/rules/' + encodeURIComponent(ruleId), {
@@ -2282,14 +2397,14 @@
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 const data = await resp.json();
                 const entries = Array.isArray(data) ? data : (data.history || data.entries || []);
-                renderRuleHistory(entries, historyTd);
+                renderRuleHistory(entries, historyTd, ruleId);
             } catch (err) {
                 loadingP.textContent = t('rules.history_error', { err: err.message });
                 loadingP.style.color = '#e85a5a';
             }
         }
 
-        function renderRuleHistory(entries, container) {
+        function renderRuleHistory(entries, container, ruleId) {
             container.textContent = '';
             const h = document.createElement('h4');
             h.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.85rem;';
@@ -2313,7 +2428,8 @@
                 t('rules.th_hist_time'),
                 t('rules.th_hist_action'),
                 t('rules.th_hist_actor'),
-                t('rules.th_hist_details')
+                t('rules.th_hist_details'),
+                t('rules.btn_restore')
             ].forEach(txt => {
                 const th = document.createElement('th');
                 th.textContent = txt;
@@ -2342,10 +2458,36 @@
                 details.style.overflow = 'hidden';
                 details.style.textOverflow = 'ellipsis';
                 tr.appendChild(details);
+                const restoreTd = document.createElement('td');
+                if (e.version) {
+                    const btnRestore = document.createElement('button');
+                    btnRestore.textContent = t('rules.btn_restore');
+                    btnRestore.style.cssText = 'background:#2a3450; color:#64ffda; border:1px solid #64ffda; padding:0.15rem 0.4rem; border-radius:4px; font-size:0.7rem; cursor:pointer;';
+                    btnRestore.addEventListener('click', () => restoreRule(ruleId, e.version, btnRestore));
+                    restoreTd.appendChild(btnRestore);
+                }
+                tr.appendChild(restoreTd);
                 tbody.appendChild(tr);
             }
             table.appendChild(tbody);
             container.appendChild(table);
+        }
+
+        async function restoreRule(ruleId, version, btn) {
+            if (!ruleId || !version) return;
+            if (!confirm(t('rules.confirm_restore', { id: ruleId, version: version }))) return;
+            btn.disabled = true;
+            try {
+                const resp = await fetch(API_BASE + '/api/rules/' + encodeURIComponent(ruleId) + '/restore/' + encodeURIComponent(version), {
+                    method: 'POST',
+                    headers: mutationHeaders()
+                });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                await loadRules();
+            } catch (err) {
+                alert(t('common.error', { err: err.message }));
+                btn.disabled = false;
+            }
         }
 
         // ── Signal Quality tab ───────────────────────────────────────────────

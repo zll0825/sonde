@@ -239,6 +239,12 @@ func TestLoadStatus_JoinAndFreshness(t *testing.T) {
 	if p.ExpectedPlugins[1].SecretsPresent["COINGECKO_KEY"] {
 		t.Errorf("secrets_present should be false when env is unset: %+v", p.ExpectedPlugins[1].SecretsPresent)
 	}
+	if p.ExpectedPlugins[1].Ready {
+		t.Errorf("expected_plugins[1].ready = true, want false when required secret is missing")
+	}
+	if !p.ExpectedPlugins[0].Ready {
+		t.Errorf("expected_plugins[0].ready = false, want true when no secrets required")
+	}
 
 	if p.Budget.Today != 2 {
 		t.Errorf("budget today = %d, want 2", p.Budget.Today)
