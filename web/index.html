@@ -505,10 +505,10 @@
                 'status.backfill_ok': '回填命令已排队',
                 'status.sync_need_online': '插件离线，无法同步',
                 'rules.confirm_toggle': '将规则 {id} 从 {from} 改为 {to}？',
-                'rules.confirm_restore': '将规则 {id} 恢复为版本 {version}？',
+                'rules.confirm_restore': '将规则 {id} 恢复为版本 {version}（{from} → {to}）？',
                 'rules.btn_restore': '恢复此版本',
                 'ontology.confirm_create': '创建关系 {source} → {target}（{type} / {direction}）？',
-                'ontology.confirm_accept': '采纳候选 {id} 为正式关系？',
+                'ontology.confirm_accept': '采纳候选 {id}：{source} → {target}（{type} / {direction}）？',
 
                 'time.just_now': '刚刚',
                 'time.within_1m': '1 分钟内',
@@ -697,10 +697,10 @@
                 'status.backfill_ok': 'Backfill command queued',
                 'status.sync_need_online': 'Plugin is offline; cannot sync',
                 'rules.confirm_toggle': 'Change rule {id} from {from} to {to}?',
-                'rules.confirm_restore': 'Restore rule {id} to version {version}?',
+                'rules.confirm_restore': 'Restore rule {id} to version {version} ({from} → {to})?',
                 'rules.btn_restore': 'Restore this version',
                 'ontology.confirm_create': 'Create relation {source} → {target} ({type} / {direction})?',
-                'ontology.confirm_accept': 'Accept candidate {id} as a relation?',
+                'ontology.confirm_accept': 'Accept candidate {id}: {source} → {target} ({type} / {direction})?',
 
                 'time.just_now': 'just now',
                 'time.within_1m': '<1m ago',
@@ -1139,6 +1139,7 @@
             const degradedTxt = degraded ? ' · ' + t('status.plugins_degraded', { n: degraded }) : '';
             const notReadyTxt = notReady ? ' · ' + t('status.plugins_not_ready', { n: notReady }) : '';
             pluginsEl.textContent = t('status.plugins_online', { n: connected }) + degradedTxt + notReadyTxt;
+            pluginsEl.classList.toggle('danger', notReady > 0);
             pluginsEl.title = plugins.map(p =>
                 t('status.plugin_tooltip', {
                     name: p.name,
@@ -1182,7 +1183,9 @@
         function renderStatusBarError() {
             const bar = document.getElementById('status-bar');
             bar.classList.add('offline');
-            document.getElementById('sb-plugins').textContent = t('status.interrupted');
+            const pluginsEl = document.getElementById('sb-plugins');
+            pluginsEl.textContent = t('status.interrupted');
+            pluginsEl.classList.remove('danger');
             document.getElementById('sb-metrics').textContent = '';
             document.getElementById('sb-budget').textContent = '';
             document.getElementById('sb-latest').textContent = '';
@@ -1290,7 +1293,13 @@
             } catch (err) {
                 alert(t('common.error', { err: err.message }));
             } finally {
-                btn.disabled = kind === 'backfill' ? !(statusData && (statusData.expected_plugins || []).some(e => (e.id === pluginID || e.name === pluginID) && e.capabilities && e.capabilities.windowed_backfill)) : false;
+                if (kind === 'backfill') {
+                    const exp = ((statusData && statusData.expected_plugins) || []).find(e => e.id === pluginID || e.name === pluginID) || {};
+                    btn.disabled = !(exp.capabilities && exp.capabilities.windowed_backfill);
+                } else {
+                    const live = ((statusData && statusData.plugins) || []).find(p => p.id === pluginID || p.name === pluginID) || {};
+                    btn.disabled = !live.connected;
+                }
             }
         }
 
@@ -2142,7 +2151,13 @@
                 btnReject.style.cssText = 'background:#e85a5a; color:#fff; border:none; padding:0.25rem 0.5rem; border-radius:4px; font-size:0.7rem; font-weight:600; cursor:pointer;';
 
                 btnAccept.addEventListener('click', () => {
-                    if (!confirm(t('ontology.confirm_accept', { id: id }))) return;
+                    if (!confirm(t('ontology.confirm_accept', {
+                        id: id,
+                        source: c.source_id || c.source || '—',
+                        target: c.target_id || c.target || '—',
+                        type: c.relation_type || c.relation || '—',
+                        direction: c.direction || '—'
+                    }))) return;
                     submitCandidateVerdict(id, 'accept', tr, btnAccept, btnReject);
                 });
                 btnReject.addEventListener('click', () => submitCandidateVerdict(id, 'reject', tr, btnAccept, btnReject));
@@ -2463,7 +2478,7 @@
                     const btnRestore = document.createElement('button');
                     btnRestore.textContent = t('rules.btn_restore');
                     btnRestore.style.cssText = 'background:#2a3450; color:#64ffda; border:1px solid #64ffda; padding:0.15rem 0.4rem; border-radius:4px; font-size:0.7rem; cursor:pointer;';
-                    btnRestore.addEventListener('click', () => restoreRule(ruleId, e.version, btnRestore));
+                    btnRestore.addEventListener('click', () => restoreRule(ruleId, e.version, btnRestore, oldValue, newValue));
                     restoreTd.appendChild(btnRestore);
                 }
                 tr.appendChild(restoreTd);
@@ -2473,9 +2488,11 @@
             container.appendChild(table);
         }
 
-        async function restoreRule(ruleId, version, btn) {
+        async function restoreRule(ruleId, version, btn, from, to) {
             if (!ruleId || !version) return;
-            if (!confirm(t('rules.confirm_restore', { id: ruleId, version: version }))) return;
+            if (!confirm(t('rules.confirm_restore', {
+                id: ruleId, version: version, from: from || '—', to: to || '—'
+            }))) return;
             btn.disabled = true;
             try {
                 const resp = await fetch(API_BASE + '/api/rules/' + encodeURIComponent(ruleId) + '/restore/' + encodeURIComponent(version), {

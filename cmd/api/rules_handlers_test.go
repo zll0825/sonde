@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -17,9 +18,17 @@ type rulesFakeDB struct {
 	execTag  pgconn.CommandTag
 	execErr  error
 	execArgs []any
+	query    pgx.Rows
+	queryErr error
 }
 
 func (f *rulesFakeDB) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	if f.queryErr != nil {
+		return nil, f.queryErr
+	}
+	if f.query != nil {
+		return f.query, nil
+	}
 	return nil, errors.New("unexpected Query")
 }
 
@@ -223,5 +232,78 @@ func TestRulesPatchCreatesVersionAndAuditAtomically(t *testing.T) {
 	}
 	if len(tx.execArgs) != 2 || tx.execArgs[0][0] != 17 || tx.execArgs[1][0] != 23 {
 		t.Fatalf("exec args = %#v, want close old id 17 and audit new id 23", tx.execArgs)
+	}
+}
+
+func TestRulesPatchAuditActorNeverContainsBearer(t *testing.T) {
+	tx := &rulesFakeTx{
+		rows: []pgx.Row{
+			txRow("rule", "metric", "threshold", "warning", []byte(`{"limit":2}`), nil,
+				true, "system_default", false, 4),
+			txRow(23),
+		},
+		execTags: []pgconn.CommandTag{pgconn.NewCommandTag("UPDATE 1")},
+	}
+	store := &rulesStore{
+		db: &rulesFakeDB{},
+		beginTx: func(context.Context) (rulesTx, error) {
+			return tx, nil
+		},
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/api/rules/17", strings.NewReader(`{"enabled":false}`))
+	req.SetPathValue("id", "17")
+	req.Header.Set("Authorization", "Bearer super-secret-token")
+	rec := httptest.NewRecorder()
+
+	store.patchHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if len(tx.execArgs) != 2 || len(tx.execArgs[1]) < 4 {
+		t.Fatalf("audit exec args = %#v, want actor in $4", tx.execArgs)
+	}
+	actor, _ := tx.execArgs[1][3].(string)
+	if actor != "authenticated_api_client" {
+		t.Fatalf("audit actor = %q, want authenticated_api_client", actor)
+	}
+	if strings.Contains(actor, "super-secret-token") || strings.Contains(strings.ToLower(actor), "bearer") {
+		t.Fatalf("audit actor leaked credential material: %q", actor)
+	}
+}
+
+func TestRulesHistoryIncludesVersion(t *testing.T) {
+	created := time.Date(2026, 9, 3, 8, 0, 0, 0, time.UTC)
+	store := &rulesStore{
+		db: &rulesFakeDB{
+			query: newFakeRows([]any{
+				int64(1), 23, "global", "enabled",
+				json.RawMessage(`false`), json.RawMessage(`true`),
+				"authenticated_api_client", nil, created, 4,
+			}),
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/rules/17/history", nil)
+	req.SetPathValue("id", "17")
+	rec := httptest.NewRecorder()
+
+	store.historyHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var entries []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil {
+		t.Fatalf("decode history: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("history len = %d, want 1", len(entries))
+	}
+	if entries[0]["version"] != float64(4) {
+		t.Fatalf("version = %#v, want 4", entries[0]["version"])
+	}
+	actor, _ := entries[0]["actor"].(string)
+	if actor != "authenticated_api_client" {
+		t.Fatalf("actor = %q", actor)
 	}
 }

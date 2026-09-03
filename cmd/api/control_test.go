@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -83,11 +84,32 @@ func TestBackfillHandler_JSONErrorShape(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/control/backfill", bytes.NewReader([]byte(`{"plugin_id":"macro","window_start":1,"window_end":2}`)))
 	rec := httptest.NewRecorder()
 	backfillHandler(db).ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 body=%s", rec.Code, rec.Body.String())
+	}
 	var body map[string]string
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
 	if body["error"] != "plugin does not declare windowedBackfill" {
 		t.Fatalf("error = %q", body["error"])
+	}
+}
+
+func TestBearerActorIdentifier_NeverContainsBearerMaterial(t *testing.T) {
+	secret := "super-secret-token"
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+secret)
+	actor := bearerActorIdentifier(req)
+	if actor != "authenticated_api_client" {
+		t.Fatalf("actor = %q, want authenticated_api_client", actor)
+	}
+	if strings.Contains(actor, secret) || strings.Contains(strings.ToLower(actor), "bearer") {
+		t.Fatalf("actor leaked credential material: %q", actor)
+	}
+
+	anon := bearerActorIdentifier(httptest.NewRequest(http.MethodPost, "/", nil))
+	if anon != "anonymous" {
+		t.Fatalf("anonymous actor = %q", anon)
 	}
 }

@@ -185,6 +185,7 @@ func TestLoadStatus_EmptyDB(t *testing.T) {
 
 func TestLoadStatus_JoinAndFreshness(t *testing.T) {
 	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	t.Setenv("COINGECKO_KEY", "")
 
 	db := &fakeDB{}
 	db.stub(newFakeRows( // plugins
@@ -294,6 +295,50 @@ func TestLoadStatus_JoinAndFreshness(t *testing.T) {
 	// latest_data_at = max observation time across metrics (btc, 6h ago)
 	if p.LatestDataAt == nil || !p.LatestDataAt.Equal(now.Add(-6*time.Hour)) {
 		t.Errorf("latest_data_at = %v, want %v", p.LatestDataAt, now.Add(-6*time.Hour))
+	}
+}
+
+func TestLoadStatus_ExpectedPluginReadyFromAPIEnv(t *testing.T) {
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	caps := []byte(`{"windowed_backfill":true,"requires_secrets":["FRED_API_KEY"]}`)
+	cases := []struct {
+		name      string
+		env       string
+		wantReady bool
+	}{
+		{"missing secret while process down", "", false},
+		{"secret present while process down", "present", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("FRED_API_KEY", tc.env)
+			db := &fakeDB{}
+			db.stub(newFakeRows(
+				[]any{"plg_macro", "macro", false, false, "stopped", nil, 0, 0, "", 0, caps},
+			))
+			db.stub(newFakeRows())
+			db.stub(newFakeRows())
+			db.stub(newFakeRows())
+			db.stub(newFakeRows([]any{0, 0, 0, 0}))
+			defer db.exhausted(t)
+
+			p, err := loadStatus(context.Background(), db, now)
+			if err != nil {
+				t.Fatalf("loadStatus: %v", err)
+			}
+			if len(p.ExpectedPlugins) != 1 {
+				t.Fatalf("expected_plugins len = %d, want 1", len(p.ExpectedPlugins))
+			}
+			if p.Plugins[0].Connected {
+				t.Errorf("plugins[0].connected = true, want false (process down)")
+			}
+			if p.ExpectedPlugins[0].Ready != tc.wantReady {
+				t.Errorf("ready = %v, want %v", p.ExpectedPlugins[0].Ready, tc.wantReady)
+			}
+			if got := p.ExpectedPlugins[0].SecretsPresent["FRED_API_KEY"]; got != tc.wantReady {
+				t.Errorf("secrets_present[FRED_API_KEY] = %v, want %v", got, tc.wantReady)
+			}
+		})
 	}
 }
 
