@@ -1,7 +1,7 @@
 // Signal quality timeline endpoints. Exposes GET /api/signal/quality/{metric_uid}
 // so frontend / researchers can inspect the quality score time series for a
 // metric without touching the observation ingestion pipeline.
-package main
+package handler
 
 import (
 	"net/http"

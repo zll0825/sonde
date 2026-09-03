@@ -2,7 +2,7 @@
 // file produced by Core (CLUSTER_SNAPSHOTS_FILE) so that both processes share
 // the same clustering history without an RPC layer. A fallback ring-backed
 // handler is available for when no snapshot file path is configured.
-package main
+package handler
 
 import (
 	"net/http"

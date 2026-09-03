@@ -1,0 +1,470 @@
+// ══════════════════════════════════════════════════════════════════════
+// ── i18n Dictionary & Helpers ─────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════
+const TRANSLATIONS = {
+    zh: {
+        'header.title': 'Capital Observatory',
+        'header.subtitle': '资本市场异常检测系统',
+        'status.connecting': '连接中...',
+        'status.online': '在线',
+        'status.offline': '离线',
+        'status.interrupted': '连接中断',
+        'status.plugins_online': '{n} 插件在线',
+        'status.plugins_degraded': '{n} 采集异常',
+        'status.metrics_count': '{n} 指标',
+        'status.budget_detailed': '真实 {today}/{limit} · 模拟 {mock} · 测试 {test} · 未分类 {unknown}',
+        'status.budget_simple': '今日告警 {today}/{limit}',
+        'status.latest_data': '最新数据 {time}',
+        'status.no_data': '暂无数据',
+        'status.plugin_tooltip': '{name}: {status} · 最后采集 {time} · {count} 条{err}',
+        'status.plugin_error': '采集错误：{err} · {count} 次连续失败 · {duration} ms',
+        'status.plugin_healthy': '正常',
+        'status.plugin_unhealthy': '采集异常',
+        'status.plugin_offline': '离线',
+        'status.plugin_not_ready': '密钥未就绪',
+        'status.missing_secrets': '缺少密钥：{keys}',
+        'status.plugins_not_ready': '{n} 密钥未就绪',
+        'status.btn_sync': '同步',
+        'status.btn_backfill': '回填',
+        'status.backfill_disabled': '未声明 windowedBackfill，回填已禁用',
+        'status.sync_ok': '同步命令已排队',
+        'status.backfill_ok': '回填命令已排队',
+        'status.sync_need_online': '插件离线，无法同步',
+        'rules.confirm_toggle': '将规则 {id} 从 {from} 改为 {to}？',
+        'rules.confirm_restore': '将规则 {id} 恢复为版本 {version}（{from} → {to}）？',
+        'rules.btn_restore': '恢复此版本',
+        'ontology.confirm_create': '创建关系 {source} → {target}（{type} / {direction}）？',
+        'ontology.confirm_accept': '采纳候选 {id}：{source} → {target}（{type} / {direction}）？',
+
+        'time.just_now': '刚刚',
+        'time.within_1m': '1 分钟内',
+        'time.minutes_ago': '{n} 分钟前',
+        'time.hours_ago': '{n} 小时前',
+        'time.days_ago': '{n} 天前',
+
+        'tabs.alerts': '告警监控',
+        'tabs.clusters': '事件聚类',
+        'tabs.research': '研报洞察',
+        'tabs.ontology': '本体关系',
+        'tabs.signal': '信号质量',
+        'tabs.rules': '规则管理',
+
+        'alerts.active_title': '活跃告警',
+        'alerts.loading': '加载中...',
+        'alerts.empty_silent': '✓ 系统静默运行中 · 最新数据 {time}',
+        'alerts.empty_silent_simple': '✓ 系统静默运行中',
+        'alerts.error_api': '无法连接 API',
+        'alerts.detail_title': '告警详情与趋势',
+        'alerts.research_pending': '研报上下文暂不可用（告警触发时自动创建快照）',
+        'alerts.research_summary': '{name} — 当前值: {current}, 阈值: {threshold}',
+        'alerts.error_detail': '加载详情失败',
+        'alerts.no_trend': '暂无近期趋势数据',
+        'alerts.related_entities': '相关实体',
+        'alerts.none': '无',
+        'alerts.metric_pulse': '指标脉搏',
+
+        'clusters.title': '事件聚类',
+        'clusters.refresh': '刷新聚类',
+        'clusters.loading': '正在加载聚类...',
+        'clusters.empty_hint': '点击“刷新聚类”加载。',
+        'clusters.empty_none': '暂无聚类。当告警在时间窗口内集中触发时将形成聚类。',
+        'clusters.expand': '展开',
+        'clusters.collapse': '收起',
+        'clusters.alerts_count': '告警列表 ({n})',
+        'clusters.no_alerts': '此聚类中暂无告警。',
+        'clusters.merge_trail': '合并轨迹',
+        'clusters.merge_none': '详细合并记录暂不可用',
+        'clusters.raw_json': '▸ 原始 JSON (调试)',
+        'clusters.raw_json_open': '▾ 原始 JSON (调试)',
+        'clusters.th_id': 'ID',
+        'clusters.th_entity': '核心实体',
+        'clusters.th_size': '规模',
+        'clusters.th_priority': '优先级',
+        'clusters.th_coalesced': '已合并',
+        'clusters.th_actions': '操作',
+        'clusters.yes': '是',
+        'clusters.no': '否',
+
+        'research.load_card_title': '加载研报',
+        'research.alert_id_label': '告警 ID',
+        'research.alert_id_placeholder': '例如：abc123',
+        'research.btn_load': '加载研报',
+        'research.loading_btn': '加载中...',
+        'research.empty_hint': '在上方输入告警 ID 并点击“加载研报”查看上下文。',
+        'research.prompt_enter_id': '请输入告警 ID',
+        'research.loading_data': '正在加载研报数据...',
+        'research.metric_label': '指标：{name}',
+        'research.metric_id_label': '指标 ID：{id}',
+        'research.timeline_title': '时间线趋势 (recent_trend)',
+        'research.overlays_title': '相关覆盖图 ({n})',
+        'research.relations_title': '关联关系',
+        'research.provenance_title': '来源与证据',
+        'research.analogs_title': '历史类似事件',
+        'research.relevance': '相关度 {r}',
+        'research.feedback_title': '研报质量反馈',
+        'research.rationale_label': '反馈理由 (选填)',
+        'research.rationale_placeholder': '记录见解、背景说明或判定原因...',
+        'research.btn_worth': '★ 有研究价值',
+        'research.btn_irrelevant': '✗ 无关/误报',
+        'research.btn_duplicate': '≈ 重复告警',
+        'research.submitting': '正在提交...',
+        'research.submitted': '✓ 反馈已提交：{verdict}',
+        'research.verdict_worth': '有研究价值',
+        'research.verdict_irrelevant': '无关',
+        'research.verdict_duplicate': '重复',
+
+        'ontology.manage_title': '关系管理',
+        'ontology.source_label': '源实体 (Source Entity)',
+        'ontology.source_placeholder': '例如：btc',
+        'ontology.target_label': '目标实体 (Target Entity)',
+        'ontology.target_placeholder': '例如：gld',
+        'ontology.type_label': '关系类型 (Relation Type)',
+        'ontology.direction_label': '方向 (Direction)',
+        'ontology.direction_forward': '单向 (forward)',
+        'ontology.direction_undirected': '无向 (undirected)',
+        'ontology.token_label': 'API Token',
+        'ontology.token_placeholder': 'API_TOKEN（写操作必填，读操作可留空）',
+        'ontology.btn_add': '添加关系',
+        'ontology.loading_relations': '正在加载关系...',
+        'ontology.empty_relations': '暂无已定义的关系。请使用上方表单添加。',
+        'ontology.th_rel_id': '关系 ID',
+        'ontology.th_source': '源实体',
+        'ontology.th_target': '目标实体',
+        'ontology.th_type': '类型',
+        'ontology.th_direction': '方向',
+        'ontology.th_created': '创建时间',
+        'ontology.discover_title': '发现候选关系',
+        'ontology.btn_discover': '运行发现',
+        'ontology.discovering': '正在发现候选关系...',
+        'ontology.btn_running': '运行中...',
+        'ontology.updated_at': '更新时间：{time}',
+        'ontology.empty_candidates': '暂无待审核的候选关系',
+        'ontology.empty_candidates_hint': '点击“运行发现”寻找新的候选关系。',
+        'ontology.candidates_pending_count': '{n} 条候选关系待审核',
+        'ontology.th_confidence': '置信度',
+        'ontology.th_pvalue': 'P值',
+        'ontology.th_sample': '样本量',
+        'ontology.th_lookback': '回溯天数',
+        'ontology.th_actions': '操作',
+        'ontology.btn_accept': '采纳',
+        'ontology.btn_reject': '拒绝',
+        'ontology.reject_prompt': '请输入拒绝原因 (选填)：',
+
+        'signal.timeline_title': '信号质量时间线',
+        'signal.metric_uid_label': '指标 UID',
+        'signal.metric_uid_placeholder': '例如：fed_bs_total_assets',
+        'signal.btn_load': '加载',
+        'signal.prompt_enter_uid': '请输入指标 UID',
+        'signal.points_title': '质量数据点',
+        'signal.empty_hint': '输入指标 UID 并点击加载。',
+        'signal.not_available': '信号质量数据不可用。',
+        'signal.no_observations': '该指标暂无观测数据。',
+        'signal.th_time': '时间',
+        'signal.th_source': '数据源',
+        'signal.th_grade': '评级',
+        'signal.th_quality': '质量分',
+
+        'rules.title': '规则管理',
+        'rules.refresh': '刷新规则',
+        'rules.loading': '正在加载规则...',
+        'rules.empty_hint': '点击“刷新规则”加载。',
+        'rules.summary': '{active} 条启用 · {disabled} 条禁用',
+        'rules.empty': '未找到规则。',
+        'rules.th_id': 'ID',
+        'rules.th_name': '名称 / Slug',
+        'rules.th_scope': '范围',
+        'rules.th_enabled': '启用状态',
+        'rules.th_threshold': '置信度阈值',
+        'rules.th_source': '源实体',
+        'rules.th_target': '目标实体',
+        'rules.th_actions': '操作',
+        'rules.on': '已开启',
+        'rules.off': '已关闭',
+        'rules.btn_history': '审计历史',
+        'rules.btn_hide': '收起',
+        'rules.loading_history': '正在加载历史...',
+        'rules.history_title': '审计历史 ({n})',
+        'rules.no_history': '暂无历史记录。',
+        'rules.th_hist_time': '时间',
+        'rules.th_hist_action': '操作 / 字段',
+        'rules.th_hist_actor': '操作者',
+        'rules.th_hist_details': '详情',
+        'rules.toggle_error': '切换规则状态失败：{err}',
+        'rules.history_error': '加载历史记录失败：{err}',
+        'common.error': '错误：{err}',
+        'common.network_error': '网络错误：{err}'
+    },
+    en: {
+        'header.title': 'Capital Observatory',
+        'header.subtitle': 'Anomaly Detection for Capital Markets',
+        'status.connecting': 'connecting...',
+        'status.online': 'online',
+        'status.offline': 'offline',
+        'status.interrupted': 'Connection Interrupted',
+        'status.plugins_online': '{n} plugins online',
+        'status.plugins_degraded': '{n} degraded',
+        'status.metrics_count': '{n} metrics',
+        'status.budget_detailed': 'Real {today}/{limit} · Mock {mock} · Test {test} · Unknown {unknown}',
+        'status.budget_simple': 'Today Alerts {today}/{limit}',
+        'status.latest_data': 'Latest data {time}',
+        'status.no_data': 'No data',
+        'status.plugin_tooltip': '{name}: {status} · Last collect {time} · {count} items{err}',
+        'status.plugin_error': 'Collect error: {err} · {count} consecutive errors · {duration} ms',
+        'status.plugin_healthy': 'Healthy',
+        'status.plugin_unhealthy': 'Degraded',
+        'status.plugin_offline': 'Offline',
+        'status.plugin_not_ready': 'secrets missing',
+        'status.missing_secrets': 'Missing secrets: {keys}',
+        'status.plugins_not_ready': '{n} missing secrets',
+        'status.btn_sync': 'Sync',
+        'status.btn_backfill': 'Backfill',
+        'status.backfill_disabled': 'windowedBackfill not declared; Backfill disabled',
+        'status.sync_ok': 'Sync command queued',
+        'status.backfill_ok': 'Backfill command queued',
+        'status.sync_need_online': 'Plugin is offline; cannot sync',
+        'rules.confirm_toggle': 'Change rule {id} from {from} to {to}?',
+        'rules.confirm_restore': 'Restore rule {id} to version {version} ({from} → {to})?',
+        'rules.btn_restore': 'Restore this version',
+        'ontology.confirm_create': 'Create relation {source} → {target} ({type} / {direction})?',
+        'ontology.confirm_accept': 'Accept candidate {id}: {source} → {target} ({type} / {direction})?',
+
+        'time.just_now': 'just now',
+        'time.within_1m': '<1m ago',
+        'time.minutes_ago': '{n}m ago',
+        'time.hours_ago': '{n}h ago',
+        'time.days_ago': '{n}d ago',
+
+        'tabs.alerts': 'Alerts',
+        'tabs.clusters': 'Clusters',
+        'tabs.research': 'Research',
+        'tabs.ontology': 'Ontology',
+        'tabs.signal': 'Signal Quality',
+        'tabs.rules': 'Rules',
+
+        'alerts.active_title': 'Active Alerts',
+        'alerts.loading': 'Loading...',
+        'alerts.empty_silent': '✓ Silent running · Latest data {time}',
+        'alerts.empty_silent_simple': '✓ Silent running',
+        'alerts.error_api': 'Cannot reach API',
+        'alerts.detail_title': 'Alert Detail & Trend',
+        'alerts.research_pending': 'Research context not yet available (snapshot is created when alert triggers)',
+        'alerts.research_summary': '{name} — current: {current}, threshold: {threshold}',
+        'alerts.error_detail': 'Error loading detail',
+        'alerts.no_trend': 'No recent trend data',
+        'alerts.related_entities': 'Related Entities',
+        'alerts.none': 'None',
+        'alerts.metric_pulse': 'Metric Pulse',
+
+        'clusters.title': 'Event Clusters',
+        'clusters.refresh': 'Refresh Clusters',
+        'clusters.loading': 'Loading clusters...',
+        'clusters.empty_hint': 'Click "Refresh Clusters" to load.',
+        'clusters.empty_none': 'No clusters yet. Clusters form when alerts fire within the time window.',
+        'clusters.expand': 'Expand',
+        'clusters.collapse': 'Collapse',
+        'clusters.alerts_count': 'Alerts ({n})',
+        'clusters.no_alerts': 'No alerts in this cluster.',
+        'clusters.merge_trail': 'Merge Trail',
+        'clusters.merge_none': 'Detailed merge trail not available',
+        'clusters.raw_json': '▸ Raw JSON (debug)',
+        'clusters.raw_json_open': '▾ Raw JSON (debug)',
+        'clusters.th_id': 'ID',
+        'clusters.th_entity': 'Primary Entity',
+        'clusters.th_size': 'Size',
+        'clusters.th_priority': 'Priority',
+        'clusters.th_coalesced': 'Coalesced',
+        'clusters.th_actions': 'Actions',
+        'clusters.yes': 'yes',
+        'clusters.no': 'no',
+
+        'research.load_card_title': 'Load Research',
+        'research.alert_id_label': 'Alert ID',
+        'research.alert_id_placeholder': 'e.g. abc123',
+        'research.btn_load': 'Load Research',
+        'research.loading_btn': 'Loading...',
+        'research.empty_hint': 'Enter an alert ID above and click "Load Research" to view research context.',
+        'research.prompt_enter_id': 'Please enter an alert ID',
+        'research.loading_data': 'Loading research data...',
+        'research.metric_label': 'Metric: {name}',
+        'research.metric_id_label': 'Metric ID: {id}',
+        'research.timeline_title': 'Timeline (recent_trend)',
+        'research.overlays_title': 'Overlays ({n})',
+        'research.relations_title': 'Relations',
+        'research.provenance_title': 'Provenance',
+        'research.analogs_title': 'Historical Analogs',
+        'research.relevance': 'relevance {r}',
+        'research.feedback_title': 'Research Feedback',
+        'research.rationale_label': 'Rationale (optional)',
+        'research.rationale_placeholder': 'Notes, context, why this verdict...',
+        'research.btn_worth': '★ Worth Researching',
+        'research.btn_irrelevant': '✗ Irrelevant',
+        'research.btn_duplicate': '≈ Duplicate',
+        'research.submitting': 'Submitting...',
+        'research.submitted': '✓ Feedback submitted: {verdict}',
+        'research.verdict_worth': 'worth_researching',
+        'research.verdict_irrelevant': 'irrelevant',
+        'research.verdict_duplicate': 'duplicate',
+
+        'ontology.manage_title': 'Manage Relations',
+        'ontology.source_label': 'Source Entity',
+        'ontology.source_placeholder': 'e.g. btc',
+        'ontology.target_label': 'Target Entity',
+        'ontology.target_placeholder': 'e.g. gld',
+        'ontology.type_label': 'Relation Type',
+        'ontology.direction_label': 'Direction',
+        'ontology.direction_forward': 'forward',
+        'ontology.direction_undirected': 'undirected',
+        'ontology.token_label': 'API Token',
+        'ontology.token_placeholder': 'API_TOKEN (required for mutations, optional for reads)',
+        'ontology.btn_add': 'Add Relation',
+        'ontology.loading_relations': 'Loading relations...',
+        'ontology.empty_relations': 'No relations defined. Use the form above to add one.',
+        'ontology.th_rel_id': 'Relation ID',
+        'ontology.th_source': 'Source',
+        'ontology.th_target': 'Target',
+        'ontology.th_type': 'Type',
+        'ontology.th_direction': 'Direction',
+        'ontology.th_created': 'Created',
+        'ontology.discover_title': 'Discover Candidates',
+        'ontology.btn_discover': 'Run Discovery',
+        'ontology.discovering': 'Discovering candidates...',
+        'ontology.btn_running': 'Running...',
+        'ontology.updated_at': 'Updated at: {time}',
+        'ontology.empty_candidates': 'No pending candidates',
+        'ontology.empty_candidates_hint': 'Click "Run Discovery" to find new relation candidates.',
+        'ontology.candidates_pending_count': '{n} candidate(s) pending review',
+        'ontology.th_confidence': 'Confidence',
+        'ontology.th_pvalue': 'P-Value',
+        'ontology.th_sample': 'Sample',
+        'ontology.th_lookback': 'Lookback',
+        'ontology.th_actions': 'Actions',
+        'ontology.btn_accept': 'Accept',
+        'ontology.btn_reject': 'Reject',
+        'ontology.reject_prompt': 'Reason for rejection (optional):',
+
+        'signal.timeline_title': 'Signal Quality Timeline',
+        'signal.metric_uid_label': 'Metric UID',
+        'signal.metric_uid_placeholder': 'e.g. fed_bs_total_assets',
+        'signal.btn_load': 'Load',
+        'signal.prompt_enter_uid': 'Please enter a metric UID',
+        'signal.points_title': 'Quality Data Points',
+        'signal.empty_hint': 'Enter a metric UID and click Load.',
+        'signal.not_available': 'Signal quality data not available.',
+        'signal.no_observations': 'No observations for this metric.',
+        'signal.th_time': 'Time',
+        'signal.th_source': 'Source',
+        'signal.th_grade': 'Grade',
+        'signal.th_quality': 'Quality',
+
+        'rules.title': 'Rules',
+        'rules.refresh': 'Refresh Rules',
+        'rules.loading': 'Loading rules...',
+        'rules.empty_hint': 'Click "Refresh Rules" to load.',
+        'rules.summary': '{active} active · {disabled} disabled',
+        'rules.empty': 'No rules found.',
+        'rules.th_id': 'ID',
+        'rules.th_name': 'Name / Slug',
+        'rules.th_scope': 'Scope',
+        'rules.th_enabled': 'Enabled',
+        'rules.th_threshold': 'Confidence Threshold',
+        'rules.th_source': 'Source Entity',
+        'rules.th_target': 'Target Entity',
+        'rules.th_actions': 'Actions',
+        'rules.on': 'on',
+        'rules.off': 'off',
+        'rules.btn_history': 'History',
+        'rules.btn_hide': 'Hide',
+        'rules.loading_history': 'Loading history...',
+        'rules.history_title': 'Audit History ({n})',
+        'rules.no_history': 'No history entries.',
+        'rules.th_hist_time': 'Timestamp',
+        'rules.th_hist_action': 'Action',
+        'rules.th_hist_actor': 'Actor',
+        'rules.th_hist_details': 'Details',
+        'rules.toggle_error': 'Error toggling rule: {err}',
+        'rules.history_error': 'Error loading history: {err}',
+        'common.error': 'Error: {err}',
+        'common.network_error': 'Network error: {err}'
+    }
+};
+
+let currentLang = 'en';
+
+function t(key, params) {
+    const dict = TRANSLATIONS[currentLang] || TRANSLATIONS['en'] || {};
+    let str = dict[key] !== undefined ? dict[key] : (TRANSLATIONS['en'][key] !== undefined ? TRANSLATIONS['en'][key] : key);
+    if (params && typeof params === 'object') {
+        for (const k in params) {
+            str = str.replace(new RegExp('\{' + k + '\}', 'g'), params[k]);
+        }
+    }
+    return str;
+}
+
+function applyStaticTranslations() {
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.dataset.i18n;
+        if (key) el.textContent = t(key);
+    });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+        const key = el.dataset.i18nPlaceholder;
+        if (key) el.placeholder = t(key);
+    });
+    document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
+}
+
+function setLanguage(lang) {
+    currentLang = (lang === 'zh' || lang === 'zh-CN') ? 'zh' : 'en';
+    try {
+        localStorage.setItem('capital_lang', currentLang);
+    } catch (e) { /* ignore localStorage block */ }
+
+    const btnZh = document.getElementById('btn-lang-zh');
+    const btnEn = document.getElementById('btn-lang-en');
+    if (btnZh && btnEn) {
+        btnZh.classList.toggle('active', currentLang === 'zh');
+        btnEn.classList.toggle('active', currentLang === 'en');
+    }
+
+    applyStaticTranslations();
+
+    const statusPill = document.getElementById('status-pill');
+    if (statusPill) {
+        if (hasFetched) {
+            statusPill.textContent = isOnline ? t('status.online') : t('status.offline');
+        } else {
+            statusPill.textContent = t('status.connecting');
+        }
+    }
+
+    // Refresh dynamic views with cached data if available
+    if (statusData) renderStatus(statusData);
+    if (alertsList) renderAlerts(alertsList);
+    if (cachedClusters) renderClusters(cachedClusters);
+    if (cachedRules) renderRules(cachedRules);
+    if (cachedOntology) renderOntologyTable(cachedOntology);
+    if (cachedCandidates) renderCandidates(cachedCandidates, cachedCandidatesUpdatedAt);
+    if (cachedSignalPoints) renderSignalTable(cachedSignalPoints);
+    if (cachedResearch) renderResearchDetail(cachedResearch);
+}
+
+function initLanguage() {
+    let saved = null;
+    try {
+        saved = localStorage.getItem('capital_lang');
+    } catch (e) { /* ignore */ }
+
+    if (saved === 'zh' || saved === 'en') {
+        currentLang = saved;
+    } else {
+        const navLang = (navigator.language || navigator.userLanguage || '').toLowerCase();
+        currentLang = navLang.startsWith('zh') ? 'zh' : 'en';
+    }
+
+    const btnZh = document.getElementById('btn-lang-zh');
+    const btnEn = document.getElementById('btn-lang-en');
+    if (btnZh) btnZh.addEventListener('click', () => setLanguage('zh'));
+    if (btnEn) btnEn.addEventListener('click', () => setLanguage('en'));
+
+    setLanguage(currentLang);
+}

@@ -138,7 +138,7 @@ test: ## Run all go tests (all workspace modules)
 test-short: ## Run tests without the integration suite (no DB required)
 	@for m in $(GO_MODULES); do (cd $$m && go test -short -v ./...) || exit 1; done
 
-build: build-core build-api ## Build all binaries to ./bin/ and verify all modules compile
+build: build-core build-api build-cli ## Build all binaries to ./bin/ and verify all modules compile
 	@for m in $(GO_MODULES); do (cd $$m && go build ./...) || exit 1; done
 
 build-core:
@@ -146,6 +146,9 @@ build-core:
 
 build-api:
 	go build -o bin/api ./cmd/api
+
+build-cli:
+	go build -o bin/cli ./cmd/cli
 
 # ---- Cleanup ----
 clean: ## Remove build artifacts + stop docker stack (volumes preserved)

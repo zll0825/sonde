@@ -1,4 +1,4 @@
-package main
+package middleware
 
 import (
 	"net"
@@ -8,8 +8,22 @@ import (
 	"sync"
 	"time"
 
+	"encoding/json"
+
 	"github.com/rs/zerolog/log"
 )
+
+func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// Auth wraps mutating endpoints with a static bearer token ($API_TOKEN).
+func Auth(next http.Handler) http.Handler { return authMiddleware(next) }
+
+// RateLimit applies a per-IP token bucket.
+func RateLimit(next http.Handler) http.Handler { return rateLimitMiddleware(next) }
 
 // authMiddleware enforces a static bearer-token check on mutating endpoints.
 //

@@ -1,7 +1,7 @@
 // Minimal rules management API: list, enable/disable (PATCH), restore (POST).
 // Database access is inline SQL against *pgxpool.Pool — per P1 #7 we only need
 // the enable/disable/restore/version surface, so a thin handler file is enough.
-package main
+package handler
 
 import (
 	"context"

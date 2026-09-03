@@ -1,0 +1,263 @@
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #0a0e1a;
+            color: #e0e6f0;
+            line-height: 1.6;
+        }
+        header {
+            background: linear-gradient(135deg, #1a1f35, #0f1525);
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid #2a3450;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        h1 { font-size: 1.4rem; font-weight: 600; color: #64ffda; }
+        .subtitle { font-size: 0.85rem; color: #8892b0; margin-top: 2px; }
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+        .lang-switch {
+            display: inline-flex;
+            background: #131a2e;
+            border: 1px solid #2a3450;
+            border-radius: 20px;
+            padding: 2px;
+        }
+        .lang-btn {
+            background: transparent;
+            border: none;
+            color: #8892b0;
+            font-size: 0.75rem;
+            font-weight: 500;
+            padding: 2px 8px;
+            border-radius: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .lang-btn:hover { color: #e0e6f0; }
+        .lang-btn.active {
+            background: #1e2a45;
+            color: #64ffda;
+        }
+        main { padding: 2rem; max-width: 1200px; margin: 0 auto; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+        .card {
+            background: #131a2e;
+            border: 1px solid #1e2a45;
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+        .card h2 { font-size: 1rem; color: #64ffda; margin-bottom: 1rem; }
+        .alert-item {
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            background: #1a2340;
+            border-radius: 8px;
+            border-left: 3px solid;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .alert-item:hover { background: #1f2d50; }
+        .alert-item.critical { border-left-color: #ef4444; }
+        .alert-item.warning { border-left-color: #f59e0b; }
+        .alert-item.info { border-left-color: #3b82f6; }
+        .alert-title { font-weight: 500; font-size: 0.9rem; }
+        .alert-summary { font-size: 0.8rem; color: #a8b2d1; margin-top: 4px; }
+        .alert-meta { font-size: 0.75rem; color: #8892b0; margin-top: 4px; }
+        #trend-chart { width: 100%; height: 300px; }
+        .status-pill {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            background: #1e2a45;
+            color: #64ffda;
+        }
+        .empty { text-align: center; color: #4a5570; padding: 2rem; }
+        #alert-detail { display: none; }
+        #alert-detail.active { display: block; }
+
+        /* ── Pulse dashboard: ambient status bar (R1) ── */
+        #status-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.25rem 1rem;
+            padding: 0.45rem 2rem;
+            font-size: 0.78rem;
+            color: #8892b0;
+            background: #0d1220;
+            border-bottom: 1px solid #1a2340;
+            opacity: 0.75; /* ambient light, not a focus target */
+        }
+        #status-bar .sep { color: #2a3450; }
+        #status-bar .warn { color: #e8c34a; font-weight: 600; }
+        #status-bar .danger { color: #e85a5a; font-weight: 600; }
+        #status-bar.offline { opacity: 1; color: #e85a5a; }
+        #sb-plugins { cursor: help; }
+
+        /* Per-plugin detail strip, toggled by clicking the plugin segment */
+        #plugin-detail {
+            padding: 0.4rem 2rem;
+            background: #0d1220;
+            border-bottom: 1px solid #1a2340;
+            font-size: 0.75rem;
+            color: #8892b0;
+        }
+        #plugin-detail.hidden { display: none; }
+        #plugin-detail ul { list-style: none; }
+        #plugin-detail li { padding: 2px 0; }
+        #plugin-detail li .offline { color: #e85a5a; }
+
+        /* ── Metric Pulse card grid (R2) ── */
+        #pulse-section { margin-top: 2rem; }
+        #pulse-section h2 { font-size: 1rem; color: #64ffda; margin-bottom: 1rem; }
+        #pulse-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 1rem;
+        }
+        .pulse-card {
+            background: #131a2e;
+            border: 1px solid #1e2a45;
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            min-width: 0;
+        }
+        .pulse-head { display: flex; align-items: center; gap: 0.5rem; }
+        .pulse-dot {
+            width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+        }
+        .pulse-dot.green { background: #2dd4a7; }
+        .pulse-dot.yellow { background: #e8c34a; }
+        .pulse-dot.red { background: #e85a5a; }
+        .pulse-name {
+            font-size: 0.85rem; font-weight: 600; color: #e0e6f0;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .pulse-id {
+            font-size: 0.68rem; color: #4a5570;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .pulse-value {
+            font-size: 1.15rem; font-weight: 600; color: #64ffda;
+            font-variant-numeric: tabular-nums;
+        }
+        .pulse-unit { font-size: 0.7rem; font-weight: 400; color: #8892b0; }
+        .pulse-meta { font-size: 0.68rem; color: #8892b0; }
+        .pulse-spark {
+            width: 100%; height: 44px; display: block; margin-top: 0.35rem;
+        }
+        .pulse-spark-line {
+            fill: none; stroke: #64ffda; stroke-width: 1.5;
+            vector-effect: non-scaling-stroke;
+        }
+        .pulse-spark-placeholder {
+            stroke: #2a3450; stroke-width: 1; stroke-dasharray: 4 3;
+            vector-effect: non-scaling-stroke;
+        }
+
+        /* ── Tab bar ── */
+        .tab-bar {
+            display: flex;
+            gap: 0;
+            padding: 0 2rem;
+            background: #0d1220;
+            border-bottom: 1px solid #1a2340;
+        }
+        .tab-btn {
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: #8892b0;
+            padding: 0.7rem 1.2rem;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: color 0.2s, border-color 0.2s;
+        }
+        .tab-btn:hover { color: #e0e6f0; }
+        .tab-btn.active { color: #64ffda; border-bottom-color: #64ffda; }
+        .tab-content { display: none; padding-top: 1.5rem; }
+        .tab-content.active { display: block; }
+
+        /* ── Cluster / Ontology / Signal table styles ── */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+            margin-top: 0.5rem;
+        }
+        .data-table th, .data-table td {
+            text-align: left;
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid #1a2340;
+        }
+        .data-table th { color: #64ffda; font-weight: 500; }
+        .data-table tr:hover td { background: #1a2340; }
+
+        /* ── Ontology form ── */
+        .ontology-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr auto;
+            gap: 0.75rem;
+            align-items: end;
+            margin-bottom: 1.5rem;
+        }
+        .ontology-form label {
+            display: block;
+            font-size: 0.72rem;
+            color: #8892b0;
+            margin-bottom: 0.25rem;
+        }
+        .ontology-form input, .ontology-form select {
+            background: #1a2340;
+            border: 1px solid #2a3450;
+            color: #e0e6f0;
+            padding: 0.45rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .ontology-form button {
+            background: #64ffda;
+            color: #0a0e1a;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .ontology-form button:hover { background: #4dd4b0; }
+
+        /* ── Signal quality sparkline area ── */
+        #signal-quality-chart { width: 100%; height: 200px; }
+
+        @media (max-width: 640px) {
+            header { padding: 1rem; gap: 0.75rem; }
+            main { padding: 1rem; min-width: 0; }
+            .grid { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+            .card { padding: 1rem; min-width: 0; overflow-x: auto; }
+            #status-bar, #plugin-detail { padding-left: 1rem; padding-right: 1rem; }
+            .tab-bar {
+                max-width: 100%;
+                overflow-x: auto;
+                padding: 0 0.5rem;
+                scrollbar-width: thin;
+            }
+            .tab-btn { flex: 0 0 auto; padding: 0.7rem 0.8rem; }
+            .ontology-form { grid-template-columns: minmax(0, 1fr); }
+            .data-table { min-width: 520px; }
+            .header-actions { width: 100%; justify-content: space-between; }
+        }

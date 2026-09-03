@@ -1,6 +1,6 @@
 // Ontology Phase 2 management API. Exposes CRUD for manual_relations and the
 // accept / reject workflow for pending relation_suggestions.
-package main
+package handler
 
 import (
 	"encoding/json"

@@ -1,6 +1,4 @@
-// api 进程入口：REST 端点（告警查询、研究上下文、Sync/Backfill 控制命令）
-// 与 Capital Radar 前端静态托管；含鉴权中间件（$API_TOKEN 非空时启用
-// Bearer 校验）与按 IP 限流。
+// api 进程入口：REST 端点与 Capital Radar 静态托管。
 package main
 
 import (
@@ -14,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 
+	"capital_observatory/internal/api/handler"
+	"capital_observatory/internal/api/middleware"
 	coreevent "capital_observatory/internal/core/event"
 )
 
@@ -41,97 +41,25 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-
-	// Research store for feedback endpoints.
-	researchStore := newResearchFeedbackStore(db)
-
-	// Health check.
-	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-	})
-
-	// List active alerts.
-	mux.HandleFunc("/api/alerts", alertsHandler(db))
-
-	// Pulse dashboard aggregate (read-only): plugin health, alert budget,
-	// metric freshness + sparklines — one fetch for the whole status view.
-	mux.HandleFunc("/api/status", statusHandler(db))
-
-	// Get research context for an alert.
-	mux.HandleFunc("/api/research/", researchHandler(db))
-
-	// Manual Sync / Backfill (control endpoint).
-	mux.HandleFunc("/api/control/sync", syncHandler(db))
-	mux.HandleFunc("/api/control/backfill", backfillHandler(db))
-
-	// B: signal quality timeline (GET, read-only, public for dashboards).
-	mux.HandleFunc("GET /api/signal/quality/{metric_uid}", signalQualityHandler(db))
-
-	// C: ontology Phase 2 — manual relations CRUD (Go 1.22 method+path patterns).
-	ont := newOntologyStore(db)
-	mux.HandleFunc("GET /api/ontology/relations/", ont.ontologyRelationsHandler)
-	mux.HandleFunc("POST /api/ontology/relations/", ont.ontologyRelationsHandler)
-	mux.HandleFunc("GET /api/ontology/relations/{id}", ont.ontologyRelationByIDHandler)
-	mux.HandleFunc("PUT /api/ontology/relations/{id}", ont.ontologyRelationByIDHandler)
-	mux.HandleFunc("DELETE /api/ontology/relations/{id}", ont.ontologyRelationByIDHandler)
-
-	// C: ontology Phase 2 — statistical candidate finder runtime trigger.
-	// POST /api/ontology/discover  {"entity_pairs":[["btc","gld"]]}
-	mux.HandleFunc("POST /api/ontology/discover", ont.ontologyDiscoverHandler)
-
-	// C: ontology Phase 2 — relation-suggestion candidate accept / reject.
-	mux.HandleFunc("GET /api/ontology/candidates/", ont.ontologyCandidatesHandler)
-	mux.HandleFunc("GET /api/ontology/candidates/{id}", ont.ontologyCandidatesHandler)
-	mux.HandleFunc("POST /api/ontology/candidates/{id}/accept", ont.ontologyCandidateActionHandler)
-	mux.HandleFunc("POST /api/ontology/candidates/{id}/reject", ont.ontologyCandidateActionHandler)
-
-	// D: rules management — list, enable/disable (PATCH), restore (POST), audit history.
-	// P1 #7 minimal rule CRUD: list / toggle / restore-version, plus audit history.
-	rules := newRulesStore(db)
-	mux.HandleFunc("GET /api/rules/", rules.listHandler)
-	mux.HandleFunc("PATCH /api/rules/{id}", rules.patchHandler)
-	mux.HandleFunc("POST /api/rules/{id}/restore/{version}", rules.restoreHandler)
-	mux.HandleFunc("GET /api/rules/{id}/history", rules.historyHandler)
-
-	// D: P1 #7 — research feedback (full implementation).
-	// POST requires Bearer token; GET is a public read.
-	mux.HandleFunc("POST /api/research/{id}/feedback", researchFeedbackHandler(researchStore))
-	mux.HandleFunc("GET /api/research/feedback", researchFeedbackHandler(researchStore))
-
-	// A: event cluster snapshots ring buffer (read-only GET). The API reads
-	// from the same JSONL snapshot file that Core writes to (CLUSTER_SNAPSHOTS_FILE).
-	// This shares the clustering history across both processes on the same
-	// machine without an RPC layer.
-	clusterSnapStore := initClusterSnapStore()
-	if clusterSnapStore != nil {
-		defer clusterSnapStore.Close()
-		mux.HandleFunc("GET /api/clusters/", clusterHandlerWithStore(clusterSnapStore))
-		mux.HandleFunc("GET /api/clusters/{id}", clusterHandlerWithID(clusterSnapStore))
-	} else {
-		// Fallback: empty ring for backward compatibility when no store is
-		// configured (returns empty list).
-		clusterRing := coreevent.NewClusterRing(200)
-		mux.HandleFunc("GET /api/clusters/", clusterHandler(clusterRing))
+	clusterStore := initClusterSnapStore()
+	if clusterStore != nil {
+		defer clusterStore.Close()
 	}
+	handler.Register(mux, handler.Deps{DB: db, ClusterStore: clusterStore})
 
-	// Static frontend: mounts web/ at "/" so the frontend can be served by the
-	// API server (fixes the file:// → fetch failure — M5 acceptance #5).
-	// WEB_DIR env var allows overriding; defaults to ./web (project root when
-	// CWD is repo root) or ../../web (when binary lives in cmd/api/).
 	webDir := os.Getenv("WEB_DIR")
 	if webDir == "" {
 		webDir = "./web"
 	}
 	mux.Handle("/", http.FileServer(http.Dir(webDir)))
 
-	// Wrap with middleware: rate-limit → auth → handler.
-	var handler http.Handler = mux
-	handler = authMiddleware(handler)
-	handler = rateLimitMiddleware(handler)
+	var h http.Handler = mux
+	h = middleware.Auth(h)
+	h = middleware.RateLimit(h)
 
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      handler,
+		Handler:      h,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
@@ -150,7 +78,6 @@ func main() {
 	_ = srv.Shutdown(shutdownCtx)
 }
 
-// signalContext returns a context that cancels on SIGINT or SIGTERM.
 func signalContext() context.Context {
 	ctx, cancel := context.WithCancel(context.Background())
 	sigCh := make(chan os.Signal, 1)
@@ -162,10 +89,6 @@ func signalContext() context.Context {
 	return ctx
 }
 
-// initClusterSnapshotStore creates a ClusterSnapshotStore from the
-// CLUSTER_SNAPSHOTS_FILE env var. It returns nil (with a startup log) when the
-// env var is missing — the API simply serves an empty cluster list in that
-// case.
 func initClusterSnapStore() *coreevent.ClusterSnapshotStore {
 	snapPath := os.Getenv("CLUSTER_SNAPSHOTS_FILE")
 	if snapPath == "" {
