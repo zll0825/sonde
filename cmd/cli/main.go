@@ -16,11 +16,39 @@ import (
 	"capital_observatory/pkg/model"
 )
 
+const usageText = `capital-observatory cli — read-only soak queries
+
+Usage:
+  cli alerts
+  cli budget [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--limit N]
+
+DATABASE_URL defaults to the local compose DSN.
+`
+
+// alertsActiveSQL matches GET /api/alerts. Keep the two queries in lockstep.
+const alertsActiveSQL = `
+		SELECT id, title, summary, severity, metric_id, triggered_at, status,
+		       source_provider, source_class, dedup_count, last_deduplicated_at
+		FROM alerts WHERE status = 'active'
+		ORDER BY triggered_at DESC LIMIT 100
+	`
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(2)
 	}
+	switch os.Args[1] {
+	case "help", "-h", "--help":
+		usage()
+		return
+	case "alerts", "budget":
+	default:
+		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
+		usage()
+		os.Exit(2)
+	}
+
 	ctx := context.Background()
 	db, err := openDB(ctx)
 	if err != nil {
@@ -42,24 +70,11 @@ func main() {
 		if err := cmdBudget(ctx, db, *from, *to, *limit); err != nil {
 			fatal(err)
 		}
-	case "help", "-h", "--help":
-		usage()
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
-		usage()
-		os.Exit(2)
 	}
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `capital-observatory cli — read-only soak queries
-
-Usage:
-  cli alerts
-  cli budget [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--limit N]
-
-DATABASE_URL defaults to the local compose DSN.
-`)
+	fmt.Fprint(os.Stderr, usageText)
 }
 
 func openDB(ctx context.Context) (*pgxpool.Pool, error) {
@@ -71,12 +86,7 @@ func openDB(ctx context.Context) (*pgxpool.Pool, error) {
 }
 
 func cmdAlerts(ctx context.Context, db *pgxpool.Pool) error {
-	rows, err := db.Query(ctx, `
-		SELECT id, title, summary, severity, metric_id, triggered_at, status,
-		       source_provider, source_class, dedup_count, last_deduplicated_at
-		FROM alerts WHERE status = 'active'
-		ORDER BY triggered_at DESC LIMIT 100
-	`)
+	rows, err := db.Query(ctx, alertsActiveSQL)
 	if err != nil {
 		return err
 	}

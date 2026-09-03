@@ -1,14 +1,13 @@
 package middleware
 
 import (
+	"encoding/json"
 	"net"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"time"
-
-	"encoding/json"
 
 	"github.com/rs/zerolog/log"
 )
