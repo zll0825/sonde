@@ -138,7 +138,7 @@ test: ## Run all go tests (all workspace modules)
 test-short: ## Run tests without the integration suite (no DB required)
 	@for m in $(GO_MODULES); do (cd $$m && go test -short -v ./...) || exit 1; done
 
-build: build-core build-api build-cli ## Build all binaries to ./bin/ and verify all modules compile
+build: build-core build-api build-cli build-mcp ## Build all binaries to ./bin/ and verify all modules compile
 	@for m in $(GO_MODULES); do (cd $$m && go build ./...) || exit 1; done
 
 build-core:
@@ -149,6 +149,9 @@ build-api:
 
 build-cli:
 	go build -o bin/cli ./cmd/cli
+
+build-mcp:
+	go build -o bin/mcp ./cmd/mcp
 
 # ---- Cleanup ----
 clean: ## Remove build artifacts + stop docker stack (volumes preserved)
@@ -167,4 +170,4 @@ clean-data: ## DESTRUCTIVE: stop stack AND delete database volumes
 #   - crypto: no key required (CoinGecko / mempool.space free tiers)
 #   - ETF: no key required (Yahoo Finance public API)
 #   - Telegram: set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID on core env to enable
-.PHONY: help install-tools proto migrate-up migrate-down migrate-status migrate-force dev dev-up dev-down dev-logs lint test build clean clean-data run-core run-api run-etf run-crypto run-crypto-mock run-macro run-macro-mock run-commodities run-commodities-mock
+.PHONY: help install-tools proto migrate-up migrate-down migrate-status migrate-force dev dev-up dev-down dev-logs lint test build build-mcp clean clean-data run-core run-api run-etf run-crypto run-crypto-mock run-macro run-macro-mock run-commodities run-commodities-mock
