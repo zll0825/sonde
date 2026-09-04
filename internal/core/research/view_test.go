@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // mockViewStore 用于测试的模拟存储。

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	pb "capital_observatory/pkg/proto/plugin/v1"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 // RecordHeartbeat always refreshes liveness. Legacy and runtime-only status

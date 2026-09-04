@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/pkg/model"
-	"capital_observatory/pkg/provider"
-	fredprov "capital_observatory/pkg/provider/fred"
-	commodities "capital_observatory/plugins/commodities"
+	"sonde/pkg/model"
+	"sonde/pkg/provider"
+	fredprov "sonde/pkg/provider/fred"
+	commodities "sonde/plugins/commodities"
 )
 
 const testFREDBindings = `

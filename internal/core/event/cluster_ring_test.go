@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 func TestClusterRing_BasicPushAndRecent(t *testing.T) {

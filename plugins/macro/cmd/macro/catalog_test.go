@@ -3,9 +3,9 @@ package main
 import (
 	"testing"
 
-	"capital_observatory/pkg/pluginrunner"
-	fredprov "capital_observatory/pkg/provider/fred"
-	macro "capital_observatory/plugins/macro"
+	"sonde/pkg/pluginrunner"
+	fredprov "sonde/pkg/provider/fred"
+	macro "sonde/plugins/macro"
 )
 
 func TestBuildRegistrationFromYAML(t *testing.T) {

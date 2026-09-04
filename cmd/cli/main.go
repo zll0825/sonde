@@ -13,10 +13,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
-const usageText = `capital-observatory cli — read-only soak queries
+const usageText = `sonde cli — read-only soak queries
 
 Usage:
   cli alerts
@@ -80,7 +80,7 @@ func usage() {
 func openDB(ctx context.Context) (*pgxpool.Pool, error) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://capital:capital_dev@localhost:5432/capital_observatory?sslmode=disable"
+		dsn = "postgres://sonde:sonde_dev@localhost:5432/sonde?sslmode=disable"
 	}
 	return pgxpool.New(ctx, dsn)
 }

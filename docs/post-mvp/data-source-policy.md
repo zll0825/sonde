@@ -1,4 +1,4 @@
-# Capital Observatory 数据源政策
+# Sonde 数据源政策
 
 > **状态：政策讨论 (draft)** — 本文档为讨论稿，反映当前对 Yahoo Finance API 地位的认知，不构成最终政策。待 ETFCmd fallback 链路实现后复审。
 

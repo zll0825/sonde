@@ -5,7 +5,7 @@ package rulemgr
 import (
 	"bytes"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // Source aliases model.RuleSource — the canonical typed enum — so review

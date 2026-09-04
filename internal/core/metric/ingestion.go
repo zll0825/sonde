@@ -11,8 +11,8 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/internal/core/ontology"
-	pb "capital_observatory/pkg/proto/plugin/v1"
+	"sonde/internal/core/ontology"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 // Ingester processes PushSnapshots: scores quality, resolves source preference,

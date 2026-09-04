@@ -9,9 +9,9 @@ import (
 	"os"
 	"time"
 
-	"capital_observatory/pkg/pluginrunner"
-	pb "capital_observatory/pkg/proto/plugin/v1"
-	"capital_observatory/plugins/crypto/internal/collector"
+	"sonde/pkg/pluginrunner"
+	pb "sonde/pkg/proto/plugin/v1"
+	"sonde/plugins/crypto/internal/collector"
 )
 
 const (

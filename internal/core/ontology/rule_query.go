@@ -8,7 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // GetMetricUID returns the registered uid for a metric_id's current version

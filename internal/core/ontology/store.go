@@ -13,13 +13,13 @@ import (
 	"strings"
 	"time"
 
-	coreevent "capital_observatory/internal/core/event"
-	"capital_observatory/pkg/model"
-	pb "capital_observatory/pkg/proto/plugin/v1"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	coreevent "sonde/internal/core/event"
+	"sonde/pkg/model"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 // DB is the minimal database interface the store needs.

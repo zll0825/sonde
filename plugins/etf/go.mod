@@ -1,8 +1,8 @@
-module capital_observatory/plugins/etf
+module sonde/plugins/etf
 
 go 1.22
 
-require capital_observatory v0.0.0
+require sonde v0.0.0
 
 require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
@@ -16,4 +16,4 @@ require (
 	google.golang.org/protobuf v1.34.2 // indirect
 )
 
-replace capital_observatory => ../..
+replace sonde => ../..

@@ -11,8 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"capital_observatory/internal/core/ontology"
-	"capital_observatory/pkg/model"
+	"sonde/internal/core/ontology"
+	"sonde/pkg/model"
 )
 
 // ReadOnlyTools defines the complete catalog of tools exposed by the MCP server.

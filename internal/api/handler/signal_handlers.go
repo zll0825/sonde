@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/internal/core/signal"
-	"capital_observatory/pkg/model"
+	"sonde/internal/core/signal"
+	"sonde/pkg/model"
 )
 
 // signalQualityPoint is a single observation row enriched with a computed

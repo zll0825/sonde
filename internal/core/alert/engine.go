@@ -12,8 +12,8 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	coreevent "capital_observatory/internal/core/event"
-	"capital_observatory/pkg/model"
+	coreevent "sonde/internal/core/event"
+	"sonde/pkg/model"
 )
 
 // EventTypeAlertTriggered is the outbox event_type written when a new alert fires.

@@ -1,7 +1,7 @@
 .PHONY: help install-tools proto migrate-up migrate-down migrate-status migrate-force dev dev-up dev-down dev-logs lint test build clean
 
 # ---- Variables ----
-DB_URL ?= postgres://capital:capital_dev@localhost:5432/capital_observatory?sslmode=disable
+DB_URL ?= postgres://sonde:sonde_dev@localhost:5432/sonde?sslmode=disable
 MIGRATIONS_DIR ?= ./migrations
 COMPOSE_FILE ?= ./deployments/docker-compose.yml
 API_PORT ?= 8080
@@ -67,16 +67,16 @@ migrate-force: ## Force migration version (usage: make migrate-force VERSION=1)
 
 # ---- One-command full stack ----
 dev-up: ## Build and run the full stack (DB + Core + API + ETF plugin)
-	@echo ">> Bringing up Capital Observatory full stack..."
+	@echo ">> Bringing up Sonde full stack..."
 	docker compose -f $(COMPOSE_FILE) up -d --build
 	@echo ">> Waiting for database to be healthy..."
 	@sleep 2
 	$(MAKE) migrate-up
 	@echo ""
 	@echo "╔══════════════════════════════════════════════════════════════╗"
-	@echo "║  Capital Observatory is up!                                  ║"
+	@echo "║  Sonde is up!                                                ║"
 	@echo "║                                                              ║"
-	@echo "║  Database: postgres://capital:capital_dev@localhost:5432     ║"
+	@echo "║  Database: postgres://sonde:sonde_dev@localhost:5432         ║"
 	@echo "║  Core gRPC: :50051                                           ║"
 	@echo "║  API + UI:  http://localhost:$(API_PORT)/                    ║"
 	@echo "╠══════════════════════════════════════════════════════════════╣"

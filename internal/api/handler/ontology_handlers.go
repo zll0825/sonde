@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/internal/core/ontology"
+	"sonde/internal/core/ontology"
 )
 
 // ontologyStore wraps the handles the ontology management API handlers need:

@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/pkg/model"
-	"capital_observatory/pkg/provider"
-	fredprov "capital_observatory/pkg/provider/fred"
-	macro "capital_observatory/plugins/macro"
+	"sonde/pkg/model"
+	"sonde/pkg/provider"
+	fredprov "sonde/pkg/provider/fred"
+	macro "sonde/plugins/macro"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

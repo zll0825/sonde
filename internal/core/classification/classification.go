@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // ---- Resolver interfaces ----

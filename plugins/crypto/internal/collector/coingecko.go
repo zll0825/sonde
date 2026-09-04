@@ -12,9 +12,9 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/pkg/model"
-	"capital_observatory/pkg/pluginrunner"
-	"capital_observatory/pkg/provider"
+	"sonde/pkg/model"
+	"sonde/pkg/pluginrunner"
+	"sonde/pkg/provider"
 )
 
 const (

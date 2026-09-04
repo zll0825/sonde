@@ -1,4 +1,4 @@
-// Command mcp is a read-only Model Context Protocol (MCP) server for Capital Observatory.
+// Command mcp is a read-only Model Context Protocol (MCP) server for Sonde.
 // It exposes active alerts, research snapshots, and ontology data to AI research assistants.
 package main
 
@@ -14,10 +14,10 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/internal/mcp"
+	"sonde/internal/mcp"
 )
 
-const usageText = `capital-observatory mcp — read-only research assistant MCP server
+const usageText = `sonde mcp — read-only research assistant MCP server
 
 Usage:
   mcp [flags]
@@ -52,7 +52,7 @@ func main() {
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://capital:capital_dev@localhost:5432/capital_observatory?sslmode=disable"
+		dsn = "postgres://sonde:sonde_dev@localhost:5432/sonde?sslmode=disable"
 	}
 
 	db, err := pgxpool.New(ctx, dsn)
@@ -74,7 +74,7 @@ func main() {
 		return
 	}
 
-	log.Info().Msg("starting Capital Observatory MCP server over stdio")
+	log.Info().Msg("starting Sonde MCP server over stdio")
 	if err := server.ServeStdio(ctx, os.Stdin, os.Stdout); err != nil {
 		log.Error().Err(err).Msg("stdio server exited")
 		os.Exit(1)

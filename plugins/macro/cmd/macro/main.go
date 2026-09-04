@@ -10,11 +10,11 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/pkg/pluginrunner"
-	pb "capital_observatory/pkg/proto/plugin/v1"
-	fredprov "capital_observatory/pkg/provider/fred"
-	macro "capital_observatory/plugins/macro"
-	"capital_observatory/plugins/macro/internal/collector"
+	"sonde/pkg/pluginrunner"
+	pb "sonde/pkg/proto/plugin/v1"
+	fredprov "sonde/pkg/provider/fred"
+	macro "sonde/plugins/macro"
+	"sonde/plugins/macro/internal/collector"
 )
 
 func main() {

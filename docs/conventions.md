@@ -1,9 +1,9 @@
-# Capital Observatory — Go Code Conventions
+# Sonde — Go Code Conventions
 
 ## Project Structure
 
 ```
-capital-observatory/
+sonde/
 ├── cmd/
 │   ├── core/main.go           # Core entry point
 │   └── api/main.go            # API Server entry point

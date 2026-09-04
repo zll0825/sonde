@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	pb "capital_observatory/pkg/proto/plugin/v1"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 const maxCollectionErrorLength = 512

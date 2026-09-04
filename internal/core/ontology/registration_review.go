@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"capital_observatory/internal/core/relationmgr"
-	"capital_observatory/internal/core/rulemgr"
-	pb "capital_observatory/pkg/proto/plugin/v1"
 	"github.com/jackc/pgx/v5"
+	"sonde/internal/core/relationmgr"
+	"sonde/internal/core/rulemgr"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 const (

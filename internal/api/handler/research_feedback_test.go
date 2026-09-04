@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 type fakeFeedbackStore struct {

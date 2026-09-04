@@ -18,7 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 type rulesStore struct {

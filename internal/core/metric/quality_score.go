@@ -3,7 +3,7 @@ package metric
 import (
 	"time"
 
-	pb "capital_observatory/pkg/proto/plugin/v1"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 // QualityResult holds the computed quality fields for an observation.

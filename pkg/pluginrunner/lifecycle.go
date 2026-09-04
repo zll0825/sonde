@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	pb "capital_observatory/pkg/proto/plugin/v1"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 // Config captures everything plugin-specific that the lifecycle needs to run.

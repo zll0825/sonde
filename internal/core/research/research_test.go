@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // mockResearchStore is an in-memory ResearchStore for unit tests.

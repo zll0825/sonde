@@ -11,7 +11,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // Detector evaluates a single rule against observation data.

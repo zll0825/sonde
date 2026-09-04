@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // defaultObservationsLimit bounds unbounded GetObservations queries when the

@@ -95,7 +95,7 @@ func (s *Server) ProcessMessage(ctx context.Context, raw []byte) ([]byte, error)
 				Tools: &ToolCapabilities{ListChanged: false},
 			},
 			ServerInfo: Implementation{
-				Name:    "capital-observatory-mcp",
+				Name:    "sonde-mcp",
 				Version: "0.1.0",
 			},
 		}

@@ -1,4 +1,4 @@
-# Capital Observatory — Database Schema
+# Sonde — Database Schema
 
 版本：1.0
 状态：Frozen（Sprint 0.3）

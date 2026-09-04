@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"capital_observatory/pkg/provider"
+	"sonde/pkg/provider"
 )
 
 const (
@@ -22,7 +22,7 @@ const (
 	defaultLatestLookback = 30 * 24 * time.Hour
 )
 
-// Binding maps one Observatory metric to a FRED series.
+// Binding maps one Sonde metric to a FRED series.
 type Binding struct {
 	MetricID  string  `yaml:"metric"`
 	SeriesID  string  `yaml:"series"`

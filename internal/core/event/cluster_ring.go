@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // ClusterSnapshot is a point-in-time view of an EventCluster suitable for

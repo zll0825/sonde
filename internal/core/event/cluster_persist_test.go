@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 func TestSnapshotStore_DeduplicatesRetryButPersistsUpdatedState(t *testing.T) {

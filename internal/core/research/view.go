@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // Timeline 按时间顺序排列的事件序列。

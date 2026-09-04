@@ -9,7 +9,7 @@ lint:
     # The service/message names below are part of the frozen gRPC contract
     # (docs/plugin-protocol.md §PluginHost, status: Frozen). Renaming to satisfy
     # these style rules would be a breaking contract change.
-    - PACKAGE_DIRECTORY_MATCH # package capital_observatory.plugin.v1 lives at proto/plugin/v1
+    - PACKAGE_DIRECTORY_MATCH # package sonde.plugin.v1 lives at proto/plugin/v1
     - SERVICE_SUFFIX # "PluginHost" is the frozen service name
     - RPC_REQUEST_STANDARD_NAME # MaintainSession streams PluginMessage/CoreMessage
     - RPC_RESPONSE_STANDARD_NAME

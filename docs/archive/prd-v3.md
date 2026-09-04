@@ -1,10 +1,10 @@
-# Capital Observatory PRD v3
+# Sonde PRD v3
 
 ## 一、产品简介
 
 ### 产品名称
 
-**Capital Observatory**
+**Sonde**
 
 ### 一句话定位
 
@@ -26,7 +26,7 @@
 
 ## 三、产品目标
 
-Capital Observatory 的核心目标只有三个：
+Sonde 的核心目标只有三个：
 
 - 持续观察资本市场中的关键指标。[cite:91]
 - 自动发现偏离正常状态的异常变化。[cite:75][cite:91]
@@ -80,7 +80,7 @@ Metric 是观测值的统一表层语法，但系统还需要在 Metric 之下�
 
 ## 六、产品核心理念
 
-Capital Observatory 借鉴的是软件可观测性思想。就像监控系统不会先问“某台服务器值不值得买”，而是先问“哪台服务器状态异常”，Capital Observatory 也不会先问“哪个资产会涨”，而是先问“哪个资本指标偏离了正常状态”。[cite:91]
+Sonde 借鉴的是软件可观测性思想。就像监控系统不会先问“某台服务器值不值得买”，而是先问“哪台服务器状态异常”，Sonde 也不会先问“哪个资产会涨”，而是先问“哪个资本指标偏离了正常状态”。[cite:91]
 
 因此，本产品本质上不是行情终端，也不是投顾系统，而是一套资本市场异常发现与研究导航系统。[cite:75][cite:91]
 
@@ -374,7 +374,7 @@ Collect → Metric → Ontology → Detect → Alert → Research
 推荐目录结构：
 
 ```text
-capital-observatory/
+sonde/
   cmd/
   core/
     metric/

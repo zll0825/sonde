@@ -13,15 +13,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/internal/api/handler"
-	"capital_observatory/internal/api/middleware"
-	coreevent "capital_observatory/internal/core/event"
+	"sonde/internal/api/handler"
+	"sonde/internal/api/middleware"
+	coreevent "sonde/internal/core/event"
 )
 
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://capital:capital_dev@localhost:5432/capital_observatory?sslmode=disable"
+		dsn = "postgres://sonde:sonde_dev@localhost:5432/sonde?sslmode=disable"
 	}
 
 	ctx := signalContext()

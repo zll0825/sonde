@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // DefaultBudgetPerDay is the first calibration target from PRD §十七.

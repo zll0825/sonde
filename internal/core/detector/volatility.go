@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // VolatilityDetector fires when the coefficient of variation (stddev/mean)

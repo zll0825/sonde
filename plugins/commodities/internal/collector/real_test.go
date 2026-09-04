@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/pkg/pluginrunner"
+	"sonde/pkg/pluginrunner"
 )
 
 type stubWindowedProvider struct {

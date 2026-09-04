@@ -1,7 +1,7 @@
 package collector
 
 import (
-	fredprov "capital_observatory/pkg/provider/fred"
+	fredprov "sonde/pkg/provider/fred"
 )
 
 // NewFREDCollector builds the shared FRED collector from bindings.yaml bytes.

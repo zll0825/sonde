@@ -1,19 +1,19 @@
-# 套用 DBX 分层纪律迭代 Capital Observatory
+# 套用 DBX 分层纪律迭代 Sonde
 
 状态：草案（2026-09-03）
 来源：对照 [dbx](https://github.com/t8y2/dbx) 的架构，评估本仓库的扩展成本。
 
-> 不要把 DBX 整套搬过来。Observatory 是持续运行的观测管道，DBX 是交互式客户端。
+> 不要把 DBX 整套搬过来。Sonde 是持续运行的观测管道，DBX 是交互式客户端。
 > 该套的是分层纪律，不是 Tauri、YAML 枚举 90 种库、也不是 20MB 体积约束。
 
 ## 一句话
 
 DBX 能覆盖 90+ 连接，是因为协议相同的东西不当成新系统。
-Observatory 以后要覆盖债券、外汇、更多商品，也应该让 **FRED 序列不当成新插件**。
+Sonde 以后要覆盖债券、外汇、更多商品，也应该让 **FRED 序列不当成新插件**。
 
 ## 两边已经对齐的部分
 
-| DBX | Capital Observatory | 结论 |
+| DBX | Sonde | 结论 |
 | --- | --- | --- |
 | `dbx-core` 一份逻辑，外壳只做适配 | Core 管摄入检测告警，API 只读库、写 `command_log` | 已经对，别合并 |
 | Agent 出进程 + JSON-RPC | Plugin 出进程 + 双向 gRPC | 已经对 |

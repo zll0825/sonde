@@ -1,4 +1,4 @@
-# Capital Observatory PRD v4.0
+# Sonde PRD v4.0
 
 **一个面向资本市场的可观测性平台**
 
@@ -19,7 +19,7 @@
 
 ### 产品名称
 
-**Capital Observatory**
+**Sonde**
 
 ### 一句话定位
 
@@ -41,7 +41,7 @@
 
 > "告诉我 XXX 现在怎么样。"
 
-Capital Observatory 要回答的是：
+Sonde 要回答的是：
 
 > "今天资本市场有哪些地方出现了异常，值得优先研究？"
 
@@ -103,9 +103,9 @@ Metric 是观测值的统一表层语法，Ontology 定义观测对象之间的�
 
 # 六、核心理念
 
-Capital Observatory 借鉴软件可观测性（Observability）思想。
+Sonde 借鉴软件可观测性（Observability）思想。
 
-就像 Prometheus 持续监控服务器一样，Capital Observatory 持续监控资本市场。服务器监控关注 CPU、Memory、Network；资本市场监控关注 ETF 资金流、成交量、持仓变化、链上数据、宏观指标。
+就像 Prometheus 持续监控服务器一样，Sonde 持续监控资本市场。服务器监控关注 CPU、Memory、Network；资本市场监控关注 ETF 资金流、成交量、持仓变化、链上数据、宏观指标。
 
 目标都是：**发现偏离正常状态的异常。**
 
@@ -583,7 +583,7 @@ Collect → Metric → Ontology → Detect → Alert → Research
 ## 目录结构
 
 ```text
-capital-observatory/
+sonde/
   cmd/
   core/
     metric/           # Metric 注册与存储

@@ -13,9 +13,9 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/pkg/model"
-	"capital_observatory/pkg/pluginrunner"
-	"capital_observatory/pkg/provider"
+	"sonde/pkg/model"
+	"sonde/pkg/pluginrunner"
+	"sonde/pkg/provider"
 )
 
 // Collector pulls FRED observations for a binding list. Plugin packages
@@ -283,7 +283,7 @@ func (c *Collector) doGet(ctx context.Context, reqURL string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "capital-observatory/0.1.0")
+	req.Header.Set("User-Agent", "sonde/0.1.0")
 
 	resp, err := c.client.Do(req)
 	if err != nil {

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"capital_observatory/pkg/pluginrunner"
-	"capital_observatory/pkg/provider"
+	"sonde/pkg/pluginrunner"
+	"sonde/pkg/provider"
 )
 
 type windowedCommodityProvider interface {

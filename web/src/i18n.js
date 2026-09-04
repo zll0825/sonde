@@ -3,7 +3,7 @@
 // ══════════════════════════════════════════════════════════════════════
 const TRANSLATIONS = {
     zh: {
-        'header.title': 'Capital Observatory',
+        'header.title': 'Sonde',
         'header.subtitle': '资本市场异常检测系统',
         'header.home_link': '返回首页',
         'status.connecting': '连接中...',
@@ -294,7 +294,7 @@ const TRANSLATIONS = {
         'common.network_error': '网络错误：{err}'
     },
     en: {
-        'header.title': 'Capital Observatory',
+        'header.title': 'Sonde',
         'header.subtitle': 'Anomaly Detection for Capital Markets',
         'header.home_link': 'Home',
         'status.connecting': 'connecting...',
@@ -614,7 +614,7 @@ function applyStaticTranslations() {
 function setLanguage(lang) {
     currentLang = (lang === 'zh' || lang === 'zh-CN') ? 'zh' : 'en';
     try {
-        localStorage.setItem('capital_lang', currentLang);
+        localStorage.setItem('sonde_lang', currentLang);
     } catch (e) { /* ignore localStorage block */ }
 
     const btnZh = document.getElementById('btn-lang-zh');
@@ -653,7 +653,7 @@ function setLanguage(lang) {
 function initLanguage() {
     let saved = null;
     try {
-        saved = localStorage.getItem('capital_lang');
+        saved = localStorage.getItem('sonde_lang');
     } catch (e) { /* ignore */ }
 
     if (saved === 'zh' || saved === 'en') {

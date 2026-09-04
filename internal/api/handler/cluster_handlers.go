@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
-	coreevent "capital_observatory/internal/core/event"
+	coreevent "sonde/internal/core/event"
 )
 
 // clusterHandler returns the most recent N event-cluster snapshots.

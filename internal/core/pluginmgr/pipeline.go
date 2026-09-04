@@ -10,10 +10,10 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/internal/core/alert"
-	"capital_observatory/internal/core/detector"
-	"capital_observatory/internal/core/ontology"
-	"capital_observatory/pkg/model"
+	"sonde/internal/core/alert"
+	"sonde/internal/core/detector"
+	"sonde/internal/core/ontology"
+	"sonde/pkg/model"
 )
 
 // ObservationQuerier fetches observations for a metric UID in a time range,

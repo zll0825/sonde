@@ -1,9 +1,9 @@
-module capital_observatory/plugins/crypto
+module sonde/plugins/crypto
 
 go 1.22
 
 require (
-	capital_observatory v0.0.0
+	sonde v0.0.0
 	github.com/rs/zerolog v1.33.0
 )
 
@@ -18,4 +18,4 @@ require (
 	google.golang.org/protobuf v1.34.2 // indirect
 )
 
-replace capital_observatory => ../..
+replace sonde => ../..

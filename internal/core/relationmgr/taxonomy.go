@@ -2,7 +2,7 @@
 // 关系，是否采纳由 Core 按来源优先级裁决（ADR-2）。
 package relationmgr
 
-import "capital_observatory/pkg/model"
+import "sonde/pkg/model"
 
 // relationTypeLayer maps a relation_type string to its taxonomy layer.
 // This is a hard-coded registry — plugin suggestions are advisory only;

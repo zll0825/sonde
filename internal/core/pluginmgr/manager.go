@@ -11,12 +11,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"capital_observatory/internal/core/alert"
-	"capital_observatory/internal/core/detector"
-	"capital_observatory/internal/core/metric"
-	"capital_observatory/internal/core/ontology"
-	"capital_observatory/internal/core/store"
-	pb "capital_observatory/pkg/proto/plugin/v1"
+	"sonde/internal/core/alert"
+	"sonde/internal/core/detector"
+	"sonde/internal/core/metric"
+	"sonde/internal/core/ontology"
+	"sonde/internal/core/store"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 // Manager holds the registry of active plugin sessions and routes

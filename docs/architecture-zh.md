@@ -1,4 +1,4 @@
-# Capital Observatory — 系统架构运行图（中文）
+# Sonde — 系统架构运行图（中文）
 
 > 本文描绘**实际建成**的系统（as-built），随代码演进更新；冻结版设计基线见
 > [system-architecture.md](./system-architecture.md)（v1.1，仅存档不再修改）。

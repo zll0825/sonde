@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	pb "capital_observatory/pkg/proto/plugin/v1"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 func TestIntegration_RecordHeartbeatPreservesAndRecoversCollectionHealth(t *testing.T) {

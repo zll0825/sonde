@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/internal/core/alert"
-	coreevent "capital_observatory/internal/core/event"
-	"capital_observatory/internal/core/store"
-	"capital_observatory/pkg/model"
-	pb "capital_observatory/pkg/proto/plugin/v1"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"sonde/internal/core/alert"
+	coreevent "sonde/internal/core/event"
+	"sonde/internal/core/store"
+	"sonde/pkg/model"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 func TestIntegration_ResearchLinkage_DurableAndImmutable(t *testing.T) {

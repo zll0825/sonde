@@ -1,4 +1,4 @@
-module capital_observatory
+module sonde
 
 go 1.22
 

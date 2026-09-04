@@ -442,7 +442,7 @@ type EntityDeclaration struct {
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	Namespace     string                 `protobuf:"bytes,3,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	EntityType    EntityType             `protobuf:"varint,4,opt,name=entity_type,json=entityType,proto3,enum=capital_observatory.plugin.v1.EntityType" json:"entity_type,omitempty"`
+	EntityType    EntityType             `protobuf:"varint,4,opt,name=entity_type,json=entityType,proto3,enum=sonde.plugin.v1.EntityType" json:"entity_type,omitempty"`
 	Tags          []string               `protobuf:"bytes,5,rep,name=tags,proto3" json:"tags,omitempty"`
 	Metadata      map[string]string      `protobuf:"bytes,6,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
@@ -618,12 +618,12 @@ type RelationSuggestion struct {
 	SourceId            string                 `protobuf:"bytes,1,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
 	TargetId            string                 `protobuf:"bytes,2,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
 	RelationType        string                 `protobuf:"bytes,3,opt,name=relation_type,json=relationType,proto3" json:"relation_type,omitempty"`
-	Direction           Direction              `protobuf:"varint,4,opt,name=direction,proto3,enum=capital_observatory.plugin.v1.Direction" json:"direction,omitempty"`
+	Direction           Direction              `protobuf:"varint,4,opt,name=direction,proto3,enum=sonde.plugin.v1.Direction" json:"direction,omitempty"`
 	Confidence          float64                `protobuf:"fixed64,5,opt,name=confidence,proto3" json:"confidence,omitempty"`
 	TypicalLagSecs      int64                  `protobuf:"varint,6,opt,name=typical_lag_secs,json=typicalLagSecs,proto3" json:"typical_lag_secs,omitempty"`
 	Description         string                 `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`
 	Evidence            string                 `protobuf:"bytes,8,opt,name=evidence,proto3" json:"evidence,omitempty"`
-	SuggestedLayer      RelationLayer          `protobuf:"varint,10,opt,name=suggested_layer,json=suggestedLayer,proto3,enum=capital_observatory.plugin.v1.RelationLayer" json:"suggested_layer,omitempty"`
+	SuggestedLayer      RelationLayer          `protobuf:"varint,10,opt,name=suggested_layer,json=suggestedLayer,proto3,enum=sonde.plugin.v1.RelationLayer" json:"suggested_layer,omitempty"`
 	StatisticalEvidence *StatisticalEvidence   `protobuf:"bytes,11,opt,name=statistical_evidence,json=statisticalEvidence,proto3" json:"statistical_evidence,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
@@ -894,7 +894,7 @@ type RuleSuggestion struct {
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	MetricId      string                 `protobuf:"bytes,2,opt,name=metric_id,json=metricId,proto3" json:"metric_id,omitempty"`
 	DetectorName  string                 `protobuf:"bytes,3,opt,name=detector_name,json=detectorName,proto3" json:"detector_name,omitempty"`
-	Severity      Severity               `protobuf:"varint,4,opt,name=severity,proto3,enum=capital_observatory.plugin.v1.Severity" json:"severity,omitempty"`
+	Severity      Severity               `protobuf:"varint,4,opt,name=severity,proto3,enum=sonde.plugin.v1.Severity" json:"severity,omitempty"`
 	Config        []byte                 `protobuf:"bytes,5,opt,name=config,proto3" json:"config,omitempty"`
 	Description   string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1291,10 +1291,10 @@ type MetricSnapshot struct {
 	SourcePluginVersion string                 `protobuf:"bytes,6,opt,name=source_plugin_version,json=sourcePluginVersion,proto3" json:"source_plugin_version,omitempty"`
 	SourceProvider      string                 `protobuf:"bytes,7,opt,name=source_provider,json=sourceProvider,proto3" json:"source_provider,omitempty"`
 	SourceFetchedAt     int64                  `protobuf:"varint,8,opt,name=source_fetched_at,json=sourceFetchedAt,proto3" json:"source_fetched_at,omitempty"`
-	QualityGrade        QualityGrade           `protobuf:"varint,9,opt,name=quality_grade,json=qualityGrade,proto3,enum=capital_observatory.plugin.v1.QualityGrade" json:"quality_grade,omitempty"`
+	QualityGrade        QualityGrade           `protobuf:"varint,9,opt,name=quality_grade,json=qualityGrade,proto3,enum=sonde.plugin.v1.QualityGrade" json:"quality_grade,omitempty"`
 	QualityConfidence   float64                `protobuf:"fixed64,10,opt,name=quality_confidence,json=qualityConfidence,proto3" json:"quality_confidence,omitempty"`
 	// Domain: Observation.source_class. Absent/zero means unknown.
-	SourceClass   SourceClass `protobuf:"varint,11,opt,name=source_class,json=sourceClass,proto3,enum=capital_observatory.plugin.v1.SourceClass" json:"source_class,omitempty"`
+	SourceClass   SourceClass `protobuf:"varint,11,opt,name=source_class,json=sourceClass,proto3,enum=sonde.plugin.v1.SourceClass" json:"source_class,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2243,50 +2243,50 @@ var File_plugin_v1_plugin_proto protoreflect.FileDescriptor
 
 const file_plugin_v1_plugin_proto_rawDesc = "" +
 	"\n" +
-	"\x16plugin/v1/plugin.proto\x12\x1dcapital_observatory.plugin.v1\"\xcf\x01\n" +
+	"\x16plugin/v1/plugin.proto\x12\x0fsonde.plugin.v1\"\xcf\x01\n" +
 	"\n" +
 	"PluginInfo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x128\n" +
 	"\x18collection_interval_secs\x18\x04 \x01(\x05R\x16collectionIntervalSecs\x127\n" +
-	"\x18min_backfill_window_days\x18\x05 \x01(\x05R\x15minBackfillWindowDays\"\xce\x02\n" +
+	"\x18min_backfill_window_days\x18\x05 \x01(\x05R\x15minBackfillWindowDays\"\xb2\x02\n" +
 	"\x11EntityDeclaration\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
-	"\tnamespace\x18\x03 \x01(\tR\tnamespace\x12J\n" +
-	"\ventity_type\x18\x04 \x01(\x0e2).capital_observatory.plugin.v1.EntityTypeR\n" +
+	"\tnamespace\x18\x03 \x01(\tR\tnamespace\x12<\n" +
+	"\ventity_type\x18\x04 \x01(\x0e2\x1b.sonde.plugin.v1.EntityTypeR\n" +
 	"entityType\x12\x12\n" +
-	"\x04tags\x18\x05 \x03(\tR\x04tags\x12Z\n" +
-	"\bmetadata\x18\x06 \x03(\v2>.capital_observatory.plugin.v1.EntityDeclaration.MetadataEntryR\bmetadata\x1a;\n" +
+	"\x04tags\x18\x05 \x03(\tR\x04tags\x12L\n" +
+	"\bmetadata\x18\x06 \x03(\v20.sonde.plugin.v1.EntityDeclaration.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb1\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa3\x02\n" +
 	"\x11MetricDeclaration\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x12\n" +
 	"\x04unit\x18\x04 \x01(\tR\x04unit\x12\x1c\n" +
 	"\tfrequency\x18\x05 \x01(\tR\tfrequency\x12\x1b\n" +
-	"\tentity_id\x18\x06 \x01(\tR\bentityId\x12N\n" +
-	"\x04tags\x18\a \x03(\v2:.capital_observatory.plugin.v1.MetricDeclaration.TagsEntryR\x04tags\x1a7\n" +
+	"\tentity_id\x18\x06 \x01(\tR\bentityId\x12@\n" +
+	"\x04tags\x18\a \x03(\v2,.sonde.plugin.v1.MetricDeclaration.TagsEntryR\x04tags\x1a7\n" +
 	"\tTagsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x81\x04\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd7\x03\n" +
 	"\x12RelationSuggestion\x12\x1b\n" +
 	"\tsource_id\x18\x01 \x01(\tR\bsourceId\x12\x1b\n" +
 	"\ttarget_id\x18\x02 \x01(\tR\btargetId\x12#\n" +
-	"\rrelation_type\x18\x03 \x01(\tR\frelationType\x12F\n" +
-	"\tdirection\x18\x04 \x01(\x0e2(.capital_observatory.plugin.v1.DirectionR\tdirection\x12\x1e\n" +
+	"\rrelation_type\x18\x03 \x01(\tR\frelationType\x128\n" +
+	"\tdirection\x18\x04 \x01(\x0e2\x1a.sonde.plugin.v1.DirectionR\tdirection\x12\x1e\n" +
 	"\n" +
 	"confidence\x18\x05 \x01(\x01R\n" +
 	"confidence\x12(\n" +
 	"\x10typical_lag_secs\x18\x06 \x01(\x03R\x0etypicalLagSecs\x12 \n" +
 	"\vdescription\x18\a \x01(\tR\vdescription\x12\x1a\n" +
-	"\bevidence\x18\b \x01(\tR\bevidence\x12U\n" +
+	"\bevidence\x18\b \x01(\tR\bevidence\x12G\n" +
 	"\x0fsuggested_layer\x18\n" +
-	" \x01(\x0e2,.capital_observatory.plugin.v1.RelationLayerR\x0esuggestedLayer\x12e\n" +
-	"\x14statistical_evidence\x18\v \x01(\v22.capital_observatory.plugin.v1.StatisticalEvidenceR\x13statisticalEvidence\"\xaa\x01\n" +
+	" \x01(\x0e2\x1e.sonde.plugin.v1.RelationLayerR\x0esuggestedLayer\x12W\n" +
+	"\x14statistical_evidence\x18\v \x01(\v2$.sonde.plugin.v1.StatisticalEvidenceR\x13statisticalEvidence\"\xaa\x01\n" +
 	"\x13StatisticalEvidence\x12\x16\n" +
 	"\x06method\x18\x01 \x01(\tR\x06method\x12\x1f\n" +
 	"\vwindow_days\x18\x02 \x01(\x05R\n" +
@@ -2294,20 +2294,20 @@ const file_plugin_v1_plugin_proto_rawDesc = "" +
 	"\vcoefficient\x18\x03 \x01(\x01R\vcoefficient\x12\x17\n" +
 	"\ap_value\x18\x04 \x01(\x01R\x06pValue\x12\x1f\n" +
 	"\vsample_size\x18\x05 \x01(\x05R\n" +
-	"sampleSize\"\xf7\x01\n" +
+	"sampleSize\"\xe9\x01\n" +
 	"\x0eRelationReview\x12\x1b\n" +
 	"\tsource_id\x18\x01 \x01(\tR\bsourceId\x12\x1b\n" +
 	"\ttarget_id\x18\x02 \x01(\tR\btargetId\x12#\n" +
 	"\rrelation_type\x18\x03 \x01(\tR\frelationType\x12\x1a\n" +
 	"\bdecision\x18\x04 \x01(\tR\bdecision\x12\x16\n" +
-	"\x06reason\x18\x05 \x01(\tR\x06reason\x12R\n" +
-	"\vmerged_into\x18\x06 \x01(\v21.capital_observatory.plugin.v1.RelationSuggestionR\n" +
-	"mergedInto\"\xe5\x01\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\x12D\n" +
+	"\vmerged_into\x18\x06 \x01(\v2#.sonde.plugin.v1.RelationSuggestionR\n" +
+	"mergedInto\"\xd7\x01\n" +
 	"\x0eRuleSuggestion\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
 	"\tmetric_id\x18\x02 \x01(\tR\bmetricId\x12#\n" +
-	"\rdetector_name\x18\x03 \x01(\tR\fdetectorName\x12C\n" +
-	"\bseverity\x18\x04 \x01(\x0e2'.capital_observatory.plugin.v1.SeverityR\bseverity\x12\x16\n" +
+	"\rdetector_name\x18\x03 \x01(\tR\fdetectorName\x125\n" +
+	"\bseverity\x18\x04 \x01(\x0e2\x19.sonde.plugin.v1.SeverityR\bseverity\x12\x16\n" +
 	"\x06config\x18\x05 \x01(\fR\x06config\x12 \n" +
 	"\vdescription\x18\x06 \x01(\tR\vdescription\"T\n" +
 	"\n" +
@@ -2319,64 +2319,64 @@ const file_plugin_v1_plugin_proto_rawDesc = "" +
 	"\x11windowed_backfill\x18\x01 \x01(\bR\x10windowedBackfill\x12*\n" +
 	"\x11max_backfill_days\x18\x02 \x01(\x05R\x0fmaxBackfillDays\x12)\n" +
 	"\x10requires_secrets\x18\x03 \x03(\tR\x0frequiresSecrets\x12%\n" +
-	"\x0emock_available\x18\x04 \x01(\bR\rmockAvailable\"\xfc\x03\n" +
-	"\x15RegisterPluginRequest\x12=\n" +
-	"\x04info\x18\x01 \x01(\v2).capital_observatory.plugin.v1.PluginInfoR\x04info\x12L\n" +
-	"\bentities\x18\x02 \x03(\v20.capital_observatory.plugin.v1.EntityDeclarationR\bentities\x12O\n" +
-	"\trelations\x18\x03 \x03(\v21.capital_observatory.plugin.v1.RelationSuggestionR\trelations\x12J\n" +
-	"\ametrics\x18\x04 \x03(\v20.capital_observatory.plugin.v1.MetricDeclarationR\ametrics\x12C\n" +
-	"\x05rules\x18\x05 \x03(\v2-.capital_observatory.plugin.v1.RuleSuggestionR\x05rules\x12\x1d\n" +
+	"\x0emock_available\x18\x04 \x01(\bR\rmockAvailable\"\xa8\x03\n" +
+	"\x15RegisterPluginRequest\x12/\n" +
+	"\x04info\x18\x01 \x01(\v2\x1b.sonde.plugin.v1.PluginInfoR\x04info\x12>\n" +
+	"\bentities\x18\x02 \x03(\v2\".sonde.plugin.v1.EntityDeclarationR\bentities\x12A\n" +
+	"\trelations\x18\x03 \x03(\v2#.sonde.plugin.v1.RelationSuggestionR\trelations\x12<\n" +
+	"\ametrics\x18\x04 \x03(\v2\".sonde.plugin.v1.MetricDeclarationR\ametrics\x125\n" +
+	"\x05rules\x18\x05 \x03(\v2\x1f.sonde.plugin.v1.RuleSuggestionR\x05rules\x12\x1d\n" +
 	"\n" +
 	"change_log\x18\n" +
-	" \x01(\tR\tchangeLog\x12U\n" +
-	"\fcapabilities\x18\v \x01(\v21.capital_observatory.plugin.v1.PluginCapabilitiesR\fcapabilities\"\xcc\x02\n" +
+	" \x01(\tR\tchangeLog\x12G\n" +
+	"\fcapabilities\x18\v \x01(\v2#.sonde.plugin.v1.PluginCapabilitiesR\fcapabilities\"\xb0\x02\n" +
 	"\x16RegisterPluginResponse\x12\x1b\n" +
 	"\tplugin_id\x18\x01 \x01(\tR\bpluginId\x121\n" +
 	"\x14registration_version\x18\x02 \x01(\x05R\x13registrationVersion\x12\x18\n" +
 	"\asuccess\x18\x03 \x01(\bR\asuccess\x12\x18\n" +
-	"\amessage\x18\x04 \x01(\tR\amessage\x12\\\n" +
-	"\x12reviewed_relations\x18\x05 \x03(\v2-.capital_observatory.plugin.v1.RelationReviewR\x11reviewedRelations\x12P\n" +
-	"\x0ereviewed_rules\x18\x06 \x03(\v2).capital_observatory.plugin.v1.RuleReviewR\rreviewedRules\"\xed\x04\n" +
+	"\amessage\x18\x04 \x01(\tR\amessage\x12N\n" +
+	"\x12reviewed_relations\x18\x05 \x03(\v2\x1f.sonde.plugin.v1.RelationReviewR\x11reviewedRelations\x12B\n" +
+	"\x0ereviewed_rules\x18\x06 \x03(\v2\x1b.sonde.plugin.v1.RuleReviewR\rreviewedRules\"\xc3\x04\n" +
 	"\x0eMetricSnapshot\x12\x1b\n" +
 	"\tmetric_id\x18\x01 \x01(\tR\bmetricId\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x01R\x05value\x12\x1c\n" +
-	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\x12Q\n" +
-	"\x06labels\x18\x04 \x03(\v29.capital_observatory.plugin.v1.MetricSnapshot.LabelsEntryR\x06labels\x12#\n" +
+	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\x12C\n" +
+	"\x06labels\x18\x04 \x03(\v2+.sonde.plugin.v1.MetricSnapshot.LabelsEntryR\x06labels\x12#\n" +
 	"\rsource_plugin\x18\x05 \x01(\tR\fsourcePlugin\x122\n" +
 	"\x15source_plugin_version\x18\x06 \x01(\tR\x13sourcePluginVersion\x12'\n" +
 	"\x0fsource_provider\x18\a \x01(\tR\x0esourceProvider\x12*\n" +
-	"\x11source_fetched_at\x18\b \x01(\x03R\x0fsourceFetchedAt\x12P\n" +
-	"\rquality_grade\x18\t \x01(\x0e2+.capital_observatory.plugin.v1.QualityGradeR\fqualityGrade\x12-\n" +
+	"\x11source_fetched_at\x18\b \x01(\x03R\x0fsourceFetchedAt\x12B\n" +
+	"\rquality_grade\x18\t \x01(\x0e2\x1d.sonde.plugin.v1.QualityGradeR\fqualityGrade\x12-\n" +
 	"\x12quality_confidence\x18\n" +
-	" \x01(\x01R\x11qualityConfidence\x12M\n" +
-	"\fsource_class\x18\v \x01(\x0e2*.capital_observatory.plugin.v1.SourceClassR\vsourceClass\x1a9\n" +
+	" \x01(\x01R\x11qualityConfidence\x12?\n" +
+	"\fsource_class\x18\v \x01(\x0e2\x1c.sonde.plugin.v1.SourceClassR\vsourceClass\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x80\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"r\n" +
 	"\x14PushSnapshotsRequest\x12\x1b\n" +
-	"\tplugin_id\x18\x01 \x01(\tR\bpluginId\x12K\n" +
-	"\tsnapshots\x18\x02 \x03(\v2-.capital_observatory.plugin.v1.MetricSnapshotR\tsnapshots\"\xa7\x01\n" +
+	"\tplugin_id\x18\x01 \x01(\tR\bpluginId\x12=\n" +
+	"\tsnapshots\x18\x02 \x03(\v2\x1f.sonde.plugin.v1.MetricSnapshotR\tsnapshots\"\xa7\x01\n" +
 	"\x15PushSnapshotsResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x1a\n" +
 	"\binserted\x18\x02 \x01(\x05R\binserted\x12\"\n" +
 	"\fdeduplicated\x18\x03 \x01(\x05R\fdeduplicated\x12\x1a\n" +
 	"\brejected\x18\x04 \x01(\x05R\brejected\x12\x18\n" +
-	"\amessage\x18\x05 \x01(\tR\amessage\"\xa0\x03\n" +
+	"\amessage\x18\x05 \x01(\tR\amessage\"\x92\x03\n" +
 	"\fPluginStatus\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12&\n" +
 	"\x0flast_collect_at\x18\x02 \x01(\x03R\rlastCollectAt\x127\n" +
 	"\x18last_collect_duration_ms\x18\x03 \x01(\x05R\x15lastCollectDurationMs\x12,\n" +
 	"\x12last_collect_count\x18\x04 \x01(\x05R\x10lastCollectCount\x12,\n" +
 	"\x12last_collect_error\x18\x05 \x01(\tR\x10lastCollectError\x12-\n" +
-	"\x12consecutive_errors\x18\x06 \x01(\x05R\x11consecutiveErrors\x12R\n" +
-	"\aruntime\x18\a \x03(\v28.capital_observatory.plugin.v1.PluginStatus.RuntimeEntryR\aruntime\x1a:\n" +
+	"\x12consecutive_errors\x18\x06 \x01(\x05R\x11consecutiveErrors\x12D\n" +
+	"\aruntime\x18\a \x03(\v2*.sonde.plugin.v1.PluginStatus.RuntimeEntryR\aruntime\x1a:\n" +
 	"\fRuntimeEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x92\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x84\x01\n" +
 	"\x10HeartbeatRequest\x12\x1b\n" +
 	"\tplugin_id\x18\x01 \x01(\tR\bpluginId\x12\x1c\n" +
-	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\x12C\n" +
-	"\x06status\x18\x03 \x01(\v2+.capital_observatory.plugin.v1.PluginStatusR\x06status\"S\n" +
+	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\x125\n" +
+	"\x06status\x18\x03 \x01(\v2\x1d.sonde.plugin.v1.PluginStatusR\x06status\"S\n" +
 	"\x11HeartbeatResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12.\n" +
 	"\x13has_pending_command\x18\x02 \x01(\bR\x11hasPendingCommand\"c\n" +
@@ -2403,17 +2403,17 @@ const file_plugin_v1_plugin_proto_rawDesc = "" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12\x1c\n" +
 	"\ttimestamp\x18\x04 \x01(\x03R\ttimestamp\x12'\n" +
 	"\x0fcollected_count\x18\x05 \x01(\x05R\x0ecollectedCount\x12\x14\n" +
-	"\x05error\x18\x06 \x01(\tR\x05error\"\x97\x02\n" +
-	"\rPluginMessage\x12\\\n" +
-	"\x0epush_snapshots\x18\x01 \x01(\v23.capital_observatory.plugin.v1.PushSnapshotsRequestH\x00R\rpushSnapshots\x12O\n" +
-	"\theartbeat\x18\x02 \x01(\v2/.capital_observatory.plugin.v1.HeartbeatRequestH\x00R\theartbeat\x12L\n" +
-	"\vcommand_ack\x18\x03 \x01(\v2).capital_observatory.plugin.v1.CommandAckH\x00R\n" +
+	"\x05error\x18\x06 \x01(\tR\x05error\"\xed\x01\n" +
+	"\rPluginMessage\x12N\n" +
+	"\x0epush_snapshots\x18\x01 \x01(\v2%.sonde.plugin.v1.PushSnapshotsRequestH\x00R\rpushSnapshots\x12A\n" +
+	"\theartbeat\x18\x02 \x01(\v2!.sonde.plugin.v1.HeartbeatRequestH\x00R\theartbeat\x12>\n" +
+	"\vcommand_ack\x18\x03 \x01(\v2\x1b.sonde.plugin.v1.CommandAckH\x00R\n" +
 	"commandAckB\t\n" +
-	"\apayload\"\xed\x01\n" +
-	"\vCoreMessage\x12@\n" +
-	"\x04sync\x18\x01 \x01(\v2*.capital_observatory.plugin.v1.SyncCommandH\x00R\x04sync\x12L\n" +
-	"\bbackfill\x18\x02 \x01(\v2..capital_observatory.plugin.v1.BackfillCommandH\x00R\bbackfill\x12C\n" +
-	"\bpush_ack\x18\x03 \x01(\v2&.capital_observatory.plugin.v1.PushAckH\x00R\apushAckB\t\n" +
+	"\apayload\"\xc3\x01\n" +
+	"\vCoreMessage\x122\n" +
+	"\x04sync\x18\x01 \x01(\v2\x1c.sonde.plugin.v1.SyncCommandH\x00R\x04sync\x12>\n" +
+	"\bbackfill\x18\x02 \x01(\v2 .sonde.plugin.v1.BackfillCommandH\x00R\bbackfill\x125\n" +
+	"\bpush_ack\x18\x03 \x01(\v2\x18.sonde.plugin.v1.PushAckH\x00R\apushAckB\t\n" +
 	"\apayload\"\x9c\x01\n" +
 	"\aPushAck\x12\x1b\n" +
 	"\tplugin_id\x18\x01 \x01(\tR\bpluginId\x12\x1a\n" +
@@ -2458,12 +2458,12 @@ const file_plugin_v1_plugin_proto_rawDesc = "" +
 	"\x18SOURCE_CLASS_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11SOURCE_CLASS_REAL\x10\x01\x12\x15\n" +
 	"\x11SOURCE_CLASS_MOCK\x10\x02\x12\x15\n" +
-	"\x11SOURCE_CLASS_TEST\x10\x032\xec\x02\n" +
+	"\x11SOURCE_CLASS_TEST\x10\x032\x98\x02\n" +
 	"\n" +
-	"PluginHost\x12}\n" +
-	"\x0eRegisterPlugin\x124.capital_observatory.plugin.v1.RegisterPluginRequest\x1a5.capital_observatory.plugin.v1.RegisterPluginResponse\x12o\n" +
-	"\x0fMaintainSession\x12,.capital_observatory.plugin.v1.PluginMessage\x1a*.capital_observatory.plugin.v1.CoreMessage(\x010\x01\x12n\n" +
-	"\tHeartbeat\x12/.capital_observatory.plugin.v1.HeartbeatRequest\x1a0.capital_observatory.plugin.v1.HeartbeatResponseB2Z0capital_observatory/pkg/proto/plugin/v1;pluginv1b\x06proto3"
+	"PluginHost\x12a\n" +
+	"\x0eRegisterPlugin\x12&.sonde.plugin.v1.RegisterPluginRequest\x1a'.sonde.plugin.v1.RegisterPluginResponse\x12S\n" +
+	"\x0fMaintainSession\x12\x1e.sonde.plugin.v1.PluginMessage\x1a\x1c.sonde.plugin.v1.CoreMessage(\x010\x01\x12R\n" +
+	"\tHeartbeat\x12!.sonde.plugin.v1.HeartbeatRequest\x1a\".sonde.plugin.v1.HeartbeatResponseB$Z\"sonde/pkg/proto/plugin/v1;pluginv1b\x06proto3"
 
 var (
 	file_plugin_v1_plugin_proto_rawDescOnce sync.Once
@@ -2480,75 +2480,75 @@ func file_plugin_v1_plugin_proto_rawDescGZIP() []byte {
 var file_plugin_v1_plugin_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
 var file_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_plugin_v1_plugin_proto_goTypes = []any{
-	(EntityType)(0),                // 0: capital_observatory.plugin.v1.EntityType
-	(RelationLayer)(0),             // 1: capital_observatory.plugin.v1.RelationLayer
-	(Direction)(0),                 // 2: capital_observatory.plugin.v1.Direction
-	(Severity)(0),                  // 3: capital_observatory.plugin.v1.Severity
-	(QualityGrade)(0),              // 4: capital_observatory.plugin.v1.QualityGrade
-	(SourceClass)(0),               // 5: capital_observatory.plugin.v1.SourceClass
-	(*PluginInfo)(nil),             // 6: capital_observatory.plugin.v1.PluginInfo
-	(*EntityDeclaration)(nil),      // 7: capital_observatory.plugin.v1.EntityDeclaration
-	(*MetricDeclaration)(nil),      // 8: capital_observatory.plugin.v1.MetricDeclaration
-	(*RelationSuggestion)(nil),     // 9: capital_observatory.plugin.v1.RelationSuggestion
-	(*StatisticalEvidence)(nil),    // 10: capital_observatory.plugin.v1.StatisticalEvidence
-	(*RelationReview)(nil),         // 11: capital_observatory.plugin.v1.RelationReview
-	(*RuleSuggestion)(nil),         // 12: capital_observatory.plugin.v1.RuleSuggestion
-	(*RuleReview)(nil),             // 13: capital_observatory.plugin.v1.RuleReview
-	(*PluginCapabilities)(nil),     // 14: capital_observatory.plugin.v1.PluginCapabilities
-	(*RegisterPluginRequest)(nil),  // 15: capital_observatory.plugin.v1.RegisterPluginRequest
-	(*RegisterPluginResponse)(nil), // 16: capital_observatory.plugin.v1.RegisterPluginResponse
-	(*MetricSnapshot)(nil),         // 17: capital_observatory.plugin.v1.MetricSnapshot
-	(*PushSnapshotsRequest)(nil),   // 18: capital_observatory.plugin.v1.PushSnapshotsRequest
-	(*PushSnapshotsResponse)(nil),  // 19: capital_observatory.plugin.v1.PushSnapshotsResponse
-	(*PluginStatus)(nil),           // 20: capital_observatory.plugin.v1.PluginStatus
-	(*HeartbeatRequest)(nil),       // 21: capital_observatory.plugin.v1.HeartbeatRequest
-	(*HeartbeatResponse)(nil),      // 22: capital_observatory.plugin.v1.HeartbeatResponse
-	(*SyncCommand)(nil),            // 23: capital_observatory.plugin.v1.SyncCommand
-	(*BackfillCommand)(nil),        // 24: capital_observatory.plugin.v1.BackfillCommand
-	(*CommandAck)(nil),             // 25: capital_observatory.plugin.v1.CommandAck
-	(*PluginMessage)(nil),          // 26: capital_observatory.plugin.v1.PluginMessage
-	(*CoreMessage)(nil),            // 27: capital_observatory.plugin.v1.CoreMessage
-	(*PushAck)(nil),                // 28: capital_observatory.plugin.v1.PushAck
-	nil,                            // 29: capital_observatory.plugin.v1.EntityDeclaration.MetadataEntry
-	nil,                            // 30: capital_observatory.plugin.v1.MetricDeclaration.TagsEntry
-	nil,                            // 31: capital_observatory.plugin.v1.MetricSnapshot.LabelsEntry
-	nil,                            // 32: capital_observatory.plugin.v1.PluginStatus.RuntimeEntry
+	(EntityType)(0),                // 0: sonde.plugin.v1.EntityType
+	(RelationLayer)(0),             // 1: sonde.plugin.v1.RelationLayer
+	(Direction)(0),                 // 2: sonde.plugin.v1.Direction
+	(Severity)(0),                  // 3: sonde.plugin.v1.Severity
+	(QualityGrade)(0),              // 4: sonde.plugin.v1.QualityGrade
+	(SourceClass)(0),               // 5: sonde.plugin.v1.SourceClass
+	(*PluginInfo)(nil),             // 6: sonde.plugin.v1.PluginInfo
+	(*EntityDeclaration)(nil),      // 7: sonde.plugin.v1.EntityDeclaration
+	(*MetricDeclaration)(nil),      // 8: sonde.plugin.v1.MetricDeclaration
+	(*RelationSuggestion)(nil),     // 9: sonde.plugin.v1.RelationSuggestion
+	(*StatisticalEvidence)(nil),    // 10: sonde.plugin.v1.StatisticalEvidence
+	(*RelationReview)(nil),         // 11: sonde.plugin.v1.RelationReview
+	(*RuleSuggestion)(nil),         // 12: sonde.plugin.v1.RuleSuggestion
+	(*RuleReview)(nil),             // 13: sonde.plugin.v1.RuleReview
+	(*PluginCapabilities)(nil),     // 14: sonde.plugin.v1.PluginCapabilities
+	(*RegisterPluginRequest)(nil),  // 15: sonde.plugin.v1.RegisterPluginRequest
+	(*RegisterPluginResponse)(nil), // 16: sonde.plugin.v1.RegisterPluginResponse
+	(*MetricSnapshot)(nil),         // 17: sonde.plugin.v1.MetricSnapshot
+	(*PushSnapshotsRequest)(nil),   // 18: sonde.plugin.v1.PushSnapshotsRequest
+	(*PushSnapshotsResponse)(nil),  // 19: sonde.plugin.v1.PushSnapshotsResponse
+	(*PluginStatus)(nil),           // 20: sonde.plugin.v1.PluginStatus
+	(*HeartbeatRequest)(nil),       // 21: sonde.plugin.v1.HeartbeatRequest
+	(*HeartbeatResponse)(nil),      // 22: sonde.plugin.v1.HeartbeatResponse
+	(*SyncCommand)(nil),            // 23: sonde.plugin.v1.SyncCommand
+	(*BackfillCommand)(nil),        // 24: sonde.plugin.v1.BackfillCommand
+	(*CommandAck)(nil),             // 25: sonde.plugin.v1.CommandAck
+	(*PluginMessage)(nil),          // 26: sonde.plugin.v1.PluginMessage
+	(*CoreMessage)(nil),            // 27: sonde.plugin.v1.CoreMessage
+	(*PushAck)(nil),                // 28: sonde.plugin.v1.PushAck
+	nil,                            // 29: sonde.plugin.v1.EntityDeclaration.MetadataEntry
+	nil,                            // 30: sonde.plugin.v1.MetricDeclaration.TagsEntry
+	nil,                            // 31: sonde.plugin.v1.MetricSnapshot.LabelsEntry
+	nil,                            // 32: sonde.plugin.v1.PluginStatus.RuntimeEntry
 }
 var file_plugin_v1_plugin_proto_depIdxs = []int32{
-	0,  // 0: capital_observatory.plugin.v1.EntityDeclaration.entity_type:type_name -> capital_observatory.plugin.v1.EntityType
-	29, // 1: capital_observatory.plugin.v1.EntityDeclaration.metadata:type_name -> capital_observatory.plugin.v1.EntityDeclaration.MetadataEntry
-	30, // 2: capital_observatory.plugin.v1.MetricDeclaration.tags:type_name -> capital_observatory.plugin.v1.MetricDeclaration.TagsEntry
-	2,  // 3: capital_observatory.plugin.v1.RelationSuggestion.direction:type_name -> capital_observatory.plugin.v1.Direction
-	1,  // 4: capital_observatory.plugin.v1.RelationSuggestion.suggested_layer:type_name -> capital_observatory.plugin.v1.RelationLayer
-	10, // 5: capital_observatory.plugin.v1.RelationSuggestion.statistical_evidence:type_name -> capital_observatory.plugin.v1.StatisticalEvidence
-	9,  // 6: capital_observatory.plugin.v1.RelationReview.merged_into:type_name -> capital_observatory.plugin.v1.RelationSuggestion
-	3,  // 7: capital_observatory.plugin.v1.RuleSuggestion.severity:type_name -> capital_observatory.plugin.v1.Severity
-	6,  // 8: capital_observatory.plugin.v1.RegisterPluginRequest.info:type_name -> capital_observatory.plugin.v1.PluginInfo
-	7,  // 9: capital_observatory.plugin.v1.RegisterPluginRequest.entities:type_name -> capital_observatory.plugin.v1.EntityDeclaration
-	9,  // 10: capital_observatory.plugin.v1.RegisterPluginRequest.relations:type_name -> capital_observatory.plugin.v1.RelationSuggestion
-	8,  // 11: capital_observatory.plugin.v1.RegisterPluginRequest.metrics:type_name -> capital_observatory.plugin.v1.MetricDeclaration
-	12, // 12: capital_observatory.plugin.v1.RegisterPluginRequest.rules:type_name -> capital_observatory.plugin.v1.RuleSuggestion
-	14, // 13: capital_observatory.plugin.v1.RegisterPluginRequest.capabilities:type_name -> capital_observatory.plugin.v1.PluginCapabilities
-	11, // 14: capital_observatory.plugin.v1.RegisterPluginResponse.reviewed_relations:type_name -> capital_observatory.plugin.v1.RelationReview
-	13, // 15: capital_observatory.plugin.v1.RegisterPluginResponse.reviewed_rules:type_name -> capital_observatory.plugin.v1.RuleReview
-	31, // 16: capital_observatory.plugin.v1.MetricSnapshot.labels:type_name -> capital_observatory.plugin.v1.MetricSnapshot.LabelsEntry
-	4,  // 17: capital_observatory.plugin.v1.MetricSnapshot.quality_grade:type_name -> capital_observatory.plugin.v1.QualityGrade
-	5,  // 18: capital_observatory.plugin.v1.MetricSnapshot.source_class:type_name -> capital_observatory.plugin.v1.SourceClass
-	17, // 19: capital_observatory.plugin.v1.PushSnapshotsRequest.snapshots:type_name -> capital_observatory.plugin.v1.MetricSnapshot
-	32, // 20: capital_observatory.plugin.v1.PluginStatus.runtime:type_name -> capital_observatory.plugin.v1.PluginStatus.RuntimeEntry
-	20, // 21: capital_observatory.plugin.v1.HeartbeatRequest.status:type_name -> capital_observatory.plugin.v1.PluginStatus
-	18, // 22: capital_observatory.plugin.v1.PluginMessage.push_snapshots:type_name -> capital_observatory.plugin.v1.PushSnapshotsRequest
-	21, // 23: capital_observatory.plugin.v1.PluginMessage.heartbeat:type_name -> capital_observatory.plugin.v1.HeartbeatRequest
-	25, // 24: capital_observatory.plugin.v1.PluginMessage.command_ack:type_name -> capital_observatory.plugin.v1.CommandAck
-	23, // 25: capital_observatory.plugin.v1.CoreMessage.sync:type_name -> capital_observatory.plugin.v1.SyncCommand
-	24, // 26: capital_observatory.plugin.v1.CoreMessage.backfill:type_name -> capital_observatory.plugin.v1.BackfillCommand
-	28, // 27: capital_observatory.plugin.v1.CoreMessage.push_ack:type_name -> capital_observatory.plugin.v1.PushAck
-	15, // 28: capital_observatory.plugin.v1.PluginHost.RegisterPlugin:input_type -> capital_observatory.plugin.v1.RegisterPluginRequest
-	26, // 29: capital_observatory.plugin.v1.PluginHost.MaintainSession:input_type -> capital_observatory.plugin.v1.PluginMessage
-	21, // 30: capital_observatory.plugin.v1.PluginHost.Heartbeat:input_type -> capital_observatory.plugin.v1.HeartbeatRequest
-	16, // 31: capital_observatory.plugin.v1.PluginHost.RegisterPlugin:output_type -> capital_observatory.plugin.v1.RegisterPluginResponse
-	27, // 32: capital_observatory.plugin.v1.PluginHost.MaintainSession:output_type -> capital_observatory.plugin.v1.CoreMessage
-	22, // 33: capital_observatory.plugin.v1.PluginHost.Heartbeat:output_type -> capital_observatory.plugin.v1.HeartbeatResponse
+	0,  // 0: sonde.plugin.v1.EntityDeclaration.entity_type:type_name -> sonde.plugin.v1.EntityType
+	29, // 1: sonde.plugin.v1.EntityDeclaration.metadata:type_name -> sonde.plugin.v1.EntityDeclaration.MetadataEntry
+	30, // 2: sonde.plugin.v1.MetricDeclaration.tags:type_name -> sonde.plugin.v1.MetricDeclaration.TagsEntry
+	2,  // 3: sonde.plugin.v1.RelationSuggestion.direction:type_name -> sonde.plugin.v1.Direction
+	1,  // 4: sonde.plugin.v1.RelationSuggestion.suggested_layer:type_name -> sonde.plugin.v1.RelationLayer
+	10, // 5: sonde.plugin.v1.RelationSuggestion.statistical_evidence:type_name -> sonde.plugin.v1.StatisticalEvidence
+	9,  // 6: sonde.plugin.v1.RelationReview.merged_into:type_name -> sonde.plugin.v1.RelationSuggestion
+	3,  // 7: sonde.plugin.v1.RuleSuggestion.severity:type_name -> sonde.plugin.v1.Severity
+	6,  // 8: sonde.plugin.v1.RegisterPluginRequest.info:type_name -> sonde.plugin.v1.PluginInfo
+	7,  // 9: sonde.plugin.v1.RegisterPluginRequest.entities:type_name -> sonde.plugin.v1.EntityDeclaration
+	9,  // 10: sonde.plugin.v1.RegisterPluginRequest.relations:type_name -> sonde.plugin.v1.RelationSuggestion
+	8,  // 11: sonde.plugin.v1.RegisterPluginRequest.metrics:type_name -> sonde.plugin.v1.MetricDeclaration
+	12, // 12: sonde.plugin.v1.RegisterPluginRequest.rules:type_name -> sonde.plugin.v1.RuleSuggestion
+	14, // 13: sonde.plugin.v1.RegisterPluginRequest.capabilities:type_name -> sonde.plugin.v1.PluginCapabilities
+	11, // 14: sonde.plugin.v1.RegisterPluginResponse.reviewed_relations:type_name -> sonde.plugin.v1.RelationReview
+	13, // 15: sonde.plugin.v1.RegisterPluginResponse.reviewed_rules:type_name -> sonde.plugin.v1.RuleReview
+	31, // 16: sonde.plugin.v1.MetricSnapshot.labels:type_name -> sonde.plugin.v1.MetricSnapshot.LabelsEntry
+	4,  // 17: sonde.plugin.v1.MetricSnapshot.quality_grade:type_name -> sonde.plugin.v1.QualityGrade
+	5,  // 18: sonde.plugin.v1.MetricSnapshot.source_class:type_name -> sonde.plugin.v1.SourceClass
+	17, // 19: sonde.plugin.v1.PushSnapshotsRequest.snapshots:type_name -> sonde.plugin.v1.MetricSnapshot
+	32, // 20: sonde.plugin.v1.PluginStatus.runtime:type_name -> sonde.plugin.v1.PluginStatus.RuntimeEntry
+	20, // 21: sonde.plugin.v1.HeartbeatRequest.status:type_name -> sonde.plugin.v1.PluginStatus
+	18, // 22: sonde.plugin.v1.PluginMessage.push_snapshots:type_name -> sonde.plugin.v1.PushSnapshotsRequest
+	21, // 23: sonde.plugin.v1.PluginMessage.heartbeat:type_name -> sonde.plugin.v1.HeartbeatRequest
+	25, // 24: sonde.plugin.v1.PluginMessage.command_ack:type_name -> sonde.plugin.v1.CommandAck
+	23, // 25: sonde.plugin.v1.CoreMessage.sync:type_name -> sonde.plugin.v1.SyncCommand
+	24, // 26: sonde.plugin.v1.CoreMessage.backfill:type_name -> sonde.plugin.v1.BackfillCommand
+	28, // 27: sonde.plugin.v1.CoreMessage.push_ack:type_name -> sonde.plugin.v1.PushAck
+	15, // 28: sonde.plugin.v1.PluginHost.RegisterPlugin:input_type -> sonde.plugin.v1.RegisterPluginRequest
+	26, // 29: sonde.plugin.v1.PluginHost.MaintainSession:input_type -> sonde.plugin.v1.PluginMessage
+	21, // 30: sonde.plugin.v1.PluginHost.Heartbeat:input_type -> sonde.plugin.v1.HeartbeatRequest
+	16, // 31: sonde.plugin.v1.PluginHost.RegisterPlugin:output_type -> sonde.plugin.v1.RegisterPluginResponse
+	27, // 32: sonde.plugin.v1.PluginHost.MaintainSession:output_type -> sonde.plugin.v1.CoreMessage
+	22, // 33: sonde.plugin.v1.PluginHost.Heartbeat:output_type -> sonde.plugin.v1.HeartbeatResponse
 	31, // [31:34] is the sub-list for method output_type
 	28, // [28:31] is the sub-list for method input_type
 	28, // [28:28] is the sub-list for extension type_name

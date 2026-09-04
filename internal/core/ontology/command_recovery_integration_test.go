@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/internal/core/store"
-	pb "capital_observatory/pkg/proto/plugin/v1"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"sonde/internal/core/store"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 func TestIntegration_CommandLeaseConcurrentClaimAndRecovery(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/internal/core/alert"
-	coreevent "capital_observatory/internal/core/event"
+	"sonde/internal/core/alert"
+	coreevent "sonde/internal/core/event"
 )
 
 // maxDispatchAttempts is the attempt ceiling after which an outbox event is

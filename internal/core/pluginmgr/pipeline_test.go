@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/internal/core/detector"
-	"capital_observatory/pkg/model"
+	"sonde/internal/core/detector"
+	"sonde/pkg/model"
 )
 
 // TestTriggerToAlert_BuildsPureAlert validates the triggerToAlert

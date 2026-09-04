@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // statusQuerier is the minimal query surface statusHandler needs. Production
