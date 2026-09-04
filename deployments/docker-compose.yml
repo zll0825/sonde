@@ -96,6 +96,7 @@ services:
       - "8080:8080"
     volumes:
       - cluster_snapshots:/data/clusters
+      - ../web:/app/web:ro
 
   # ETF Plugin: GLD real price, volume, and 3m avg volume proxy via Yahoo Finance.
   etf-plugin:

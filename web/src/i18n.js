@@ -556,25 +556,25 @@ function setLanguage(lang) {
 
     const statusPill = document.getElementById('status-pill');
     if (statusPill) {
-        if (hasFetched) {
-            statusPill.textContent = isOnline ? t('status.online') : t('status.offline');
+        if (typeof hasFetched !== 'undefined' && hasFetched) {
+            statusPill.textContent = (typeof isOnline !== 'undefined' && isOnline) ? t('status.online') : t('status.offline');
         } else {
             statusPill.textContent = t('status.connecting');
         }
     }
 
     // Refresh dynamic views with cached data if available
-    if (statusData) renderStatus(statusData);
-    if (alertsList) {
+    if (typeof statusData !== 'undefined' && statusData) renderStatus(statusData);
+    if (typeof alertsList !== 'undefined' && alertsList) {
         renderAlerts(alertsList);
         if (typeof renderAlertPagination === 'function') renderAlertPagination();
     }
-    if (cachedClusters) renderClusters(cachedClusters);
-    if (cachedRules) renderRules(cachedRules);
-    if (cachedOntology) renderOntologyTable(cachedOntology);
-    if (cachedCandidates) renderCandidates(cachedCandidates, cachedCandidatesUpdatedAt);
-    if (cachedSignalPoints) renderSignalTable(cachedSignalPoints);
-    if (cachedResearch) renderResearchDetail(cachedResearch);
+    if (typeof cachedClusters !== 'undefined' && cachedClusters) renderClusters(cachedClusters);
+    if (typeof cachedRules !== 'undefined' && cachedRules) renderRules(cachedRules);
+    if (typeof cachedOntology !== 'undefined' && cachedOntology) renderOntologyTable(cachedOntology);
+    if (typeof cachedCandidates !== 'undefined' && cachedCandidates) renderCandidates(cachedCandidates, cachedCandidatesUpdatedAt);
+    if (typeof cachedSignalPoints !== 'undefined' && cachedSignalPoints) renderSignalTable(cachedSignalPoints);
+    if (typeof cachedResearch !== 'undefined' && cachedResearch) renderResearchDetail(cachedResearch);
     if (typeof updateTokenUI === 'function') updateTokenUI();
 }
 

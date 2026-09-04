@@ -51,7 +51,13 @@ func main() {
 	if webDir == "" {
 		webDir = "./web"
 	}
-	mux.Handle("/", http.FileServer(http.Dir(webDir)))
+	fileServer := http.FileServer(http.Dir(webDir))
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+		fileServer.ServeHTTP(w, r)
+	}))
 
 	var h http.Handler = mux
 	h = middleware.Auth(h)

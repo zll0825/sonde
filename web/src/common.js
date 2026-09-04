@@ -1,4 +1,6 @@
-const API_BASE = window.location.origin;
+const API_BASE = (typeof window !== 'undefined' && window.location && window.location.origin && window.location.origin !== 'null' && !window.location.origin.startsWith('file'))
+    ? window.location.origin
+    : 'http://localhost:8080';
 const SEVERITIES = ['critical', 'warning', 'info'];
 let trendChart = null;
 
