@@ -98,9 +98,13 @@
                     <div id="alert-detail">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem; flex-wrap:wrap; gap:0.5rem;">
                             <p id="detail-title" style="font-weight:600; margin:0;"></p>
-                            <span id="detail-status-badge" class="alert-status-badge" style="display:none;"></span>
+                            <div style="display:flex; align-items:center; gap:0.3rem;">
+                                <span id="detail-verdict-badge" class="verdict-badge" style="display:none;"></span>
+                                <span id="detail-status-badge" class="alert-status-badge" style="display:none;"></span>
+                            </div>
                         </div>
                         <p id="detail-summary" style="font-size:0.85rem; color:#8892b0; margin-bottom:0.5rem;"></p>
+                        <div id="alert-verdict-box" style="display:none;"></div>
                         <div id="alert-actions-bar" class="alert-actions-bar" style="display:none;"></div>
                         <div id="trend-chart"></div>
                         <div id="relations-section" style="margin-top:1rem;">

@@ -12,9 +12,12 @@ import (
 
 func TestAlertsHandlerReturnsFrozenProvenanceAndDedupAudit(t *testing.T) {
 	triggeredAt := time.Date(2026, 8, 7, 2, 3, 4, 0, time.UTC)
+	verdict := "worth_researching"
+	rationale := "clear anomaly"
 	db := (&fakeDB{}).stub(newFakeRows([]any{
 		"alt_1", "title", "summary", "warning", "metric.id", triggeredAt, "active",
 		"yahoo_finance", "real", 2, nil, nil,
+		&verdict, &rationale, &triggeredAt,
 	}))
 	defer db.exhausted(t)
 
@@ -44,6 +47,9 @@ func TestAlertsHandlerReturnsFrozenProvenanceAndDedupAudit(t *testing.T) {
 	if _, ok := got[0]["resolved_at"]; !ok {
 		t.Error("resolved_at field is missing")
 	}
+	if got[0]["latest_verdict"] != "worth_researching" {
+		t.Errorf("latest_verdict = %v, want worth_researching", got[0]["latest_verdict"])
+	}
 }
 
 func TestAlertsHandlerFiltersByStatus(t *testing.T) {
@@ -54,6 +60,7 @@ func TestAlertsHandlerFiltersByStatus(t *testing.T) {
 	db := (&fakeDB{}).stub(newFakeRows([]any{
 		"alt_res", "resolved title", "resolved summary", "info", "metric.id", triggeredAt, "resolved",
 		"fred", "real", 1, nil, &resolvedAt,
+		nil, nil, nil,
 	}))
 	defer db.exhausted(t)
 	alertsHandler(db).ServeHTTP(rec, req)
@@ -139,9 +146,11 @@ func TestAlertsHandlerPagination(t *testing.T) {
 		stub(newFakeRows([]any{
 			"alt_res1", "title 1", "sum 1", "warning", "metric.id", triggeredAt, "resolved",
 			"fred", "real", 1, nil, &resolvedAt,
+			nil, nil, nil,
 		}, []any{
 			"alt_res2", "title 2", "sum 2", "info", "metric.id", triggeredAt, "resolved",
 			"fred", "real", 1, nil, &resolvedAt,
+			nil, nil, nil,
 		}))
 	defer db.exhausted(t)
 
@@ -189,6 +198,7 @@ func TestAlertsHandlerPagination(t *testing.T) {
 		stub(newFakeRows([]any{
 			"alt_all1", "title 1", "sum 1", "warning", "metric.id", triggeredAt, "active",
 			"fred", "real", 1, nil, nil,
+			nil, nil, nil,
 		}))
 	defer dbArray.exhausted(t)
 

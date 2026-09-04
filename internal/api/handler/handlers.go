@@ -119,37 +119,67 @@ func alertsHandler(db statusQuerier) http.HandlerFunc {
 		if targetStatus == "all" {
 			if isPaged {
 				rows, err = db.Query(r.Context(), `
-					SELECT id, title, summary, severity, metric_id, triggered_at, status,
-					       source_provider, source_class, dedup_count, last_deduplicated_at,
-					       resolved_at
-					FROM alerts
-					ORDER BY triggered_at DESC LIMIT $1 OFFSET $2
+					SELECT a.id, a.title, a.summary, a.severity, a.metric_id, a.triggered_at, a.status,
+					       a.source_provider, a.source_class, a.dedup_count, a.last_deduplicated_at,
+					       a.resolved_at, fb.verdict, fb.rationale, fb.created_at
+					FROM alerts a
+					LEFT JOIN LATERAL (
+						SELECT verdict, rationale, created_at
+						FROM research_feedbacks rf
+						WHERE rf.alert_id = a.id
+						ORDER BY created_at DESC
+						LIMIT 1
+					) fb ON true
+					ORDER BY a.triggered_at DESC LIMIT $1 OFFSET $2
 				`, limit, offset)
 			} else {
 				rows, err = db.Query(r.Context(), `
-					SELECT id, title, summary, severity, metric_id, triggered_at, status,
-					       source_provider, source_class, dedup_count, last_deduplicated_at,
-					       resolved_at
-					FROM alerts
-					ORDER BY triggered_at DESC LIMIT 100
+					SELECT a.id, a.title, a.summary, a.severity, a.metric_id, a.triggered_at, a.status,
+					       a.source_provider, a.source_class, a.dedup_count, a.last_deduplicated_at,
+					       a.resolved_at, fb.verdict, fb.rationale, fb.created_at
+					FROM alerts a
+					LEFT JOIN LATERAL (
+						SELECT verdict, rationale, created_at
+						FROM research_feedbacks rf
+						WHERE rf.alert_id = a.id
+						ORDER BY created_at DESC
+						LIMIT 1
+					) fb ON true
+					ORDER BY a.triggered_at DESC LIMIT 100
 				`)
 			}
 		} else {
 			if isPaged {
 				rows, err = db.Query(r.Context(), `
-					SELECT id, title, summary, severity, metric_id, triggered_at, status,
-					       source_provider, source_class, dedup_count, last_deduplicated_at,
-					       resolved_at
-					FROM alerts WHERE status = $1
-					ORDER BY triggered_at DESC LIMIT $2 OFFSET $3
+					SELECT a.id, a.title, a.summary, a.severity, a.metric_id, a.triggered_at, a.status,
+					       a.source_provider, a.source_class, a.dedup_count, a.last_deduplicated_at,
+					       a.resolved_at, fb.verdict, fb.rationale, fb.created_at
+					FROM alerts a
+					LEFT JOIN LATERAL (
+						SELECT verdict, rationale, created_at
+						FROM research_feedbacks rf
+						WHERE rf.alert_id = a.id
+						ORDER BY created_at DESC
+						LIMIT 1
+					) fb ON true
+					WHERE a.status = $1
+					ORDER BY a.triggered_at DESC LIMIT $2 OFFSET $3
 				`, targetStatus, limit, offset)
 			} else {
 				rows, err = db.Query(r.Context(), `
-					SELECT id, title, summary, severity, metric_id, triggered_at, status,
-					       source_provider, source_class, dedup_count, last_deduplicated_at,
-					       resolved_at
-					FROM alerts WHERE status = $1
-					ORDER BY triggered_at DESC LIMIT 100
+					SELECT a.id, a.title, a.summary, a.severity, a.metric_id, a.triggered_at, a.status,
+					       a.source_provider, a.source_class, a.dedup_count, a.last_deduplicated_at,
+					       a.resolved_at, fb.verdict, fb.rationale, fb.created_at
+					FROM alerts a
+					LEFT JOIN LATERAL (
+						SELECT verdict, rationale, created_at
+						FROM research_feedbacks rf
+						WHERE rf.alert_id = a.id
+						ORDER BY created_at DESC
+						LIMIT 1
+					) fb ON true
+					WHERE a.status = $1
+					ORDER BY a.triggered_at DESC LIMIT 100
 				`, targetStatus)
 			}
 		}
@@ -170,9 +200,12 @@ func alertsHandler(db statusQuerier) http.HandlerFunc {
 				dedupCount                                     int
 				lastDeduplicatedAt                             *time.Time
 				resolvedAt                                     *time.Time
+				latestVerdict, latestRationale                 *string
+				latestFeedbackAt                               *time.Time
 			)
 			if err := rows.Scan(&id, &title, &summary, &severity, &metricID, &triggeredAt, &status,
-				&sourceProvider, &sourceClass, &dedupCount, &lastDeduplicatedAt, &resolvedAt); err != nil {
+				&sourceProvider, &sourceClass, &dedupCount, &lastDeduplicatedAt, &resolvedAt,
+				&latestVerdict, &latestRationale, &latestFeedbackAt); err != nil {
 				log.Error().Err(err).Msg("scan alert row failed")
 				continue
 			}
@@ -189,6 +222,9 @@ func alertsHandler(db statusQuerier) http.HandlerFunc {
 				"dedup_count":          dedupCount,
 				"last_deduplicated_at": lastDeduplicatedAt,
 				"resolved_at":          resolvedAt,
+				"latest_verdict":       latestVerdict,
+				"latest_rationale":     latestRationale,
+				"latest_feedback_at":   latestFeedbackAt,
 			})
 		}
 		if err := rows.Err(); err != nil {

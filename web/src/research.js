@@ -2,34 +2,55 @@
 // ══════════════════════════════════════════════════════════════════════
 
 let researchChart = null;
+let cachedResearchFeedbacks = [];
 
-async function loadResearch() {
+async function fetchAlertFeedbacks(alertID) {
+    if (!alertID) return [];
+    try {
+        const resp = await fetch(API_BASE + '/api/research/feedback?alert_id=' + encodeURIComponent(alertID));
+        if (!resp.ok) return [];
+        return await resp.json();
+    } catch {
+        return [];
+    }
+}
+
+async function loadResearch(explicitAlertId) {
     const alertIDInput = document.getElementById('research-alert-id');
-    const alertID = alertIDInput.value.trim();
+    const alertID = (explicitAlertId || (alertIDInput && alertIDInput.value) || '').trim();
     if (!alertID) {
         showToast(t('research.prompt_enter_id'), 'warn');
         return;
     }
+    if (alertIDInput) alertIDInput.value = alertID;
     const detail = document.getElementById('research-detail');
     const btn = document.getElementById('btn-load-research');
-    btn.disabled = true;
-    btn.textContent = t('research.loading_btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = t('research.loading_btn');
+    }
     detail.innerHTML = '<div class="empty">' + esc(t('research.loading_data')) + '</div>';
     try {
-        const resp = await fetch(API_BASE + '/api/research/' + encodeURIComponent(alertID));
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        const rc = await resp.json();
+        const [respResearch, feedbacks] = await Promise.all([
+            fetch(API_BASE + '/api/research/' + encodeURIComponent(alertID)),
+            fetchAlertFeedbacks(alertID)
+        ]);
+        if (!respResearch.ok) throw new Error('HTTP ' + respResearch.status);
+        const rc = await respResearch.json();
         cachedResearch = rc;
-        renderResearchDetail(rc);
+        cachedResearchFeedbacks = Array.isArray(feedbacks) ? feedbacks : [];
+        renderResearchDetail(rc, cachedResearchFeedbacks);
     } catch (err) {
         detail.innerHTML = '<div class="empty">' + esc(t('common.error', { err: err.message })) + '</div>';
     } finally {
-        btn.disabled = false;
-        btn.textContent = t('research.btn_load');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = t('research.btn_load');
+        }
     }
 }
 
-function renderResearchDetail(rc) {
+function renderResearchDetail(rc, feedbacks) {
     const detail = document.getElementById('research-detail');
     const sections = [];
 
@@ -67,6 +88,135 @@ function renderResearchDetail(rc) {
     detailCard.appendChild(severitySpan);
 
     sections.push(detailCard);
+
+    // Current Verdict & Rationale Card
+    const fbList = feedbacks !== undefined ? (Array.isArray(feedbacks) ? feedbacks : []) : (cachedResearchFeedbacks || []);
+    const verdictDisplayCard = document.createElement('div');
+    verdictDisplayCard.className = 'card verdict-display-card';
+
+    if (fbList.length > 0) {
+        const latest = fbList[0];
+        verdictDisplayCard.classList.add('verdict-card-' + latest.verdict);
+
+        const hCurrentVerdict = document.createElement('h3');
+        hCurrentVerdict.style.cssText = 'color:#64ffda; margin-bottom:0.75rem; font-size:0.92rem; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;';
+
+        const hTitleWrap = document.createElement('div');
+        hTitleWrap.style.cssText = 'display:flex; align-items:center; gap:0.5rem;';
+
+        const titleSpan = document.createElement('span');
+        titleSpan.textContent = t('research.current_verdict_title');
+        hTitleWrap.appendChild(titleSpan);
+
+        const vBadge = document.createElement('span');
+        vBadge.className = 'verdict-badge verdict-' + latest.verdict;
+        vBadge.textContent = t('research.verdict_badge_' + latest.verdict);
+        hTitleWrap.appendChild(vBadge);
+        hCurrentVerdict.appendChild(hTitleWrap);
+
+        const timeSpan = document.createElement('span');
+        timeSpan.style.cssText = 'font-size:0.75rem; color:#8892b0; font-weight:normal;';
+        timeSpan.textContent = t('research.eval_meta', {
+            time: new Date(latest.created_at).toLocaleString(),
+            user: latest.user_id || 'anonymous'
+        });
+        hCurrentVerdict.appendChild(timeSpan);
+        verdictDisplayCard.appendChild(hCurrentVerdict);
+
+        // Rationale quote
+        const pRat = document.createElement('div');
+        pRat.style.cssText = 'background:#162035; border-left:3px solid #64ffda; padding:0.6rem 0.8rem; border-radius:4px; font-size:0.84rem; color:#e0e6f0; margin-bottom:0.75rem; white-space:pre-wrap;';
+        if (latest.rationale && latest.rationale.trim()) {
+            pRat.textContent = latest.rationale;
+        } else {
+            pRat.style.color = '#8892b0';
+            pRat.style.fontStyle = 'italic';
+            pRat.textContent = t('research.no_rationale');
+        }
+        verdictDisplayCard.appendChild(pRat);
+
+        // Action tip
+        const tipBox = document.createElement('div');
+        tipBox.style.cssText = 'display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; font-size:0.78rem; color:#a8b2d1;';
+        const tipText = document.createElement('span');
+        if (latest.verdict === 'worth_researching') {
+            tipText.textContent = t('research.worth_tip');
+        } else if (latest.verdict === 'irrelevant') {
+            tipText.textContent = t('research.irrelevant_tip');
+        } else {
+            tipText.textContent = t('research.duplicate_tip');
+        }
+        tipBox.appendChild(tipText);
+
+        if (latest.verdict === 'irrelevant') {
+            const btnGotoResolve = document.createElement('button');
+            btnGotoResolve.type = 'button';
+            btnGotoResolve.className = 'alert-page-btn';
+            btnGotoResolve.style.cssText = 'background:rgba(245, 158, 11, 0.2); border-color:#f59e0b; color:#f59e0b; font-weight:600; cursor:pointer;';
+            btnGotoResolve.textContent = t('research.btn_goto_resolve');
+            btnGotoResolve.addEventListener('click', () => {
+                switchTab('alerts', { alertId: rc.alert_id });
+            });
+            tipBox.appendChild(btnGotoResolve);
+        }
+        verdictDisplayCard.appendChild(tipBox);
+
+        // History list if > 1
+        if (fbList.length > 1) {
+            const histTitle = document.createElement('h4');
+            histTitle.style.cssText = 'color:#8892b0; margin-top:1rem; margin-bottom:0.4rem; font-size:0.8rem;';
+            histTitle.textContent = t('research.verdict_history_title', { n: fbList.length });
+            verdictDisplayCard.appendChild(histTitle);
+
+            const histWrap = document.createElement('div');
+            histWrap.style.cssText = 'background:#0f1523; border:1px solid #1a2340; border-radius:6px; padding:0.4rem 0.8rem;';
+            for (let i = 0; i < fbList.length; i++) {
+                const item = fbList[i];
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'verdict-history-item';
+
+                const leftDiv = document.createElement('div');
+                leftDiv.style.cssText = 'display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;';
+
+                const seq = document.createElement('span');
+                seq.style.cssText = 'color:#64ffda; font-size:0.75rem; font-weight:600;';
+                seq.textContent = '#' + (fbList.length - i);
+                leftDiv.appendChild(seq);
+
+                const itemBadge = document.createElement('span');
+                itemBadge.className = 'verdict-badge verdict-' + item.verdict;
+                itemBadge.textContent = t('research.verdict_badge_' + item.verdict);
+                leftDiv.appendChild(itemBadge);
+
+                if (item.rationale) {
+                    const rSpan = document.createElement('span');
+                    rSpan.style.cssText = 'color:#ccd6f6; font-size:0.78rem;';
+                    rSpan.textContent = '— ' + item.rationale;
+                    leftDiv.appendChild(rSpan);
+                }
+                itemDiv.appendChild(leftDiv);
+
+                const rightTime = document.createElement('span');
+                rightTime.style.cssText = 'color:#6b7280; font-size:0.72rem; white-space:nowrap; margin-left:0.5rem;';
+                rightTime.textContent = new Date(item.created_at).toLocaleString();
+                itemDiv.appendChild(rightTime);
+
+                histWrap.appendChild(itemDiv);
+            }
+            verdictDisplayCard.appendChild(histWrap);
+        }
+    } else {
+        const hEmptyVerdict = document.createElement('h3');
+        hEmptyVerdict.style.cssText = 'color:#8892b0; font-size:0.88rem; margin-bottom:0.25rem;';
+        hEmptyVerdict.textContent = t('research.current_verdict_title');
+        verdictDisplayCard.appendChild(hEmptyVerdict);
+
+        const pEmpty = document.createElement('p');
+        pEmpty.style.cssText = 'font-size:0.8rem; color:#6b7280; margin:0;';
+        pEmpty.textContent = t('research.verdict_none');
+        verdictDisplayCard.appendChild(pEmpty);
+    }
+    sections.push(verdictDisplayCard);
 
     // Timeline chart
     if (rc.recent_trend && rc.recent_trend.length > 0) {
@@ -190,7 +340,9 @@ function renderResearchDetail(rc) {
     verdictCard.style.cssText = 'margin-bottom:1.5rem;';
     const hVerdict = document.createElement('h3');
     hVerdict.style.cssText = 'color:#64ffda; margin-bottom:0.5rem; font-size:0.9rem;';
-    hVerdict.textContent = t('research.feedback_title');
+    hVerdict.textContent = (fbList && fbList.length > 0)
+        ? t('research.form_title_update')
+        : t('research.feedback_title');
     verdictCard.appendChild(hVerdict);
 
     const labelRationale = document.createElement('label');
@@ -246,9 +398,10 @@ function renderResearchDetail(rc) {
             }
             const verdictLabel = verdict === 'worth_researching' ? t('research.verdict_worth')
                 : (verdict === 'irrelevant' ? t('research.verdict_irrelevant') : t('research.verdict_duplicate'));
-            statusP.textContent = t('research.submitted', { verdict: verdictLabel });
-            statusP.style.color = '#2dd4a7';
             showToast(t('research.submitted', { verdict: verdictLabel }), 'success');
+            const newFeedbacks = await fetchAlertFeedbacks(rc.alert_id);
+            cachedResearchFeedbacks = newFeedbacks;
+            renderResearchDetail(rc, newFeedbacks);
         } catch (err) {
             statusP.textContent = t('common.error', { err: err.message });
             statusP.style.color = '#e85a5a';

@@ -69,10 +69,14 @@ function renderAlerts(alerts) {
         const sev = SEVERITIES.includes(a.severity) ? a.severity : 'info';
         const st = a.status || 'active';
         const statusBadge = '<span class="alert-status-badge status-' + esc(st) + '">' + esc(t('alerts.status_' + st)) + '</span>';
+        let verdictBadge = '';
+        if (a.latest_verdict) {
+            verdictBadge = '<span class="verdict-badge verdict-' + esc(a.latest_verdict) + '">' + esc(t('alerts.verdict_' + a.latest_verdict)) + '</span>';
+        }
         return '<div class="alert-item ' + sev + '" data-alert-id="' + esc(a.id) + '">' +
             '<div style="display:flex; justify-content:space-between; align-items:center;">' +
             '<div class="alert-title">' + esc(a.title) + '</div>' +
-            statusBadge +
+            '<div style="display:flex; align-items:center;">' + verdictBadge + statusBadge + '</div>' +
             '</div>' +
             (a.summary ? '<div class="alert-summary">' + esc(a.summary) + '</div>' : '') +
             '<div class="alert-meta">' + esc(a.metric_id) + ' &middot; ' + esc(a.severity) + ' &middot; ' + new Date(a.triggered_at).toLocaleString() + '</div>' +
@@ -91,13 +95,23 @@ async function showAlertDetail(alertID) {
     renderAlertDetailStatus(currentAlert || { id: alertID, status: 'active' });
 
     try {
-        const resp = await fetch(API_BASE + '/api/research/' + encodeURIComponent(alertID));
-        if (!resp.ok) {
+        const [respResearch, respFeedback] = await Promise.all([
+            fetch(API_BASE + '/api/research/' + encodeURIComponent(alertID)),
+            fetch(API_BASE + '/api/research/feedback?alert_id=' + encodeURIComponent(alertID)).catch(() => null)
+        ]);
+        let feedbacks = [];
+        if (respFeedback && respFeedback.ok) {
+            feedbacks = await respFeedback.json().catch(() => []);
+        }
+
+        renderAlertDetailVerdict(alertID, currentAlert, feedbacks);
+
+        if (!respResearch.ok) {
             document.getElementById('detail-title').textContent = alertID;
             document.getElementById('detail-summary').textContent = t('alerts.research_pending');
             return;
         }
-        const rc = await resp.json();
+        const rc = await respResearch.json();
         document.getElementById('detail-title').textContent = rc.alert_id || alertID;
         const metricDisplayName = rc.metric_name || rc.metric_id || '—';
         document.getElementById('detail-summary').innerHTML = esc(t('alerts.research_summary', {
@@ -133,6 +147,125 @@ async function showAlertDetail(alertID) {
     } catch (err) {
         document.getElementById('detail-title').textContent = alertID;
         document.getElementById('detail-summary').textContent = t('alerts.error_detail');
+    }
+}
+
+function renderAlertDetailVerdict(alertID, currentAlert, feedbacks) {
+    const verdictBadge = document.getElementById('detail-verdict-badge');
+    const verdictBox = document.getElementById('alert-verdict-box');
+    if (!verdictBox) return;
+
+    const fbList = Array.isArray(feedbacks) ? feedbacks : [];
+    const latest = fbList.length > 0 ? fbList[0] : null;
+    const verdict = latest ? latest.verdict : (currentAlert && currentAlert.latest_verdict);
+
+    if (verdictBadge) {
+        if (verdict) {
+            verdictBadge.textContent = t('alerts.verdict_' + verdict);
+            verdictBadge.className = 'verdict-badge verdict-' + verdict;
+            verdictBadge.style.display = 'inline-block';
+        } else {
+            verdictBadge.textContent = t('alerts.verdict_none');
+            verdictBadge.className = 'verdict-badge verdict-none';
+            verdictBadge.style.display = 'inline-block';
+        }
+    }
+
+    const currentStatus = (currentAlert && currentAlert.status) || 'active';
+
+    if (latest) {
+        verdictBox.style.display = 'block';
+        verdictBox.innerHTML = '';
+
+        const card = document.createElement('div');
+        card.className = 'verdict-display-card verdict-card-' + latest.verdict;
+        card.style.cssText = 'margin: 0.5rem 0 1rem 0; padding: 0.75rem 0.9rem;';
+
+        const topRow = document.createElement('div');
+        topRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem; flex-wrap:wrap; gap:0.4rem;';
+
+        const titleDiv = document.createElement('div');
+        titleDiv.style.cssText = 'display:flex; align-items:center; gap:0.4rem;';
+        const strongTitle = document.createElement('strong');
+        strongTitle.style.cssText = 'font-size:0.84rem; color:#64ffda;';
+        strongTitle.textContent = t('alerts.verdict_label') + ':';
+        titleDiv.appendChild(strongTitle);
+
+        const badgeSpan = document.createElement('span');
+        badgeSpan.className = 'verdict-badge verdict-' + latest.verdict;
+        badgeSpan.textContent = t('research.verdict_badge_' + latest.verdict);
+        titleDiv.appendChild(badgeSpan);
+        topRow.appendChild(titleDiv);
+
+        const timeSpan = document.createElement('span');
+        timeSpan.style.cssText = 'font-size:0.72rem; color:#8892b0;';
+        timeSpan.textContent = t('alerts.verdict_evaluated_at', { time: new Date(latest.created_at).toLocaleString() });
+        topRow.appendChild(timeSpan);
+        card.appendChild(topRow);
+
+        if (latest.rationale && latest.rationale.trim()) {
+            const ratDiv = document.createElement('div');
+            ratDiv.style.cssText = 'font-size:0.8rem; color:#ccd6f6; margin-bottom:0.4rem; background:#162035; padding:0.4rem 0.6rem; border-left:3px solid #64ffda; border-radius:3px; white-space:pre-wrap;';
+            ratDiv.textContent = latest.rationale;
+            card.appendChild(ratDiv);
+        }
+
+        if (latest.verdict === 'irrelevant' && currentStatus !== 'resolved') {
+            const suggestBox = document.createElement('div');
+            suggestBox.className = 'verdict-suggest-box';
+            suggestBox.style.cssText = 'margin-top:0.4rem;';
+
+            const suggestText = document.createElement('span');
+            suggestText.style.cssText = 'font-size:0.78rem; color:#f59e0b;';
+            suggestText.textContent = t('alerts.verdict_suggest_resolve');
+            suggestBox.appendChild(suggestText);
+
+            const btnResolveNow = document.createElement('button');
+            btnResolveNow.type = 'button';
+            btnResolveNow.className = 'alert-action-btn btn-resolve';
+            btnResolveNow.style.cssText = 'padding:0.25rem 0.6rem; font-size:0.75rem; cursor:pointer;';
+            btnResolveNow.textContent = t('alerts.verdict_btn_resolve_now');
+            btnResolveNow.addEventListener('click', () => updateAlertStatus(alertID, 'resolved'));
+            suggestBox.appendChild(btnResolveNow);
+
+            card.appendChild(suggestBox);
+        }
+
+        const bottomRow = document.createElement('div');
+        bottomRow.style.cssText = 'display:flex; justify-content:flex-end; margin-top:0.3rem;';
+        const linkDetail = document.createElement('span');
+        linkDetail.className = 'clickable-link';
+        linkDetail.style.cssText = 'font-size:0.78rem; color:#64ffda;';
+        linkDetail.textContent = t('alerts.verdict_btn_view_research');
+        linkDetail.addEventListener('click', () => {
+            switchTab('research', { alertId: alertID });
+        });
+        bottomRow.appendChild(linkDetail);
+        card.appendChild(bottomRow);
+
+        verdictBox.appendChild(card);
+    } else {
+        verdictBox.style.display = 'block';
+        verdictBox.innerHTML = '';
+
+        const emptyBox = document.createElement('div');
+        emptyBox.style.cssText = 'display:flex; justify-content:space-between; align-items:center; background:#111827; border:1px dashed #2a3450; border-radius:6px; padding:0.5rem 0.75rem; margin:0.5rem 0 1rem 0;';
+
+        const unreviewedText = document.createElement('span');
+        unreviewedText.style.cssText = 'font-size:0.78rem; color:#8892b0;';
+        unreviewedText.textContent = t('alerts.verdict_none');
+        emptyBox.appendChild(unreviewedText);
+
+        const linkGotoEval = document.createElement('span');
+        linkGotoEval.className = 'clickable-link';
+        linkGotoEval.style.cssText = 'font-size:0.78rem; color:#64ffda;';
+        linkGotoEval.textContent = t('alerts.verdict_btn_goto_research');
+        linkGotoEval.addEventListener('click', () => {
+            switchTab('research', { alertId: alertID });
+        });
+        emptyBox.appendChild(linkGotoEval);
+
+        verdictBox.appendChild(emptyBox);
     }
 }
 
