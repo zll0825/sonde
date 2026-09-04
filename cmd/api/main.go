@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -51,13 +52,7 @@ func main() {
 	if webDir == "" {
 		webDir = "./web"
 	}
-	fileServer := http.FileServer(http.Dir(webDir))
-	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-		w.Header().Set("Pragma", "no-cache")
-		w.Header().Set("Expires", "0")
-		fileServer.ServeHTTP(w, r)
-	}))
+	registerStaticRoutes(mux, webDir)
 
 	var h http.Handler = mux
 	h = middleware.Auth(h)
@@ -106,4 +101,22 @@ func initClusterSnapStore() *coreevent.ClusterSnapshotStore {
 		return nil
 	}
 	return store
+}
+
+func registerStaticRoutes(mux *http.ServeMux, webDir string) {
+	fileServer := http.FileServer(http.Dir(webDir))
+	serveApp := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+		http.ServeFile(w, r, filepath.Join(webDir, "app.html"))
+	}
+	mux.HandleFunc("/app", serveApp)
+	mux.HandleFunc("/app/", serveApp)
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+		fileServer.ServeHTTP(w, r)
+	}))
 }

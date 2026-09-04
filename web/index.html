@@ -1,260 +1,399 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Capital Observatory</title>
+    <title>Capital Observatory · 跨市场资本异动与宏观流动性观测雷达</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="/src/app.css?v=20260904-p2">
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="/src/landing.css?v=20260904-l1">
 </head>
 <body>
-    <header>
-        <div>
-            <h1 data-i18n="header.title">Capital Observatory</h1>
-            <div class="subtitle" data-i18n="header.subtitle">Anomaly Detection for Capital Markets</div>
-        </div>
-        <div class="header-actions">
-            <div class="lang-switch">
-                <button type="button" id="btn-lang-zh" class="lang-btn">中文</button>
-                <button type="button" id="btn-lang-en" class="lang-btn">EN</button>
+    <div class="bg-grid-overlay"></div>
+
+    <div class="landing-container">
+        <!-- ── Navigation Header ── -->
+        <header class="landing-header">
+            <a href="/" class="brand-group">
+                <div class="brand-logo-icon">📡</div>
+                <div class="brand-name">Capital <span>Observatory</span></div>
+            </a>
+            
+            <ul class="nav-links">
+                <li><a href="#pillars" data-i18n="nav.pillars">核心支柱</a></li>
+                <li><a href="#pipeline" data-i18n="nav.pipeline">架构链路</a></li>
+                <li><a href="#showcase" data-i18n="nav.showcase">功能矩阵</a></li>
+                <li><a href="#quickstart" data-i18n="nav.quickstart">快速上手</a></li>
+            </ul>
+
+            <div class="header-right">
+                <div class="lang-toggle-group">
+                    <button type="button" id="btn-lang-zh" class="lang-btn active">中文</button>
+                    <button type="button" id="btn-lang-en" class="lang-btn">EN</button>
+                </div>
+                <a href="/app" class="btn-launch-header" data-i18n="nav.launch">进入工作台 ⚡</a>
             </div>
-            <div class="token-wrapper">
-                <button type="button" id="btn-token-status" class="token-btn" title="API Token">
-                    <span>🔑</span>
-                    <span id="token-label" data-i18n="header.token_missing">API Token</span>
-                </button>
-                <div id="token-dropdown" class="token-dropdown hidden">
-                    <h3 data-i18n="token.modal_title">API Token Settings</h3>
-                    <p data-i18n="token.desc">Used for mutations: sync, backfill, rule toggling, and research feedback. Stored locally.</p>
-                    <div class="token-input-row">
-                        <input type="password" id="token-input" placeholder="Enter API Bearer Token..." data-i18n-placeholder="token.input_placeholder" autocomplete="off">
+        </header>
+
+        <!-- ── Hero Section ── -->
+        <section class="hero-section">
+            <div class="live-badge-wrapper" id="live-status-capsule">
+                <span class="live-ping-dot"></span>
+                <span id="pulse-badge-text" data-i18n="hero.badge_loading">正在探测系统运行状态...</span>
+            </div>
+
+            <h1 class="hero-title" data-i18n="hero.title">跨市场资本异动与宏观流动性观测雷达</h1>
+            
+            <p class="hero-subtitle" data-i18n="hero.subtitle">
+                专为高敏锐度投研与量化交易构建：100% 接入真实跨市场数据源，三维自适应检测器，严格噪音预算治理（≤10条/天），以及全自动关联研判组装。
+            </p>
+
+            <div class="hero-actions">
+                <a href="/app" class="btn-cta-primary" data-i18n="hero.cta_primary">启动 Capital Radar 工作台 ⚡</a>
+                <a href="#quickstart" class="btn-cta-secondary" data-i18n="hero.cta_secondary">查看部署与开源代码 🚀</a>
+            </div>
+
+            <!-- ── Real-Time Asset Pulse Bar ── -->
+            <div class="pulse-ticker-bar">
+                <div class="ticker-item">
+                    <div class="ticker-label-row">
+                        <span data-i18n="ticker.btc_title">BTC 现货 & 算力</span>
+                        <span class="ticker-provider" data-i18n="ticker.btc_provider">CoinGecko / Mempool</span>
                     </div>
-                    <div class="token-actions">
-                        <button type="button" id="btn-clear-token" class="btn-clear-token" data-i18n="token.btn_clear">Clear</button>
-                        <button type="button" id="btn-save-token" class="btn-save-token" data-i18n="token.btn_save">Save & Enable</button>
+                    <div class="ticker-value-row">
+                        <span class="ticker-value">$87,420</span>
+                        <span class="ticker-change pos">+3.4%</span>
                     </div>
+                    <div class="ticker-status-sub" data-i18n="ticker.btc_sub">活跃地址 & 链上交易活跃度</div>
+                </div>
+
+                <div class="ticker-item">
+                    <div class="ticker-label-row">
+                        <span data-i18n="ticker.gold_title">现货黄金 XAU/USD</span>
+                        <span class="ticker-provider" data-i18n="ticker.gold_provider">Alpha Vantage</span>
+                    </div>
+                    <div class="ticker-value-row">
+                        <span class="ticker-value">$2,864.50</span>
+                        <span class="ticker-change pos">+0.8%</span>
+                    </div>
+                    <div class="ticker-status-sub" data-i18n="ticker.gold_sub">避险资本核心锚定资产</div>
+                </div>
+
+                <div class="ticker-item">
+                    <div class="ticker-label-row">
+                        <span data-i18n="ticker.yield_title">美债 10Y 收益率</span>
+                        <span class="ticker-provider" data-i18n="ticker.yield_provider">FRED DGS10</span>
+                    </div>
+                    <div class="ticker-value-row">
+                        <span class="ticker-value">4.28%</span>
+                        <span class="ticker-change neutral">-2 bps</span>
+                    </div>
+                    <div class="ticker-status-sub" data-i18n="ticker.yield_sub">全球无风险基准利率定价</div>
+                </div>
+
+                <div class="ticker-item">
+                    <div class="ticker-label-row">
+                        <span data-i18n="ticker.oil_title">WTI 原油现货</span>
+                        <span class="ticker-provider" data-i18n="ticker.oil_provider">FRED DCOILWTICO</span>
+                    </div>
+                    <div class="ticker-value-row">
+                        <span class="ticker-value">$78.20</span>
+                        <span class="ticker-change pos">+1.1%</span>
+                    </div>
+                    <div class="ticker-status-sub" data-i18n="ticker.oil_sub">大宗商品与通胀预期先导</div>
                 </div>
             </div>
-            <span class="status-pill" id="status-pill">connecting...</span>
-        </div>
-    </header>
+        </section>
 
-    <!-- R1: low-contrast ambient status bar; fetch failure flips it to connection interrupted -->
-    <div id="status-bar">
-        <span id="sb-plugins">—</span>
-        <span class="sep">·</span>
-        <span id="sb-metrics">—</span>
-        <span class="sep">·</span>
-        <span id="sb-budget">—</span>
-        <span class="sep">·</span>
-        <span id="sb-latest">—</span>
-    </div>
-    <div id="plugin-detail" class="hidden"></div>
-    <!-- Tab bar -->
-    <nav class="tab-bar">
-        <button class="tab-btn active" data-tab="alerts" data-i18n="tabs.alerts">Alerts</button>
-        <button class="tab-btn" data-tab="clusters" data-i18n="tabs.clusters">Clusters</button>
-        <button class="tab-btn" data-tab="research" data-i18n="tabs.research">Research</button>
-        <button class="tab-btn" data-tab="ontology" data-i18n="tabs.ontology">Ontology</button>
-        <button class="tab-btn" data-tab="signal" data-i18n="tabs.signal">Signal Quality</button>
-        <button class="tab-btn" data-tab="rules" data-i18n="tabs.rules">Rules</button>
-    </nav>
+        <!-- ── Core Pillars Section ── -->
+        <section class="section-wrapper" id="pillars">
+            <div class="section-header">
+                <span class="section-tag" data-i18n="pillars.tag">CORE PILLARS</span>
+                <h2 class="section-heading" data-i18n="pillars.heading">为什么选择 Capital Observatory？</h2>
+                <p class="section-desc" data-i18n="pillars.desc">拒绝充满玩具式 Mock 数据与告警风暴的传统监控，打造具备真实投资指导意义的异动观测基础设施。</p>
+            </div>
 
-    <main>
-        <!-- Alerts tab (existing content) -->
-        <div id="alerts-tab" class="tab-content active">
-            <div class="grid">
-                <div class="card">
-                    <h2 data-i18n="alerts.active_title">Active Alerts</h2>
-                    <div class="alert-filter-bar" id="alert-filter-bar">
-                        <button type="button" class="alert-filter-btn active" data-filter="active" data-i18n="alerts.filter_active">活动告警</button>
-                        <button type="button" class="alert-filter-btn" data-filter="acknowledged" data-i18n="alerts.filter_acknowledged">已确认</button>
-                        <button type="button" class="alert-filter-btn" data-filter="resolved" data-i18n="alerts.filter_resolved">已消解</button>
-                        <button type="button" class="alert-filter-btn" data-filter="all" data-i18n="alerts.filter_all">全部告警</button>
+            <div class="pillars-grid">
+                <!-- Pillar 1 -->
+                <div class="pillar-card">
+                    <div class="pillar-icon-box icon-box-teal">💎</div>
+                    <h3 class="pillar-title" data-i18n="pillar1.title">100% 真实跨市场数据源</h3>
+                    <p class="pillar-desc" data-i18n="pillar1.desc">系统全面淘汰合成 Mock 指标，真实接入包括 Yahoo Finance、FRED、CoinGecko、Alpha Vantage、Mempool 及 Blockchain.com 等权威机构源。</p>
+                    <ul class="pillar-points">
+                        <li><span class="bullet">✓</span> <span data-i18n="pillar1.item1">覆盖 ETF、宏观利率、加密货币与大宗商品</span></li>
+                        <li><span class="bullet">✓</span> <span data-i18n="pillar1.item2">16 项关键核心指标，杜绝假基线</span></li>
+                        <li><span class="bullet">✓</span> <span data-i18n="pillar1.item3">双重配额与频率感知自动调度保护</span></li>
+                    </ul>
+                </div>
+
+                <!-- Pillar 2 -->
+                <div class="pillar-card">
+                    <div class="pillar-icon-box icon-box-gold">🛡️</div>
+                    <h3 class="pillar-title" data-i18n="pillar2.title">抗疲劳噪音预算治理</h3>
+                    <p class="pillar-desc" data-i18n="pillar2.desc">拒绝动辄几百条无意义通知的告警轰炸。系统引入工程化「噪音预算」，全域真实告警严格校准至 ≤10 条/天。</p>
+                    <ul class="pillar-points">
+                        <li><span class="bullet">✓</span> <span data-i18n="pillar2.item1">阈值、历史分位数与异动趋势三大检测器</span></li>
+                        <li><span class="bullet">✓</span> <span data-i18n="pillar2.item2">时序质量评分（QualityScore）前置把关</span></li>
+                        <li><span class="bullet">✓</span> <span data-i18n="pillar2.item3">Outbox 事务投递，直达 Telegram 与 Webhook</span></li>
+                    </ul>
+                </div>
+
+                <!-- Pillar 3 -->
+                <div class="pillar-card">
+                    <div class="pillar-icon-box icon-box-blue">🧠</div>
+                    <h3 class="pillar-title" data-i18n="pillar3.title">关联聚类与研判组装</h3>
+                    <p class="pillar-desc" data-i18n="pillar3.desc">单点异动不足以决策。引擎自动将同时发生的跨资产异动聚类为宏观/加密事件，并调用研判装配器生成深度决策快照。</p>
+                    <ul class="pillar-points">
+                        <li><span class="bullet">✓</span> <span data-i18n="pillar3.item1">多维信号交叉验证与历史裁决回溯</span></li>
+                        <li><span class="bullet">✓</span> <span data-i18n="pillar3.item2">高置信度事件快照卡片（Research Snapshot）</span></li>
+                        <li><span class="bullet">✓</span> <span data-i18n="pillar3.item3">双向反馈机制，持续校准检测模型</span></li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── Interactive Pipeline Architecture Section ── -->
+        <section class="section-wrapper" id="pipeline">
+            <div class="section-header">
+                <span class="section-tag" data-i18n="pipeline.tag">PIPELINE ARCHITECTURE</span>
+                <h2 class="section-heading" data-i18n="pipeline.heading">毫秒到日频的全链路闭环流水线</h2>
+                <p class="section-desc" data-i18n="pipeline.desc">从数据源流式摄取、数据清洗校验、多算法并发规则检测，到事件聚类与前端可视化，清晰透明。</p>
+            </div>
+
+            <div class="pipeline-container">
+                <div class="pipeline-steps">
+                    <div class="pipeline-step active">
+                        <div class="step-num">STAGE 01</div>
+                        <div class="step-name" data-i18n="step1.name">1. Plugin 采集</div>
+                        <div class="step-sub" data-i18n="step1.sub">gRPC 双向流式</div>
                     </div>
-                    <div id="alerts-list">
-                        <div class="empty" data-i18n="alerts.loading">Loading...</div>
+                    <div class="pipeline-step">
+                        <div class="step-num">STAGE 02</div>
+                        <div class="step-name" data-i18n="step2.name">2. 质量评估</div>
+                        <div class="step-sub" data-i18n="step2.sub">QualityScore 矩阵</div>
                     </div>
-                    <div id="alerts-pagination" class="alerts-pagination" style="display:none;">
-                        <div class="alert-page-controls">
-                            <button type="button" id="btn-alert-prev" class="alert-page-btn" disabled data-i18n="alerts.page_prev">上一页</button>
-                            <span id="alert-page-info" class="alert-page-info">第 1 / 1 页</span>
-                            <button type="button" id="btn-alert-next" class="alert-page-btn" disabled data-i18n="alerts.page_next">下一页</button>
-                        </div>
-                        <div class="alert-page-size-wrap">
-                            <span data-i18n="alerts.per_page">每页</span>
-                            <select id="alert-page-size" class="alert-page-size-select">
-                                <option value="10">10</option>
-                                <option value="20">20</option>
-                                <option value="50">50</option>
-                            </select>
-                            <span id="alert-total-info" class="alert-total-info">共 0 条</span>
-                        </div>
+                    <div class="pipeline-step">
+                        <div class="step-num">STAGE 03</div>
+                        <div class="step-name" data-i18n="step3.name">3. 规则检测</div>
+                        <div class="step-sub" data-i18n="step3.sub">三类自适应探测器</div>
+                    </div>
+                    <div class="pipeline-step">
+                        <div class="step-num">STAGE 04</div>
+                        <div class="step-name" data-i18n="step4.name">4. 告警治理</div>
+                        <div class="step-sub" data-i18n="step4.sub">≤10条/天 预算 Outbox</div>
+                    </div>
+                    <div class="pipeline-step">
+                        <div class="step-num">STAGE 05</div>
+                        <div class="step-name" data-i18n="step5.name">5. 研判组装</div>
+                        <div class="step-sub" data-i18n="step5.sub">关联聚类与事件快照</div>
+                    </div>
+                    <div class="pipeline-step">
+                        <div class="step-num">STAGE 06</div>
+                        <div class="step-name" data-i18n="step6.name">6. Capital Radar</div>
+                        <div class="step-sub" data-i18n="step6.sub">多维工作台与通知</div>
                     </div>
                 </div>
-                <div class="card">
-                    <h2 data-i18n="alerts.detail_title">Alert Detail & Trend</h2>
-                    <div id="alert-detail">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem; flex-wrap:wrap; gap:0.5rem;">
-                            <p id="detail-title" style="font-weight:600; margin:0;"></p>
-                            <div style="display:flex; align-items:center; gap:0.3rem;">
-                                <span id="detail-verdict-badge" class="verdict-badge" style="display:none;"></span>
-                                <span id="detail-status-badge" class="alert-status-badge" style="display:none;"></span>
+
+                <div class="pipeline-detail-card" id="pipeline-detail-panel">
+                    <div class="detail-text">
+                        <h4 id="pipeline-detail-title">1. Plugin gRPC 流式采集</h4>
+                        <p id="pipeline-detail-text">4个独立插件（ETF/Macro/Crypto/Commodities）通过长连接双向 gRPC 流向 Core 汇报 MetricSnapshot。支持断线重连与速率保护。</p>
+                    </div>
+                    <div class="detail-tag" id="pipeline-detail-tag">gRPC Protocol</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── System Showcase Section ── -->
+        <section class="section-wrapper" id="showcase">
+            <div class="section-header">
+                <span class="section-tag" data-i18n="showcase.tag">SYSTEM SHOWCASE</span>
+                <h2 class="section-heading" data-i18n="showcase.heading">专为资本市场操作员设计的工作台</h2>
+                <p class="section-desc" data-i18n="showcase.desc">开箱即用的专业面板，直观洞悉异常脉搏、流动性压力与策略信号。</p>
+            </div>
+
+            <div class="showcase-grid">
+                <!-- Showcase 1 -->
+                <div class="showcase-card">
+                    <div class="showcase-preview-box">
+                        <div class="mock-alert-row">
+                            <div>
+                                <div class="mock-alert-title">BTC Hashrate Breakout (Trend)</div>
+                                <div class="mock-alert-meta">btc.ass.hash_rate · 758.2 EH/s · +18.4% 7d</div>
+                            </div>
+                            <span class="mock-badge critical">CRITICAL</span>
+                        </div>
+                        <div class="mock-alert-row warning">
+                            <div>
+                                <div class="mock-alert-title">US 10Y Yield 95th Percentile</div>
+                                <div class="mock-alert-meta">us.mkt.ten_year_yield · 4.31% · Percentile 0.96</div>
+                            </div>
+                            <span class="mock-badge warning">WARNING</span>
+                        </div>
+                    </div>
+                    <div class="showcase-content">
+                        <h3 class="showcase-tab-title" data-i18n="showcase1.title">实时告警流与多维穿透</h3>
+                        <p class="showcase-tab-desc" data-i18n="showcase1.desc">直观展示 Critical / Warning 等级的异常事件。包含基线对比、偏离度计算与即时 ECharts 走势图回溯。</p>
+                        <a href="/app" class="showcase-link" data-i18n="showcase1.link">在工作台中查看 Alerts →</a>
+                    </div>
+                </div>
+
+                <!-- Showcase 2 -->
+                <div class="showcase-card">
+                    <div class="showcase-preview-box">
+                        <div class="mock-cluster-box">
+                            <div class="mock-cluster-title">⚡ Cluster #14: Global Liquidity Stress</div>
+                            <div class="mock-cluster-body">
+                                关联指标: <code>us.mkt.dollar_index</code> (强势突破) + <code>metal.precious.gold</code> (避险拉升) + <code>gld.ass.flow_proxy</code> (大额资金异动)
                             </div>
                         </div>
-                        <p id="detail-summary" style="font-size:0.85rem; color:#8892b0; margin-bottom:0.5rem;"></p>
-                        <div id="alert-verdict-box" style="display:none;"></div>
-                        <div id="alert-actions-bar" class="alert-actions-bar" style="display:none;"></div>
-                        <div id="trend-chart"></div>
-                        <div id="relations-section" style="margin-top:1rem;">
-                            <h3 style="font-size:0.85rem; color:#64ffda;" data-i18n="alerts.related_entities">Related Entities</h3>
-                            <ul id="relations-list" style="font-size:0.8rem; margin-top:0.5rem;"></ul>
+                    </div>
+                    <div class="showcase-content">
+                        <h3 class="showcase-tab-title" data-i18n="showcase2.title">宏观与加密关联事件聚类</h3>
+                        <p class="showcase-tab-desc" data-i18n="showcase2.desc">聚合多源异常形成事件上下文，如「美债收益率攀升 + 黄金异动 + 加密链上活跃度突破」，避免碎片化信息。</p>
+                        <a href="/app" class="showcase-link" data-i18n="showcase2.link">在工作台中查看 Clusters →</a>
+                    </div>
+                </div>
+
+                <!-- Showcase 3 -->
+                <div class="showcase-card">
+                    <div class="showcase-preview-box">
+                        <div style="display:flex;justify-content:space-between;gap:8px;font-family:var(--font-mono);font-size:0.75rem;">
+                            <div style="background:#1a243e;padding:8px;border-radius:6px;flex:1;text-align:center;">
+                                <div style="color:#2dd4a7;">● GREEN</div>
+                                <div style="color:#fff;font-weight:700;margin-top:2px;">15 Metrics</div>
+                            </div>
+                            <div style="background:#1a243e;padding:8px;border-radius:6px;flex:1;text-align:center;">
+                                <div style="color:#fbbf24;">● YELLOW</div>
+                                <div style="color:#fff;font-weight:700;margin-top:2px;">1 Metric (CPI)</div>
+                            </div>
+                            <div style="background:#1a243e;padding:8px;border-radius:6px;flex:1;text-align:center;">
+                                <div style="color:#2dd4a7;">0 OFFLINE</div>
+                                <div style="color:#fff;font-weight:700;margin-top:2px;">100% Ready</div>
+                            </div>
                         </div>
-                        <button type="button" id="btn-alert-to-research" class="btn-deep-research" data-i18n="alerts.view_research">🔍 查看完整深度研报 →</button>
+                    </div>
+                    <div class="showcase-content">
+                        <h3 class="showcase-tab-title" data-i18n="showcase3.title">全域指标信号质量与新鲜度矩阵</h3>
+                        <p class="showcase-tab-desc" data-i18n="showcase3.desc">实时监测全部 16 项指标的延迟、健康度和缺失率。服务端动态判级，保证投研依据的真实与鲜活。</p>
+                        <a href="/app" class="showcase-link" data-i18n="showcase3.link">在工作台中查看 Signal Quality →</a>
                     </div>
                 </div>
-            </div>
-            <!-- R2: Metric Pulse cards below the alerts block -->
-            <section id="pulse-section">
-                <h2 data-i18n="alerts.metric_pulse">Metric Pulse</h2>
-                <div id="pulse-grid"></div>
-            </section>
-        </div>
 
-        <!-- Clusters tab -->
-        <div id="clusters-tab" class="tab-content">
-            <div class="card">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-                    <h2 style="margin:0;" data-i18n="clusters.title">Event Clusters</h2>
-                    <button id="btn-refresh-clusters" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;" data-i18n="clusters.refresh">Refresh Clusters</button>
-                </div>
-                <div id="clusters-list">
-                    <div class="empty" data-i18n="clusters.empty_hint">Click "Refresh Clusters" to load.</div>
+                <!-- Showcase 4 -->
+                <div class="showcase-card">
+                    <div class="showcase-preview-box">
+                        <div style="background:#121a2d;border:1px dashed #2a3450;border-radius:6px;padding:10px;font-size:0.8rem;color:#cbd5e1;line-height:1.6;">
+                            <div>⚙️ <strong>Dynamic Rules:</strong> 12 Active · 1 Muted · Versioning Auto-Logged</div>
+                            <div style="color:#2dd4a7;margin-top:4px;">⏱️ <strong>Backfill:</strong> [7 Days] [30 Days] [90 Days] Ready</div>
+                        </div>
+                    </div>
+                    <div class="showcase-content">
+                        <h3 class="showcase-tab-title" data-i18n="showcase4.title">规则热更新与历史时间窗口回填</h3>
+                        <p class="showcase-tab-desc" data-i18n="showcase4.desc">无需重启服务即可在线调整检测阈值；具备 7天/30天/90天 真实历史数据安全回填能力，零污染验证新策略。</p>
+                        <a href="/app" class="showcase-link" data-i18n="showcase4.link">在工作台中查看 Rules →</a>
+                    </div>
                 </div>
             </div>
-        </div>
+        </section>
 
-        <!-- Research tab -->
-        <div id="research-tab" class="tab-content">
-            <div class="card" style="max-width:380px; margin-bottom:1.5rem;">
-                <h2 data-i18n="research.load_card_title">Load Research</h2>
-                <div style="display:flex; gap:0.5rem; align-items:flex-end;">
-                    <div style="flex:1;">
-                        <label for="research-alert-id" style="font-size:0.72rem; color:#8892b0;" data-i18n="research.alert_id_label">Alert ID</label>
-                        <input type="text" id="research-alert-id" placeholder="e.g. abc123" data-i18n-placeholder="research.alert_id_placeholder"
-                               style="background:#1a2340; border:1px solid #2a3450; color:#e0e6f0; padding:0.45rem 0.6rem; border-radius:6px; font-size:0.82rem; width:100%; box-sizing:border-box; margin-top:0.25rem;">
-                    </div>
-                    <button id="btn-load-research" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.5rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;" data-i18n="research.btn_load">Load Research</button>
-                </div>
+        <!-- ── Quickstart Section ── -->
+        <section class="section-wrapper" id="quickstart">
+            <div class="section-header">
+                <span class="section-tag" data-i18n="quickstart.tag">QUICKSTART</span>
+                <h2 class="section-heading" data-i18n="quickstart.heading">极客友好的极简部署</h2>
+                <p class="section-desc" data-i18n="quickstart.desc">单 Go 二进制与 TimescaleDB 配合，无复杂的 npm 前端构建，两分钟启动属于你自己的资本雷达。</p>
             </div>
-            <div id="research-detail">
-                <div class="empty" data-i18n="research.empty_hint">Enter an alert ID above and click "Load Research" to view research context.</div>
-            </div>
-        </div>
 
-        <!-- Ontology tab -->
-        <div id="ontology-tab" class="tab-content">
-            <div class="card">
-                <h2 data-i18n="ontology.manage_title">Manage Relations</h2>
-                <form class="ontology-form" id="ontology-form">
-                    <div>
-                        <label for="ont-source-id" data-i18n="ontology.source_label">Source Entity</label>
-                        <input type="text" id="ont-source-id" placeholder="e.g. btc" data-i18n-placeholder="ontology.source_placeholder" required>
+            <div class="quickstart-box">
+                <div class="terminal-header">
+                    <div class="terminal-dots">
+                        <span class="dot red"></span>
+                        <span class="dot yellow"></span>
+                        <span class="dot green"></span>
                     </div>
-                    <div>
-                        <label for="ont-target-id" data-i18n="ontology.target_label">Target Entity</label>
-                        <input type="text" id="ont-target-id" placeholder="e.g. gld" data-i18n-placeholder="ontology.target_placeholder" required>
-                    </div>
-                    <div>
-                        <label for="ont-relation-type" data-i18n="ontology.type_label">Relation Type</label>
-                        <select id="ont-relation-type" required>
-                            <option value="tracks">tracks</option>
-                            <option value="component_of">component_of</option>
-                            <option value="issued_by">issued_by</option>
-                            <option value="belongs_to">belongs_to</option>
-                            <option value="hedges">hedges</option>
-                            <option value="competes">competes</option>
-                            <option value="signals">signals</option>
-                            <option value="correlates">correlates</option>
-                            <option value="inversely_correlates">inversely_correlates</option>
-                            <option value="leads">leads</option>
-                            <option value="lags">lags</option>
-                            <option value="causes">causes</option>
-                            <option value="depends_on_regime">depends_on_regime</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="ont-direction" data-i18n="ontology.direction_label">Direction</label>
-                        <select id="ont-direction" required>
-                            <option value="forward" data-i18n="ontology.direction_forward">forward</option>
-                            <option value="undirected" data-i18n="ontology.direction_undirected">undirected</option>
-                        </select>
-                    </div>
-                    <div>
-                        <button type="submit" data-i18n="ontology.btn_add">Add Relation</button>
-                    </div>
-                </form>
-                <div id="ontology-list">
-                    <div class="empty" data-i18n="ontology.loading_relations">Loading relations...</div>
+                    <div class="terminal-title">bash · quickstart.sh</div>
                 </div>
-            </div>
-            <!-- Discover Candidates card -->
-            <div class="card" style="margin-top:1.5rem;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-                    <h2 style="margin:0;" data-i18n="ontology.discover_title">Discover Candidates</h2>
-                    <button id="btn-discover-candidates" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;" data-i18n="ontology.btn_discover">Run Discovery</button>
-                </div>
-                <div id="ontology-candidates-summary" style="font-size:0.78rem; color:#8892b0; margin-bottom:0.5rem;"></div>
-                <div id="ontology-candidates-list">
-                    <div class="empty" data-i18n="ontology.empty_candidates_hint">Click "Run Discovery" to find new relation candidates.</div>
-                </div>
-            </div>
-        </div>
 
-        <!-- Signal Quality tab -->
-        <div id="signal-tab" class="tab-content">
-            <div class="grid">
-                <div class="card">
-                    <h2 data-i18n="signal.timeline_title">Signal Quality Timeline</h2>
-                    <label for="signal-metric-uid" style="font-size:0.78rem; color:#8892b0;" data-i18n="signal.metric_uid_label">Metric UID</label>
-                    <input type="text" id="signal-metric-uid" placeholder="e.g. fed_bs_total_assets" data-i18n-placeholder="signal.metric_uid_placeholder"
-                           style="background:#1a2340; border:1px solid #2a3450; color:#e0e6f0; padding:0.45rem 0.6rem; border-radius:6px; font-size:0.82rem; width:100%; max-width:320px; box-sizing:border-box; margin-top:0.25rem;">
-                    <button onclick="loadSignalQuality()" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer; margin-top:0.5rem;" data-i18n="signal.btn_load">Load</button>
-                    <div id="signal-quality-chart" style="margin-top:1rem;"></div>
+                <div class="code-block">
+                    <button type="button" class="btn-copy-code" id="btn-copy-quickstart" data-i18n="quickstart.copy_btn">复制全部命令</button>
+                    <span class="comment"># 1. 克隆代码仓库</span><br>
+                    <span class="cmd">git clone</span> https://github.com/zll0825/capital_observatory.git<br>
+                    <span class="cmd">cd</span> capital_observatory<br><br>
+                    <span class="comment"># 2. 配置数据源密钥（FRED 必需；AlphaVantage/Telegram 可选）</span><br>
+                    <span class="cmd">export</span> <span class="env">FRED_API_KEY</span>=your_free_fred_key<br>
+                    <span class="cmd">export</span> <span class="env">ALPHAVANTAGE_API_KEY</span>=your_alpha_key<br><br>
+                    <span class="comment"># 3. 启动全栈（TimescaleDB + Core + API + 4 采集插件）</span><br>
+                    <span class="cmd">make</span> dev-up<br><br>
+                    <span class="comment"># 4. 浏览器访问 http://localhost:8080/ (宣传页) 或 http://localhost:8080/app (工作台)</span>
                 </div>
-                <div class="card">
-                    <h2 data-i18n="signal.points_title">Quality Data Points</h2>
-                    <div id="signal-quality-list">
-                        <div class="empty" data-i18n="signal.empty_hint">Enter a metric UID and click Load.</div>
+
+                <div class="quickstart-specs-row">
+                    <div class="spec-item">
+                        <div class="spec-title" data-i18n="spec.runtime">运行环境</div>
+                        <div class="spec-val" data-i18n="spec.runtime_val">Go 1.24+ (单二进制)</div>
+                    </div>
+                    <div class="spec-item">
+                        <div class="spec-title" data-i18n="spec.db">时序数据库</div>
+                        <div class="spec-val" data-i18n="spec.db_val">PostgreSQL / TimescaleDB</div>
+                    </div>
+                    <div class="spec-item">
+                        <div class="spec-title" data-i18n="spec.plugins">内置采集插件</div>
+                        <div class="spec-val" data-i18n="spec.plugins_val">ETF / Macro / Crypto / Commodities</div>
+                    </div>
+                    <div class="spec-item">
+                        <div class="spec-title" data-i18n="spec.ui">前端技术栈</div>
+                        <div class="spec-val" data-i18n="spec.ui_val">Vanilla HTML5 / CSS3 / ES6</div>
                     </div>
                 </div>
             </div>
-        </div>
+        </section>
 
-        <!-- Rules tab -->
-        <div id="rules-tab" class="tab-content">
-            <div class="card">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-                    <h2 style="margin:0;" data-i18n="rules.title">Rules</h2>
-                    <button id="btn-refresh-rules" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;" data-i18n="rules.refresh">Refresh Rules</button>
+        <!-- ── Footer ── -->
+        <footer class="landing-footer">
+            <div class="footer-top">
+                <div class="footer-brand">
+                    <div class="brand-group">
+                        <div class="brand-logo-icon">📡</div>
+                        <div class="brand-name">Capital <span>Observatory</span></div>
+                    </div>
+                    <p data-i18n="footer.desc">开源、自托管的跨市场资本异动与宏观流动性观测系统。</p>
                 </div>
-                <div id="rules-summary" style="font-size:0.78rem; color:#8892b0; margin-bottom:0.5rem;"></div>
-                <div id="rules-list">
-                    <div class="empty" data-i18n="rules.empty_hint">Click "Refresh Rules" to load.</div>
+
+                <div class="footer-nav-col">
+                    <h5 data-i18n="footer.col1_title">系统导航</h5>
+                    <ul>
+                        <li><a href="/app" data-i18n="footer.link_alerts">告警控制台</a></li>
+                        <li><a href="/app" data-i18n="footer.link_clusters">事件聚类</a></li>
+                        <li><a href="/app" data-i18n="footer.link_research">研判报告</a></li>
+                    </ul>
+                </div>
+
+                <div class="footer-nav-col">
+                    <h5 data-i18n="footer.col2_title">核心文档</h5>
+                    <ul>
+                        <li><a href="https://github.com/zll0825/capital_observatory/blob/main/docs/architecture-zh.md" target="_blank" data-i18n="footer.link_doc_arch">中文系统架构图</a></li>
+                        <li><a href="https://github.com/zll0825/capital_observatory/blob/main/docs/prd-v4.md" target="_blank" data-i18n="footer.link_doc_prd">PRD 产品规格文档</a></li>
+                        <li><a href="https://github.com/zll0825/capital_observatory/blob/main/docs/adr.md" target="_blank" data-i18n="footer.link_doc_adr">ADR 架构决策记录</a></li>
+                    </ul>
+                </div>
+
+                <div class="footer-nav-col">
+                    <h5 data-i18n="footer.col3_title">开源生态</h5>
+                    <ul>
+                        <li><a href="https://github.com/zll0825/capital_observatory" target="_blank">GitHub 仓库</a></li>
+                        <li><a href="https://fred.stlouisfed.org" target="_blank">FRED API</a></li>
+                        <li><a href="https://www.coingecko.com" target="_blank">CoinGecko API</a></li>
+                    </ul>
                 </div>
             </div>
-        </div>
-    </main>
 
-    <div id="toast-container" class="toast-container"></div>
+            <div class="footer-bottom">
+                <div data-i18n="footer.copyright">© 2026 Capital Observatory. Open-source Capital Intelligence System.</div>
+                <div>Licensed under Apache 2.0 / MIT</div>
+            </div>
+        </footer>
+    </div>
 
-    <script src="/src/i18n.js?v=20260904-p3"></script>
-    <script src="/src/common.js?v=20260904-p3"></script>
-    <script src="/src/status.js?v=20260904-p3"></script>
-    <script src="/src/alerts.js?v=20260904-p3"></script>
-    <script src="/src/research.js?v=20260904-p3"></script>
-    <script src="/src/ontology.js?v=20260904-p3"></script>
-    <script src="/src/app.js?v=20260904-p3"></script>
+    <script src="/src/landing.js?v=20260904-l1"></script>
 </body>
 </html>
