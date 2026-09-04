@@ -274,12 +274,14 @@ func TestRulesPatchAuditActorNeverContainsBearer(t *testing.T) {
 
 func TestRulesHistoryIncludesVersion(t *testing.T) {
 	created := time.Date(2026, 9, 3, 8, 0, 0, 0, time.UTC)
+	effTo := time.Date(2026, 9, 4, 8, 0, 0, 0, time.UTC)
 	store := &rulesStore{
 		db: &rulesFakeDB{
 			query: newFakeRows([]any{
 				int64(1), 23, "global", "enabled",
 				json.RawMessage(`false`), json.RawMessage(`true`),
 				"authenticated_api_client", nil, created, 4,
+				"warning", json.RawMessage(`{"value":10}`), true, created, &effTo,
 			}),
 		},
 	}

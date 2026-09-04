@@ -443,16 +443,17 @@ function renderRules(rules) {
         tr.appendChild(tdDetector);
 
         const tdSeverity = document.createElement('td');
-        const sev = rule.severity || 'info';
+        const sev = String(rule.severity || 'info').toLowerCase();
         const sevBadge = document.createElement('span');
-        sevBadge.className = 'alert-status-badge status-' + sev;
-        sevBadge.textContent = sev;
+        sevBadge.className = 'severity-badge severity-' + sev;
+        sevBadge.textContent = (rule.severity || 'info').toUpperCase();
         tdSeverity.appendChild(sevBadge);
         tr.appendChild(tdSeverity);
 
         const tdConfig = document.createElement('td');
-        tdConfig.style.cssText = 'font-family:monospace; font-size:0.75rem; color:#64ffda;';
+        tdConfig.style.cssText = 'font-family:monospace; font-size:0.75rem; color:#64ffda; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
         tdConfig.textContent = formatRuleConfig(rule.config);
+        tdConfig.title = typeof rule.config === 'object' ? JSON.stringify(rule.config, null, 2) : String(rule.config);
         tr.appendChild(tdConfig);
 
         const tdEnabled = document.createElement('td');
@@ -498,29 +499,66 @@ function renderRules(rules) {
         tbody.appendChild(tr);
     }
     table.appendChild(tbody);
-    list.appendChild(table);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-responsive';
+    wrapper.appendChild(table);
+    list.appendChild(wrapper);
 }
 
 function formatRuleConfig(cfg) {
     if (!cfg) return '—';
     if (typeof cfg === 'string') {
-        try { cfg = JSON.parse(cfg); } catch (e) { return cfg; }
+        try {
+            cfg = JSON.parse(cfg);
+        } catch (e) {
+            try {
+                // Fallback if backend returned base64-encoded JSON bytes
+                cfg = JSON.parse(atob(cfg));
+            } catch (e2) {
+                return cfg;
+            }
+        }
     }
-    if (typeof cfg !== 'object') return String(cfg);
+    if (typeof cfg !== 'object' || cfg === null) return String(cfg);
 
     const parts = [];
     if (cfg.operator && cfg.value !== undefined) {
-        parts.push(cfg.operator + ' ' + cfg.value);
+        let op = cfg.operator;
+        if (op === 'gt') op = '>';
+        else if (op === 'gte') op = '≥';
+        else if (op === 'lt') op = '<';
+        else if (op === 'lte') op = '≤';
+        else if (op === 'eq') op = '=';
+
+        let valStr = cfg.value;
+        if (typeof cfg.value === 'number') {
+            if (cfg.value >= 1e8) {
+                valStr = (cfg.value / 1e6).toLocaleString() + 'M';
+            } else if (cfg.value >= 1e4) {
+                valStr = cfg.value.toLocaleString();
+            }
+        }
+        parts.push(op + ' ' + valStr);
+    } else if (cfg.percentile !== undefined) {
+        parts.push('P' + cfg.percentile + ' 分位');
+    } else if (cfg.direction !== undefined) {
+        const dir = cfg.direction === 'down' ? '↓ 下降' : (cfg.direction === 'up' ? '↑ 上升' : cfg.direction);
+        parts.push(dir);
     } else if (cfg.threshold !== undefined) {
-        parts.push('threshold: ' + cfg.threshold);
+        parts.push('阈值: ' + cfg.threshold);
     }
+
     if (cfg.consecutive && cfg.consecutive > 1) {
-        parts.push('run: ' + cfg.consecutive);
+        parts.push('连续 ' + cfg.consecutive + ' 期');
+    } else if (cfg.consecutive === 1 && parts.length === 1 && cfg.percentile !== undefined) {
+        parts.push('连续 1 期');
     }
+
     if (cfg.window_minutes) {
-        parts.push('win: ' + cfg.window_minutes + 'm');
+        parts.push(cfg.window_minutes + 'm 窗口');
     }
-    if (parts.length > 0) return parts.join(', ');
+    if (parts.length > 0) return parts.join(' · ');
     return JSON.stringify(cfg);
 }
 
@@ -534,7 +572,15 @@ function toggleRuleEdit(rule, row, btn) {
 
     let cfg = rule.config || {};
     if (typeof cfg === 'string') {
-        try { cfg = JSON.parse(cfg); } catch (e) { cfg = {}; }
+        try {
+            cfg = JSON.parse(cfg);
+        } catch (e) {
+            try {
+                cfg = JSON.parse(atob(cfg));
+            } catch (e2) {
+                cfg = {};
+            }
+        }
     }
 
     const editTr = document.createElement('tr');
@@ -804,15 +850,20 @@ function renderRuleHistory(entries, container, ruleId) {
         return;
     }
 
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-responsive';
+
     const table = document.createElement('table');
     table.className = 'data-table';
     table.style.fontSize = '0.75rem';
     const thead = document.createElement('thead');
     const hRow = document.createElement('tr');
     [
-        t('rules.th_hist_time'),
-        t('rules.th_hist_action'),
-        t('rules.th_hist_actor'),
+        t('rules.th_hist_version'),
+        t('rules.th_hist_window'),
+        t('rules.th_hist_severity'),
+        t('rules.th_hist_config'),
+        t('rules.th_hist_status'),
         t('rules.th_hist_details'),
         t('rules.btn_restore')
     ].forEach(txt => {
@@ -826,36 +877,107 @@ function renderRuleHistory(entries, container, ruleId) {
     const tbody = document.createElement('tbody');
     for (const e of entries) {
         const tr = document.createElement('tr');
-        const ts = document.createElement('td');
-        ts.textContent = e.timestamp || e.created_at || e.time ? new Date(e.timestamp || e.created_at || e.time).toLocaleString() : '—';
-        tr.appendChild(ts);
-        const action = document.createElement('td');
-        action.textContent = e.field || e.action || e.event || '—';
-        tr.appendChild(action);
-        const actor = document.createElement('td');
-        actor.textContent = e.actor || e.user || '—';
-        tr.appendChild(actor);
-        const details = document.createElement('td');
-        const oldValue = e.old_value !== undefined ? JSON.stringify(e.old_value) : '';
-        const newValue = e.new_value !== undefined ? JSON.stringify(e.new_value) : '';
-        details.textContent = oldValue || newValue ? oldValue + ' → ' + newValue : (e.details || e.changes || e.note || '—');
-        details.style.maxWidth = '300px';
-        details.style.overflow = 'hidden';
-        details.style.textOverflow = 'ellipsis';
-        tr.appendChild(details);
+        const isCurrent = !e.effective_to;
+
+        // 1. Version
+        const tdVer = document.createElement('td');
+        tdVer.style.whiteSpace = 'nowrap';
+        const verSpan = document.createElement('span');
+        verSpan.style.cssText = 'font-weight:600; color:#e0e6f0;';
+        verSpan.textContent = 'v' + (e.version || 1);
+        tdVer.appendChild(verSpan);
+        if (isCurrent) {
+            const curBadge = document.createElement('span');
+            curBadge.style.cssText = 'background:rgba(100,255,218,0.15); color:#64ffda; border:1px solid rgba(100,255,218,0.35); padding:0.1rem 0.35rem; border-radius:3px; font-size:0.68rem; margin-left:0.35rem;';
+            curBadge.textContent = t('rules.hist_current');
+            tdVer.appendChild(curBadge);
+        }
+        tr.appendChild(tdVer);
+
+        // 2. Effective window
+        const tdWindow = document.createElement('td');
+        tdWindow.style.cssText = 'color:#8892b0; white-space:nowrap; font-size:0.72rem;';
+        const fromTime = e.effective_from || e.created_at;
+        const fromStr = fromTime ? new Date(fromTime).toLocaleString() : '—';
+        const toStr = e.effective_to ? new Date(e.effective_to).toLocaleString() : t('rules.hist_active');
+        tdWindow.textContent = fromStr + ' ~ ' + toStr;
+        tr.appendChild(tdWindow);
+
+        // 3. Severity
+        const tdSev = document.createElement('td');
+        if (e.severity) {
+            const sev = String(e.severity).toLowerCase();
+            const sevBadge = document.createElement('span');
+            sevBadge.className = 'severity-badge severity-' + sev;
+            sevBadge.textContent = e.severity.toUpperCase();
+            tdSev.appendChild(sevBadge);
+        } else {
+            tdSev.textContent = '—';
+        }
+        tr.appendChild(tdSev);
+
+        // 4. Config
+        const tdCfg = document.createElement('td');
+        tdCfg.style.cssText = 'font-family:monospace; font-size:0.72rem; color:#64ffda; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+        const cfgVal = e.config || e.new_value;
+        tdCfg.textContent = formatRuleConfig(cfgVal);
+        tdCfg.title = typeof cfgVal === 'object' ? JSON.stringify(cfgVal, null, 2) : String(cfgVal || '');
+        tr.appendChild(tdCfg);
+
+        // 5. Status
+        const tdEnabled = document.createElement('td');
+        tdEnabled.style.whiteSpace = 'nowrap';
+        tdEnabled.textContent = e.enabled !== false ? t('rules.on') : t('rules.off');
+        tdEnabled.style.color = e.enabled !== false ? '#2dd4a7' : '#8892b0';
+        tr.appendChild(tdEnabled);
+
+        // 6. Details / Actor
+        const tdDetails = document.createElement('td');
+        tdDetails.style.maxWidth = '260px';
+        tdDetails.style.overflow = 'hidden';
+        tdDetails.style.textOverflow = 'ellipsis';
+        tdDetails.style.whiteSpace = 'nowrap';
+        const actorStr = e.actor || 'system';
+        if (e.field === 'restore_version') {
+            tdDetails.textContent = t('rules.hist_restore_action') + ' v' + (e.new_value ?? '') + ' (' + actorStr + ')';
+        } else if (e.field === 'initial_version') {
+            tdDetails.textContent = t('rules.hist_initial') + ' (' + actorStr + ')';
+        } else if (e.field === 'version_created') {
+            tdDetails.textContent = t('rules.hist_created') + ' (' + actorStr + ')';
+        } else if (e.old_value !== undefined && e.new_value !== undefined) {
+            tdDetails.textContent = e.field + ': ' + JSON.stringify(e.old_value) + ' → ' + JSON.stringify(e.new_value) + ' (' + actorStr + ')';
+        } else {
+            tdDetails.textContent = (e.field || '—') + ' (' + actorStr + ')';
+        }
+        tdDetails.title = tdDetails.textContent;
+        tr.appendChild(tdDetails);
+
+        // 7. Actions (Restore)
         const restoreTd = document.createElement('td');
-        if (e.version) {
+        restoreTd.style.whiteSpace = 'nowrap';
+        if (e.version && !isCurrent) {
             const btnRestore = document.createElement('button');
             btnRestore.textContent = t('rules.btn_restore');
-            btnRestore.style.cssText = 'background:#2a3450; color:#64ffda; border:1px solid #64ffda; padding:0.15rem 0.4rem; border-radius:4px; font-size:0.7rem; cursor:pointer;';
-            btnRestore.addEventListener('click', () => restoreRule(ruleId, e.version, btnRestore, oldValue, newValue));
+            btnRestore.style.cssText = 'background:#1a2744; color:#64ffda; border:1px solid #64ffda; padding:0.18rem 0.5rem; border-radius:4px; font-size:0.7rem; cursor:pointer;';
+            btnRestore.addEventListener('click', () => {
+                if (confirm(t('rules.confirm_restore', { id: ruleId, version: e.version, from: 'current', to: 'v' + e.version }))) {
+                    restoreRule(ruleId, e.version, btnRestore, 'current', 'v' + e.version);
+                }
+            });
             restoreTd.appendChild(btnRestore);
+        } else if (isCurrent) {
+            const curTxt = document.createElement('span');
+            curTxt.style.cssText = 'color:#64ffda; font-size:0.72rem;';
+            curTxt.textContent = '✓ ' + t('rules.hist_current');
+            restoreTd.appendChild(curTxt);
         }
         tr.appendChild(restoreTd);
+
         tbody.appendChild(tr);
     }
     table.appendChild(tbody);
-    container.appendChild(table);
+    wrapper.appendChild(table);
+    container.appendChild(wrapper);
 }
 
 async function restoreRule(ruleId, version, btn, from, to) {

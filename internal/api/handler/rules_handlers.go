@@ -338,21 +338,35 @@ func (s *rulesStore) historyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := s.db.Query(r.Context(), `
-		SELECT audit.id, audit.rule_id, audit.scope, audit.field, audit.old_value,
-		       audit.new_value, audit.actor, audit.reason, audit.created_at,
-		       COALESCE(src.version, 0)
-		FROM rule_audit_log AS audit
-		LEFT JOIN rules AS src ON src.id = audit.rule_id
-		WHERE audit.rule_id IN (
-			SELECT logical.id
+		WITH logical_rules AS (
+			SELECT r.id, r.name, r.metric_id, r.detector_name, r.version, r.severity,
+			       r.config, r.description, r.enabled, r.effective_from, r.effective_to, r.created_at
 			FROM rules AS anchor
-			JOIN rules AS logical
-			  ON logical.name = anchor.name
-			 AND logical.metric_id = anchor.metric_id
-			 AND logical.detector_name = anchor.detector_name
+			JOIN rules AS r
+			  ON r.name = anchor.name
+			 AND r.metric_id = anchor.metric_id
+			 AND r.detector_name = anchor.detector_name
 			WHERE anchor.id = $1
 		)
-		ORDER BY audit.created_at DESC
+		SELECT
+			COALESCE(audit.id, 0) AS id,
+			lr.id AS rule_id,
+			COALESCE(audit.scope, 'global') AS scope,
+			COALESCE(audit.field, CASE WHEN lr.version = 1 THEN 'initial_version' ELSE 'version_created' END) AS field,
+			audit.old_value,
+			COALESCE(audit.new_value, lr.config) AS new_value,
+			COALESCE(audit.actor, 'system') AS actor,
+			audit.reason,
+			COALESCE(audit.created_at, lr.effective_from) AS created_at,
+			lr.version,
+			lr.severity,
+			lr.config,
+			lr.enabled,
+			lr.effective_from,
+			lr.effective_to
+		FROM logical_rules AS lr
+		LEFT JOIN rule_audit_log AS audit ON audit.rule_id = lr.id
+		ORDER BY lr.version DESC, COALESCE(audit.created_at, lr.effective_from) DESC
 	`, id)
 	if err != nil {
 		log.Error().Err(err).Int("rule_id", id).Msg("query rule audit history failed")
@@ -362,31 +376,41 @@ func (s *rulesStore) historyHandler(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type auditRow struct {
-		ID        int64           `json:"id"`
-		RuleID    int             `json:"rule_id"`
-		Scope     string          `json:"scope"`
-		Field     string          `json:"field"`
-		OldValue  json.RawMessage `json:"old_value"`
-		NewValue  json.RawMessage `json:"new_value"`
-		Actor     string          `json:"actor"`
-		Reason    *string         `json:"reason,omitempty"`
-		CreatedAt time.Time       `json:"created_at"`
-		Version   int             `json:"version"`
+		ID            int64           `json:"id"`
+		RuleID        int             `json:"rule_id"`
+		Scope         string          `json:"scope"`
+		Field         string          `json:"field"`
+		OldValue      json.RawMessage `json:"old_value,omitempty"`
+		NewValue      json.RawMessage `json:"new_value,omitempty"`
+		Actor         string          `json:"actor"`
+		Reason        *string         `json:"reason,omitempty"`
+		CreatedAt     time.Time       `json:"created_at"`
+		Version       int             `json:"version"`
+		Severity      string          `json:"severity,omitempty"`
+		Config        json.RawMessage `json:"config,omitempty"`
+		Enabled       bool            `json:"enabled"`
+		EffectiveFrom time.Time       `json:"effective_from"`
+		EffectiveTo   *time.Time      `json:"effective_to,omitempty"`
 	}
 
 	var entries []auditRow
 	for rows.Next() {
-		var e auditRow
-		var reason *string
+		var (
+			e           auditRow
+			reason      *string
+			effectiveTo *time.Time
+		)
 		if err := rows.Scan(
 			&e.ID, &e.RuleID, &e.Scope, &e.Field, &e.OldValue, &e.NewValue,
 			&e.Actor, &reason, &e.CreatedAt, &e.Version,
+			&e.Severity, &e.Config, &e.Enabled, &e.EffectiveFrom, &effectiveTo,
 		); err != nil {
 			log.Error().Err(err).Int("rule_id", id).Msg("scan rule audit log failed")
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
 			return
 		}
 		e.Reason = reason
+		e.EffectiveTo = effectiveTo
 		entries = append(entries, e)
 	}
 	if err := rows.Err(); err != nil {

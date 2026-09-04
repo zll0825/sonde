@@ -2,7 +2,10 @@
 // 是 docs/domain-model.md 中五个领域对象的权威 Go 表示。
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // SourceClass identifies how an individual provider snapshot was produced.
 // It is explicit provenance: callers must never derive it from plugin or
@@ -124,19 +127,19 @@ const (
 // ---- Rule ----
 
 type Rule struct {
-	ID            int        `json:"id"`
-	Name          string     `json:"name"`
-	MetricID      string     `json:"metric_id"`
-	DetectorName  string     `json:"detector_name"`
-	Severity      Severity   `json:"severity"`
-	Config        []byte     `json:"config"` // JSONB
-	Description   string     `json:"description,omitempty"`
-	Enabled       bool       `json:"enabled"`
-	Source        RuleSource `json:"source"`
-	IsOverride    bool       `json:"is_override"`
-	Version       int        `json:"version"`
-	EffectiveFrom time.Time  `json:"effective_from"`
-	EffectiveTo   *time.Time `json:"effective_to,omitempty"`
+	ID            int             `json:"id"`
+	Name          string          `json:"name"`
+	MetricID      string          `json:"metric_id"`
+	DetectorName  string          `json:"detector_name"`
+	Severity      Severity        `json:"severity"`
+	Config        json.RawMessage `json:"config"` // JSONB
+	Description   string          `json:"description,omitempty"`
+	Enabled       bool            `json:"enabled"`
+	Source        RuleSource      `json:"source"`
+	IsOverride    bool            `json:"is_override"`
+	Version       int             `json:"version"`
+	EffectiveFrom time.Time       `json:"effective_from"`
+	EffectiveTo   *time.Time      `json:"effective_to,omitempty"`
 }
 
 type Severity string
