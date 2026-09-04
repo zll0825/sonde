@@ -129,6 +129,7 @@ updateTokenUI();
 
 // Initial fetch
 initAlertFilters();
+initAlertPagination();
 loadAlerts();
 fetchStatus();
 setInterval(() => { loadAlerts(); fetchStatus(); }, 30000);

@@ -232,6 +232,11 @@ const TRANSLATIONS = {
         'alerts.status_acknowledged': '已确认',
         'alerts.status_resolved': '已消解',
         'alerts.status_silenced': '已静默',
+        'alerts.page_prev': '上一页',
+        'alerts.page_next': '下一页',
+        'alerts.page_info': '第 {page} / {total} 页',
+        'alerts.per_page': '每页',
+        'alerts.total_items': '共 {total} 条',
         'toast.alert_status_updated': '告警状态已更新为 {status}',
         'rules.th_metric': '指标 UID',
         'rules.th_detector': '检测器',
@@ -482,6 +487,11 @@ const TRANSLATIONS = {
         'alerts.status_acknowledged': 'Acknowledged',
         'alerts.status_resolved': 'Resolved',
         'alerts.status_silenced': 'Silenced',
+        'alerts.page_prev': 'Previous',
+        'alerts.page_next': 'Next',
+        'alerts.page_info': 'Page {page} of {total}',
+        'alerts.per_page': 'Per page',
+        'alerts.total_items': 'Total {total}',
         'toast.alert_status_updated': 'Alert status updated to {status}',
         'rules.th_metric': 'Metric UID',
         'rules.th_detector': 'Detector',
@@ -555,7 +565,10 @@ function setLanguage(lang) {
 
     // Refresh dynamic views with cached data if available
     if (statusData) renderStatus(statusData);
-    if (alertsList) renderAlerts(alertsList);
+    if (alertsList) {
+        renderAlerts(alertsList);
+        if (typeof renderAlertPagination === 'function') renderAlertPagination();
+    }
     if (cachedClusters) renderClusters(cachedClusters);
     if (cachedRules) renderRules(cachedRules);
     if (cachedOntology) renderOntologyTable(cachedOntology);

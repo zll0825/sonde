@@ -76,6 +76,22 @@
                     <div id="alerts-list">
                         <div class="empty" data-i18n="alerts.loading">Loading...</div>
                     </div>
+                    <div id="alerts-pagination" class="alerts-pagination" style="display:none;">
+                        <div class="alert-page-controls">
+                            <button type="button" id="btn-alert-prev" class="alert-page-btn" disabled data-i18n="alerts.page_prev">上一页</button>
+                            <span id="alert-page-info" class="alert-page-info">第 1 / 1 页</span>
+                            <button type="button" id="btn-alert-next" class="alert-page-btn" disabled data-i18n="alerts.page_next">下一页</button>
+                        </div>
+                        <div class="alert-page-size-wrap">
+                            <span data-i18n="alerts.per_page">每页</span>
+                            <select id="alert-page-size" class="alert-page-size-select">
+                                <option value="10">10</option>
+                                <option value="20">20</option>
+                                <option value="50">50</option>
+                            </select>
+                            <span id="alert-total-info" class="alert-total-info">共 0 条</span>
+                        </div>
+                    </div>
                 </div>
                 <div class="card">
                     <h2 data-i18n="alerts.detail_title">Alert Detail & Trend</h2>

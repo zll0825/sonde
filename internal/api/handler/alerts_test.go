@@ -128,3 +128,85 @@ func TestPatchAlertHandler_ValidationAndNotFound(t *testing.T) {
 		t.Errorf("status = %d, want 404 for missing alert", rec.Code)
 	}
 }
+
+func TestAlertsHandlerPagination(t *testing.T) {
+	triggeredAt := time.Date(2026, 8, 7, 2, 3, 4, 0, time.UTC)
+	resolvedAt := time.Date(2026, 8, 7, 3, 0, 0, 0, time.UTC)
+
+	// Test envelope=true
+	db := (&fakeDB{}).
+		stub(newFakeRows([]any{12})). // COUNT(*)
+		stub(newFakeRows([]any{
+			"alt_res1", "title 1", "sum 1", "warning", "metric.id", triggeredAt, "resolved",
+			"fred", "real", 1, nil, &resolvedAt,
+		}, []any{
+			"alt_res2", "title 2", "sum 2", "info", "metric.id", triggeredAt, "resolved",
+			"fred", "real", 1, nil, &resolvedAt,
+		}))
+	defer db.exhausted(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/alerts?status=resolved&page=2&limit=2&envelope=true", nil).WithContext(context.Background())
+	rec := httptest.NewRecorder()
+	alertsHandler(db).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	if rec.Header().Get("X-Total-Count") != "12" {
+		t.Errorf("X-Total-Count = %s, want 12", rec.Header().Get("X-Total-Count"))
+	}
+	if rec.Header().Get("X-Page") != "2" {
+		t.Errorf("X-Page = %s, want 2", rec.Header().Get("X-Page"))
+	}
+	if rec.Header().Get("X-Page-Size") != "2" {
+		t.Errorf("X-Page-Size = %s, want 2", rec.Header().Get("X-Page-Size"))
+	}
+	if rec.Header().Get("X-Total-Pages") != "6" {
+		t.Errorf("X-Total-Pages = %s, want 6", rec.Header().Get("X-Total-Pages"))
+	}
+
+	var envResp struct {
+		Items      []map[string]any `json:"items"`
+		Total      int              `json:"total"`
+		Page       int              `json:"page"`
+		PageSize   int              `json:"page_size"`
+		TotalPages int              `json:"total_pages"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&envResp); err != nil {
+		t.Fatalf("decode envelope: %v", err)
+	}
+	if envResp.Total != 12 || envResp.Page != 2 || envResp.PageSize != 2 || envResp.TotalPages != 6 {
+		t.Errorf("envelope metadata mismatch: %+v", envResp)
+	}
+	if len(envResp.Items) != 2 {
+		t.Errorf("envelope items len = %d, want 2", len(envResp.Items))
+	}
+
+	// Test envelope=false (headers set, returns raw array)
+	dbArray := (&fakeDB{}).
+		stub(newFakeRows([]any{5})). // COUNT(*)
+		stub(newFakeRows([]any{
+			"alt_all1", "title 1", "sum 1", "warning", "metric.id", triggeredAt, "active",
+			"fred", "real", 1, nil, nil,
+		}))
+	defer dbArray.exhausted(t)
+
+	reqArr := httptest.NewRequest(http.MethodGet, "/api/alerts?status=all&page=1&limit=10", nil).WithContext(context.Background())
+	recArr := httptest.NewRecorder()
+	alertsHandler(dbArray).ServeHTTP(recArr, reqArr)
+
+	if recArr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", recArr.Code)
+	}
+	if recArr.Header().Get("X-Total-Count") != "5" {
+		t.Errorf("X-Total-Count = %s, want 5", recArr.Header().Get("X-Total-Count"))
+	}
+	var arrResp []map[string]any
+	if err := json.NewDecoder(recArr.Body).Decode(&arrResp); err != nil {
+		t.Fatalf("decode array response: %v", err)
+	}
+	if len(arrResp) != 1 {
+		t.Errorf("arr items len = %d, want 1", len(arrResp))
+	}
+}

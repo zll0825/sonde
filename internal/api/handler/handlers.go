@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,39 +55,103 @@ func statusHandler(db statusQuerier) http.HandlerFunc {
 	}
 }
 
-// alertsHandler returns the list of alerts, optionally filtered by status.
-// GET /api/alerts?status=active|acknowledged|resolved|silenced|all (defaults to active)
+// alertsHandler returns the list of alerts, optionally filtered by status and paginated.
+// GET /api/alerts?status=active|acknowledged|resolved|silenced|all&page=1&limit=10&envelope=true
 func alertsHandler(db statusQuerier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		statusParam := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("status")))
-		var (
-			rows pgx.Rows
-			err  error
-		)
-
+		targetStatus := "active"
 		if statusParam == "all" {
-			rows, err = db.Query(r.Context(), `
-				SELECT id, title, summary, severity, metric_id, triggered_at, status,
-				       source_provider, source_class, dedup_count, last_deduplicated_at,
-				       resolved_at
-				FROM alerts
-				ORDER BY triggered_at DESC LIMIT 100
-			`)
+			targetStatus = "all"
 		} else {
-			targetStatus := "active"
 			switch statusParam {
 			case "acknowledged", "resolved", "silenced":
 				targetStatus = statusParam
 			default:
 				targetStatus = "active"
 			}
-			rows, err = db.Query(r.Context(), `
-				SELECT id, title, summary, severity, metric_id, triggered_at, status,
-				       source_provider, source_class, dedup_count, last_deduplicated_at,
-				       resolved_at
-				FROM alerts WHERE status = $1
-				ORDER BY triggered_at DESC LIMIT 100
-			`, targetStatus)
+		}
+
+		pageStr := strings.TrimSpace(r.URL.Query().Get("page"))
+		limitStr := strings.TrimSpace(r.URL.Query().Get("limit"))
+		envelope := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("envelope"))) == "true"
+
+		page := 1
+		limit := 100
+		isPaged := false
+
+		if pageStr != "" || limitStr != "" || envelope {
+			isPaged = true
+			if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+				page = p
+			}
+			limit = 10
+			if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+				limit = l
+				if limit > 100 {
+					limit = 100
+				}
+			}
+		}
+
+		offset := (page - 1) * limit
+		var totalCount int
+
+		if isPaged {
+			var err error
+			if targetStatus == "all" {
+				err = db.QueryRow(r.Context(), `SELECT COUNT(*) FROM alerts`).Scan(&totalCount)
+			} else {
+				err = db.QueryRow(r.Context(), `SELECT COUNT(*) FROM alerts WHERE status = $1`, targetStatus).Scan(&totalCount)
+			}
+			if err != nil {
+				log.Error().Err(err).Msg("count alerts failed")
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
+				return
+			}
+		}
+
+		var (
+			rows pgx.Rows
+			err  error
+		)
+
+		if targetStatus == "all" {
+			if isPaged {
+				rows, err = db.Query(r.Context(), `
+					SELECT id, title, summary, severity, metric_id, triggered_at, status,
+					       source_provider, source_class, dedup_count, last_deduplicated_at,
+					       resolved_at
+					FROM alerts
+					ORDER BY triggered_at DESC LIMIT $1 OFFSET $2
+				`, limit, offset)
+			} else {
+				rows, err = db.Query(r.Context(), `
+					SELECT id, title, summary, severity, metric_id, triggered_at, status,
+					       source_provider, source_class, dedup_count, last_deduplicated_at,
+					       resolved_at
+					FROM alerts
+					ORDER BY triggered_at DESC LIMIT 100
+				`)
+			}
+		} else {
+			if isPaged {
+				rows, err = db.Query(r.Context(), `
+					SELECT id, title, summary, severity, metric_id, triggered_at, status,
+					       source_provider, source_class, dedup_count, last_deduplicated_at,
+					       resolved_at
+					FROM alerts WHERE status = $1
+					ORDER BY triggered_at DESC LIMIT $2 OFFSET $3
+				`, targetStatus, limit, offset)
+			} else {
+				rows, err = db.Query(r.Context(), `
+					SELECT id, title, summary, severity, metric_id, triggered_at, status,
+					       source_provider, source_class, dedup_count, last_deduplicated_at,
+					       resolved_at
+					FROM alerts WHERE status = $1
+					ORDER BY triggered_at DESC LIMIT 100
+				`, targetStatus)
+			}
 		}
 		if err != nil {
 			log.Error().Err(err).Msg("query alerts failed")
@@ -131,6 +196,29 @@ func alertsHandler(db statusQuerier) http.HandlerFunc {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
 			return
 		}
+
+		if isPaged {
+			totalPages := (totalCount + limit - 1) / limit
+			if totalPages < 1 {
+				totalPages = 1
+			}
+			w.Header().Set("X-Total-Count", strconv.Itoa(totalCount))
+			w.Header().Set("X-Page", strconv.Itoa(page))
+			w.Header().Set("X-Page-Size", strconv.Itoa(limit))
+			w.Header().Set("X-Total-Pages", strconv.Itoa(totalPages))
+
+			if envelope {
+				writeJSON(w, http.StatusOK, map[string]interface{}{
+					"items":       alerts,
+					"total":       totalCount,
+					"page":        page,
+					"page_size":   limit,
+					"total_pages": totalPages,
+				})
+				return
+			}
+		}
+
 		writeJSON(w, http.StatusOK, alerts)
 	}
 }

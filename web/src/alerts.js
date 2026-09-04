@@ -1,16 +1,45 @@
 let currentSelectedAlertId = null;
 let currentAlertFilter = 'active';
+let currentAlertPage = 1;
+let currentAlertLimit = 10;
+let totalAlertCount = 0;
+let totalAlertPages = 1;
 
-async function loadAlerts(filter) {
-    if (filter) {
+async function loadAlerts(filter, page) {
+    if (filter !== undefined && filter !== null) {
+        if (filter !== currentAlertFilter) {
+            currentAlertPage = 1;
+        }
         currentAlertFilter = filter;
     }
+    if (page !== undefined && page !== null) {
+        currentAlertPage = page;
+    }
     try {
-        const queryParam = currentAlertFilter ? ('?status=' + encodeURIComponent(currentAlertFilter)) : '';
-        const resp = await fetch(API_BASE + '/api/alerts' + queryParam);
-        const alerts = await resp.json();
+        const queryParams = new URLSearchParams({
+            status: currentAlertFilter || 'active',
+            page: String(currentAlertPage),
+            limit: String(currentAlertLimit),
+            envelope: 'true'
+        });
+        const resp = await fetch(API_BASE + '/api/alerts?' + queryParams.toString());
+        const data = await resp.json();
+
+        let alerts = [];
+        if (data && Array.isArray(data.items)) {
+            alerts = data.items;
+            totalAlertCount = data.total ?? 0;
+            currentAlertPage = data.page ?? 1;
+            currentAlertLimit = data.page_size ?? 10;
+            totalAlertPages = data.total_pages ?? 1;
+        } else if (Array.isArray(data)) {
+            alerts = data;
+            totalAlertCount = alerts.length;
+            totalAlertPages = 1;
+        }
         alertsList = alerts;
         renderAlerts(alerts);
+        renderAlertPagination();
         hasFetched = true;
         isOnline = true;
         document.getElementById('status-pill').textContent = t('status.online');
@@ -20,6 +49,8 @@ async function loadAlerts(filter) {
         document.getElementById('status-pill').textContent = t('status.offline');
         document.getElementById('alerts-list').innerHTML =
             '<div class="empty">' + esc(t('alerts.error_api')) + '</div>';
+        const pagination = document.getElementById('alerts-pagination');
+        if (pagination) pagination.style.display = 'none';
     }
 }
 
@@ -205,9 +236,73 @@ function initAlertFilters() {
         btn.addEventListener('click', () => {
             bar.querySelectorAll('.alert-filter-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            loadAlerts(btn.dataset.filter);
+            loadAlerts(btn.dataset.filter, 1);
         });
     });
+}
+
+function renderAlertPagination() {
+    const pagination = document.getElementById('alerts-pagination');
+    if (!pagination) return;
+    if (totalAlertCount > 0) {
+        pagination.style.display = 'flex';
+    } else {
+        pagination.style.display = 'none';
+        return;
+    }
+
+    const btnPrev = document.getElementById('btn-alert-prev');
+    const btnNext = document.getElementById('btn-alert-next');
+    const pageInfo = document.getElementById('alert-page-info');
+    const totalInfo = document.getElementById('alert-total-info');
+    const sizeSelect = document.getElementById('alert-page-size');
+
+    if (btnPrev) {
+        btnPrev.disabled = currentAlertPage <= 1;
+    }
+    if (btnNext) {
+        btnNext.disabled = currentAlertPage >= totalAlertPages;
+    }
+    if (pageInfo) {
+        pageInfo.textContent = t('alerts.page_info', { page: currentAlertPage, total: totalAlertPages });
+    }
+    if (totalInfo) {
+        totalInfo.textContent = t('alerts.total_items', { total: totalAlertCount });
+    }
+    if (sizeSelect && String(sizeSelect.value) !== String(currentAlertLimit)) {
+        sizeSelect.value = String(currentAlertLimit);
+    }
+}
+
+function initAlertPagination() {
+    const btnPrev = document.getElementById('btn-alert-prev');
+    const btnNext = document.getElementById('btn-alert-next');
+    const sizeSelect = document.getElementById('alert-page-size');
+
+    if (btnPrev) {
+        btnPrev.addEventListener('click', () => {
+            if (currentAlertPage > 1) {
+                loadAlerts(null, currentAlertPage - 1);
+            }
+        });
+    }
+    if (btnNext) {
+        btnNext.addEventListener('click', () => {
+            if (currentAlertPage < totalAlertPages) {
+                loadAlerts(null, currentAlertPage + 1);
+            }
+        });
+    }
+    if (sizeSelect) {
+        sizeSelect.addEventListener('change', (e) => {
+            const newLimit = parseInt(e.target.value, 10);
+            if (newLimit && newLimit > 0) {
+                currentAlertLimit = newLimit;
+                currentAlertPage = 1;
+                loadAlerts();
+            }
+        });
+    }
 }
 
 function renderTrend(points) {

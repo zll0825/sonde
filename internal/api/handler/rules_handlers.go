@@ -175,8 +175,8 @@ func (s *rulesStore) patchHandler(w http.ResponseWriter, r *http.Request) {
 		name, metricID, detectorName, curSeverity, source string
 		curConfigBytes                                    []byte
 		curDescription                                    *string
-		curEnabled, isOverride                         bool
-		curVersion                                     int
+		curEnabled, isOverride                            bool
+		curVersion                                        int
 	)
 	if err := tx.QueryRow(r.Context(), `
 		SELECT name, metric_id, detector_name, severity, config, description,
