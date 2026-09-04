@@ -19,6 +19,23 @@
                 <button type="button" id="btn-lang-zh" class="lang-btn">中文</button>
                 <button type="button" id="btn-lang-en" class="lang-btn">EN</button>
             </div>
+            <div class="token-wrapper">
+                <button type="button" id="btn-token-status" class="token-btn" title="API Token">
+                    <span>🔑</span>
+                    <span id="token-label" data-i18n="header.token_missing">API Token</span>
+                </button>
+                <div id="token-dropdown" class="token-dropdown hidden">
+                    <h3 data-i18n="token.modal_title">API Token Settings</h3>
+                    <p data-i18n="token.desc">Used for mutations: sync, backfill, rule toggling, and research feedback. Stored locally.</p>
+                    <div class="token-input-row">
+                        <input type="password" id="token-input" placeholder="Enter API Bearer Token..." data-i18n-placeholder="token.input_placeholder" autocomplete="off">
+                    </div>
+                    <div class="token-actions">
+                        <button type="button" id="btn-clear-token" class="btn-clear-token" data-i18n="token.btn_clear">Clear</button>
+                        <button type="button" id="btn-save-token" class="btn-save-token" data-i18n="token.btn_save">Save & Enable</button>
+                    </div>
+                </div>
+            </div>
             <span class="status-pill" id="status-pill">connecting...</span>
         </div>
     </header>
@@ -64,6 +81,7 @@
                             <h3 style="font-size:0.85rem; color:#64ffda;" data-i18n="alerts.related_entities">Related Entities</h3>
                             <ul id="relations-list" style="font-size:0.8rem; margin-top:0.5rem;"></ul>
                         </div>
+                        <button type="button" id="btn-alert-to-research" class="btn-deep-research" data-i18n="alerts.view_research">🔍 查看完整深度研报 →</button>
                     </div>
                 </div>
             </div>
@@ -144,10 +162,6 @@
                         </select>
                     </div>
                     <div>
-                        <label for="ont-token" data-i18n="ontology.token_label">API Token</label>
-                        <input type="password" id="ont-token" placeholder="API_TOKEN (required for mutations, optional for reads)" data-i18n-placeholder="ontology.token_placeholder">
-                    </div>
-                    <div>
                         <button type="submit" data-i18n="ontology.btn_add">Add Relation</button>
                     </div>
                 </form>
@@ -202,6 +216,8 @@
             </div>
         </div>
     </main>
+
+    <div id="toast-container" class="toast-container"></div>
 
     <script src="/src/i18n.js"></script>
     <script src="/src/common.js"></script>

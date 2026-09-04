@@ -43,10 +43,95 @@ function esc(value) {
     })[c]);
 }
 
+// ── Token Management (localStorage persistence) ──────────────────────
+const TOKEN_STORAGE_KEY = 'capital_api_token';
+
+function getApiToken() {
+    try {
+        return localStorage.getItem(TOKEN_STORAGE_KEY) || '';
+    } catch (e) {
+        return window.__cached_token || '';
+    }
+}
+
+function setApiToken(token) {
+    const trimmed = (token || '').trim();
+    try {
+        if (trimmed) {
+            localStorage.setItem(TOKEN_STORAGE_KEY, trimmed);
+        } else {
+            localStorage.removeItem(TOKEN_STORAGE_KEY);
+        }
+    } catch (e) {
+        window.__cached_token = trimmed;
+    }
+    updateTokenUI();
+}
+
+function clearApiToken() {
+    setApiToken('');
+}
+
+function updateTokenUI() {
+    const token = getApiToken();
+    const btn = document.getElementById('btn-token-status');
+    const label = document.getElementById('token-label');
+    const input = document.getElementById('token-input');
+    if (input && document.activeElement !== input) {
+        input.value = token;
+    }
+    if (btn && label) {
+        btn.classList.toggle('has-token', !!token);
+        label.textContent = token ? t('header.token_configured') : t('header.token_missing');
+    }
+}
+
 function mutationHeaders() {
     const headers = { 'Content-Type': 'application/json' };
-    const tokenInput = document.getElementById('ont-token');
-    const token = tokenInput ? tokenInput.value.trim() : '';
-    if (token) headers.Authorization = 'Bearer ' + token;
+    const token = getApiToken();
+    if (token) {
+        headers.Authorization = 'Bearer ' + token;
+    }
     return headers;
+}
+
+// ── Lightweight Non-blocking Toast Notification ───────────────────────
+function showToast(message, type = 'info', duration = 3200) {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = 'toast toast-' + type;
+
+    const icon = document.createElement('span');
+    icon.className = 'toast-icon';
+    icon.textContent = type === 'success' ? '✓' : (type === 'warn' ? '⚠' : (type === 'error' ? '✕' : 'ℹ'));
+    toast.appendChild(icon);
+
+    const msg = document.createElement('span');
+    msg.className = 'toast-msg';
+    msg.textContent = message;
+    toast.appendChild(msg);
+
+    container.appendChild(toast);
+
+    requestAnimationFrame(() => {
+        toast.classList.add('show');
+    });
+
+    const removeTimer = setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 250);
+    }, duration);
+
+    toast.addEventListener('click', () => {
+        clearTimeout(removeTimer);
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 250);
+    });
 }

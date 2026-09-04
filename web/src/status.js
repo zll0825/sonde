@@ -29,9 +29,10 @@ function renderStatus(data) {
     const pluginsEl = document.getElementById('sb-plugins');
     const degradedTxt = degraded ? ' · ' + t('status.plugins_degraded', { n: degraded }) : '';
     const notReadyTxt = notReady ? ' · ' + t('status.plugins_not_ready', { n: notReady }) : '';
-    pluginsEl.textContent = t('status.plugins_online', { n: connected }) + degradedTxt + notReadyTxt;
+    pluginsEl.textContent = '⚡ ' + t('status.plugins_online', { n: connected }) + degradedTxt + notReadyTxt + ' ▾';
     pluginsEl.classList.toggle('danger', notReady > 0);
-    pluginsEl.title = plugins.map(p =>
+    const tooltipHead = t('status.plugins_control_hint');
+    const tooltipBody = plugins.map(p =>
         t('status.plugin_tooltip', {
             name: p.name,
             status: pluginHealthLabel(p),
@@ -40,6 +41,7 @@ function renderStatus(data) {
             err: p.last_collect_error ? ' · ' + p.last_collect_error : ''
         })
     ).join('\n');
+    pluginsEl.title = tooltipHead + '\n\n' + tooltipBody;
 
 
 
@@ -139,12 +141,47 @@ function renderPluginDetail(data) {
         backfillBtn.style.cssText = 'background:#2a3450; color:#64ffda; border:1px solid #64ffda; padding:0.15rem 0.45rem; border-radius:4px; font-size:0.72rem; cursor:pointer;';
         backfillBtn.disabled = !canBackfill;
         backfillBtn.title = canBackfill ? '' : t('status.backfill_disabled');
-        backfillBtn.addEventListener('click', () => postControl('backfill', pluginID, backfillBtn));
+        backfillBtn.addEventListener('click', () => openBackfillMenu(pluginID, actions, backfillBtn));
         actions.appendChild(backfillBtn);
         li.appendChild(actions);
         ul.appendChild(li);
     }
     wrap.appendChild(ul);
+}
+
+function openBackfillMenu(pluginID, parentEl, backfillBtn) {
+    let existing = parentEl.querySelector('.backfill-menu');
+    if (existing) {
+        existing.remove();
+        return;
+    }
+    const menu = document.createElement('span');
+    menu.className = 'backfill-menu';
+
+    [
+        { label: t('status.window_7d'), days: 7 },
+        { label: t('status.window_30d'), days: 30 },
+        { label: t('status.window_90d'), days: 90 },
+    ].forEach(opt => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'backfill-option';
+        btn.textContent = opt.label;
+        btn.addEventListener('click', () => {
+            menu.remove();
+            postControl('backfill', pluginID, backfillBtn, { days: opt.days });
+        });
+        menu.appendChild(btn);
+    });
+
+    const btnCancel = document.createElement('button');
+    btnCancel.type = 'button';
+    btnCancel.className = 'backfill-option btn-cancel';
+    btnCancel.textContent = t('status.btn_cancel');
+    btnCancel.addEventListener('click', () => menu.remove());
+    menu.appendChild(btnCancel);
+
+    parentEl.appendChild(menu);
 }
 
 function mergePluginViews(data) {
@@ -161,12 +198,13 @@ function mergePluginViews(data) {
     return Object.keys(map).map(k => map[k]);
 }
 
-async function postControl(kind, pluginID, btn) {
+async function postControl(kind, pluginID, btn, options = {}) {
     if (!pluginID) return;
     const body = { plugin_id: pluginID };
     if (kind === 'backfill') {
+        const days = options.days || 30;
         const end = Math.floor(Date.now() / 1000);
-        body.window_start = end - 30 * 24 * 3600;
+        body.window_start = end - days * 24 * 3600;
         body.window_end = end;
     }
     btn.disabled = true;
@@ -177,12 +215,18 @@ async function postControl(kind, pluginID, btn) {
             body: JSON.stringify(body)
         });
         if (!resp.ok) {
+            if (resp.status === 401 || resp.status === 403) {
+                showToast(t('token.need_token_toast'), 'error');
+                const btnToken = document.getElementById('btn-token-status');
+                if (btnToken) btnToken.click();
+                return;
+            }
             const err = await resp.json().catch(() => ({ error: 'HTTP ' + resp.status }));
             throw new Error(err.error || ('HTTP ' + resp.status));
         }
-        alert(kind === 'backfill' ? t('status.backfill_ok') : t('status.sync_ok'));
+        showToast(kind === 'backfill' ? t('status.backfill_ok') : t('status.sync_ok'), 'success');
     } catch (err) {
-        alert(t('common.error', { err: err.message }));
+        showToast(t('common.error', { err: err.message }), 'error');
     } finally {
         if (kind === 'backfill') {
             const exp = ((statusData && statusData.expected_plugins) || []).find(e => e.id === pluginID || e.name === pluginID) || {};
@@ -227,6 +271,15 @@ function buildPulseCard(m) {
     const id = document.createElement('div');
     id.className = 'pulse-id';
     id.textContent = [m.metric_id, m.uid].filter(Boolean).join(' · ');
+    const targetUid = m.uid || m.metric_id;
+    if (targetUid) {
+        id.classList.add('clickable-link');
+        id.title = t('pulse.view_signal');
+        id.addEventListener('click', (e) => {
+            e.stopPropagation();
+            switchTab('signal', { metricUid: targetUid });
+        });
+    }
     card.appendChild(id);
 
     const val = document.createElement('div');

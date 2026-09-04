@@ -1,3 +1,5 @@
+let currentSelectedAlertId = null;
+
 async function loadAlerts() {
     try {
         const resp = await fetch(API_BASE + '/api/alerts');
@@ -40,6 +42,7 @@ function renderAlerts(alerts) {
 }
 
 async function showAlertDetail(alertID) {
+    currentSelectedAlertId = alertID;
     const detail = document.getElementById('alert-detail');
     detail.classList.add('active');
 
@@ -52,11 +55,19 @@ async function showAlertDetail(alertID) {
         }
         const rc = await resp.json();
         document.getElementById('detail-title').textContent = rc.alert_id || alertID;
-        document.getElementById('detail-summary').textContent = t('alerts.research_summary', {
-            name: rc.metric_name || rc.metric_id || '—',
+        const metricDisplayName = rc.metric_name || rc.metric_id || '—';
+        document.getElementById('detail-summary').innerHTML = esc(t('alerts.research_summary', {
+            name: metricDisplayName,
             current: rc.current_value ?? 'N/A',
             threshold: rc.threshold ?? 'N/A'
-        });
+        })) + (rc.metric_id ? ' &middot; <span class="clickable-link" id="alert-link-to-signal">' + esc(t('pulse.view_signal')) + '</span>' : '');
+
+        const signalLink = document.getElementById('alert-link-to-signal');
+        if (signalLink && rc.metric_id) {
+            signalLink.addEventListener('click', () => {
+                switchTab('signal', { metricUid: rc.metric_id });
+            });
+        }
 
         if (rc.recent_trend && rc.recent_trend.length > 0) {
             renderTrend(rc.recent_trend);
@@ -230,7 +241,12 @@ function toggleClusterDetail(cluster, row, btn) {
         for (const alertID of alertIDs) {
             const li = document.createElement('li');
             li.style.cssText = 'padding:0.2rem 0;';
-            li.textContent = alertID;
+            const chip = document.createElement('span');
+            chip.className = 'alert-chip clickable';
+            chip.textContent = alertID;
+            chip.title = t('clusters.chip_tooltip');
+            chip.addEventListener('click', () => switchTab('research', { alertId: alertID }));
+            li.appendChild(chip);
             ulAlerts.appendChild(li);
         }
         panel.appendChild(ulAlerts);

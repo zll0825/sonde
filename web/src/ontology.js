@@ -217,17 +217,8 @@ function renderCandidates(candidates, updatedAt) {
         btnReject.textContent = t('ontology.btn_reject');
         btnReject.style.cssText = 'background:#e85a5a; color:#fff; border:none; padding:0.25rem 0.5rem; border-radius:4px; font-size:0.7rem; font-weight:600; cursor:pointer;';
 
-        btnAccept.addEventListener('click', () => {
-            if (!confirm(t('ontology.confirm_accept', {
-                id: id,
-                source: c.source_id || c.source || '—',
-                target: c.target_id || c.target || '—',
-                type: c.relation_type || c.relation || '—',
-                direction: c.direction || '—'
-            }))) return;
-            submitCandidateVerdict(id, 'accept', tr, btnAccept, btnReject);
-        });
-        btnReject.addEventListener('click', () => submitCandidateVerdict(id, 'reject', tr, btnAccept, btnReject));
+        btnAccept.addEventListener('click', () => submitCandidateVerdict(id, 'accept', tr, btnAccept, btnReject));
+        btnReject.addEventListener('click', () => openCandidateRejectPanel(id, tr, btnAccept, btnReject));
 
         tdActions.appendChild(btnAccept);
         tdActions.appendChild(btnReject);
@@ -239,27 +230,94 @@ function renderCandidates(candidates, updatedAt) {
     container.appendChild(table);
 }
 
-async function submitCandidateVerdict(candidateId, verdict, row, btnAccept, btnReject) {
+function openCandidateRejectPanel(candidateId, tr, btnAccept, btnReject) {
+    const existing = tr.nextElementSibling;
+    if (existing && existing.classList.contains('candidate-reject-row')) {
+        existing.remove();
+        return;
+    }
+    const rejectTr = document.createElement('tr');
+    rejectTr.className = 'candidate-reject-row';
+    const rejectTd = document.createElement('td');
+    rejectTd.colSpan = 9;
+    rejectTd.style.cssText = 'background:#0d1220; padding:0.6rem 1rem;';
+
+    const form = document.createElement('div');
+    form.className = 'inline-reject-panel';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'inline-reject-input';
+    input.placeholder = t('ontology.reject_reason_placeholder');
+
+    const btnConfirm = document.createElement('button');
+    btnConfirm.type = 'button';
+    btnConfirm.textContent = t('ontology.btn_confirm_reject');
+    btnConfirm.style.cssText = 'background:#e85a5a; color:#fff; border:none; padding:0.3rem 0.6rem; border-radius:4px; font-size:0.75rem; font-weight:600; cursor:pointer;';
+
+    const btnCancel = document.createElement('button');
+    btnCancel.type = 'button';
+    btnCancel.textContent = t('ontology.btn_cancel_reject');
+    btnCancel.style.cssText = 'background:#2a3450; color:#8892b0; border:none; padding:0.3rem 0.6rem; border-radius:4px; font-size:0.75rem; cursor:pointer;';
+    btnCancel.addEventListener('click', () => rejectTr.remove());
+
+    btnConfirm.addEventListener('click', async () => {
+        const reason = input.value.trim();
+        btnConfirm.disabled = true;
+        btnCancel.disabled = true;
+        try {
+            await submitCandidateVerdict(candidateId, 'reject', tr, btnAccept, btnReject, reason);
+            rejectTr.remove();
+        } catch (e) {
+            btnConfirm.disabled = false;
+            btnCancel.disabled = false;
+        }
+    });
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') btnConfirm.click();
+        if (e.key === 'Escape') rejectTr.remove();
+    });
+
+    form.appendChild(input);
+    form.appendChild(btnConfirm);
+    form.appendChild(btnCancel);
+    rejectTd.appendChild(form);
+    rejectTr.appendChild(rejectTd);
+    tr.after(rejectTr);
+    input.focus();
+}
+
+async function submitCandidateVerdict(candidateId, verdict, row, btnAccept, btnReject, reason = '') {
     btnAccept.disabled = true;
     btnReject.disabled = true;
-    let reason = null;
-    if (verdict === 'reject') {
-        reason = prompt(t('ontology.reject_prompt')) || '';
-    }
     try {
         const resp = await fetch(API_BASE + '/api/ontology/candidates/' + encodeURIComponent(candidateId) + '/' + verdict, {
             method: 'POST',
             headers: mutationHeaders(),
             body: JSON.stringify(reason ? { reason } : {})
         });
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        if (!resp.ok) {
+            if (resp.status === 401 || resp.status === 403) {
+                showToast(t('token.need_token_toast'), 'error');
+                const btnToken = document.getElementById('btn-token-status');
+                if (btnToken) btnToken.click();
+                btnAccept.disabled = false;
+                btnReject.disabled = false;
+                return;
+            }
+            const err = await resp.json().catch(() => ({ error: 'HTTP ' + resp.status }));
+            throw new Error(err.error || ('HTTP ' + resp.status));
+        }
+        showToast(verdict === 'accept' ? t('toast.candidate_accepted') : t('toast.candidate_rejected'), 'success');
         row.style.transition = 'opacity 0.3s';
         row.style.opacity = '0';
         setTimeout(() => row.remove(), 300);
     } catch (err) {
-        alert(t('common.error', { err: err.message }));
+        showToast(t('common.error', { err: err.message }), 'error');
         btnAccept.disabled = false;
         btnReject.disabled = false;
+        throw err;
     }
 }
 
@@ -269,11 +327,6 @@ document.getElementById('ontology-form').addEventListener('submit', async (e) =>
     const targetID = document.getElementById('ont-target-id').value.trim();
     const relationType = document.getElementById('ont-relation-type').value;
     const direction = document.getElementById('ont-direction').value;
-    const tokenInput = document.getElementById('ont-token');
-    const token = tokenInput.value.trim();
-    if (!confirm(t('ontology.confirm_create', {
-        source: sourceID, target: targetID, type: relationType, direction: direction
-    }))) return;
     try {
         const resp = await fetch(API_BASE + '/api/ontology/relations/', {
             method: 'POST',
@@ -286,16 +339,22 @@ document.getElementById('ontology-form').addEventListener('submit', async (e) =>
             })
         });
         if (!resp.ok) {
-            const err = await resp.json();
-            alert(t('common.error', { err: err.error || 'unknown' }));
+            if (resp.status === 401 || resp.status === 403) {
+                showToast(t('token.need_token_toast'), 'error');
+                const btnToken = document.getElementById('btn-token-status');
+                if (btnToken) btnToken.click();
+                return;
+            }
+            const err = await resp.json().catch(() => ({ error: 'HTTP ' + resp.status }));
+            showToast(t('common.error', { err: err.error || 'unknown' }), 'error');
             return;
         }
+        showToast(sourceID + ' → ' + targetID + ' (' + relationType + ')', 'success');
         document.getElementById('ontology-form').reset();
-        tokenInput.value = token;
         ontologyLoaded = false;
         await loadOntology();
     } catch (err) {
-        alert(t('common.network_error', { err: err.message }));
+        showToast(t('common.network_error', { err: err.message }), 'error');
     }
 });
 
@@ -428,12 +487,6 @@ function renderRules(rules) {
 }
 
 async function toggleRule(ruleId, enabled, checkbox, labelSpan) {
-    const from = enabled ? t('rules.off') : t('rules.on');
-    const to = enabled ? t('rules.on') : t('rules.off');
-    if (!confirm(t('rules.confirm_toggle', { id: ruleId, from: from, to: to }))) {
-        checkbox.checked = !enabled;
-        return;
-    }
     checkbox.disabled = true;
     try {
         const resp = await fetch(API_BASE + '/api/rules/' + encodeURIComponent(ruleId), {
@@ -441,10 +494,21 @@ async function toggleRule(ruleId, enabled, checkbox, labelSpan) {
             headers: mutationHeaders(),
             body: JSON.stringify({ enabled })
         });
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        if (!resp.ok) {
+            if (resp.status === 401 || resp.status === 403) {
+                showToast(t('token.need_token_toast'), 'error');
+                checkbox.checked = !enabled;
+                const btnToken = document.getElementById('btn-token-status');
+                if (btnToken) btnToken.click();
+                return;
+            }
+            const err = await resp.json().catch(() => ({ error: 'HTTP ' + resp.status }));
+            throw new Error(err.error || ('HTTP ' + resp.status));
+        }
         if (labelSpan) labelSpan.textContent = enabled ? t('rules.on') : t('rules.off');
+        showToast(enabled ? t('toast.rule_enabled') : t('toast.rule_disabled'), 'success');
     } catch (err) {
-        alert(t('rules.toggle_error', { err: err.message }));
+        showToast(t('rules.toggle_error', { err: err.message }), 'error');
         checkbox.checked = !enabled;
         if (labelSpan) labelSpan.textContent = !enabled ? t('rules.on') : t('rules.off');
     } finally {
@@ -557,19 +621,27 @@ function renderRuleHistory(entries, container, ruleId) {
 
 async function restoreRule(ruleId, version, btn, from, to) {
     if (!ruleId || !version) return;
-    if (!confirm(t('rules.confirm_restore', {
-        id: ruleId, version: version, from: from || '—', to: to || '—'
-    }))) return;
     btn.disabled = true;
     try {
         const resp = await fetch(API_BASE + '/api/rules/' + encodeURIComponent(ruleId) + '/restore/' + encodeURIComponent(version), {
             method: 'POST',
             headers: mutationHeaders()
         });
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        if (!resp.ok) {
+            if (resp.status === 401 || resp.status === 403) {
+                showToast(t('token.need_token_toast'), 'error');
+                const btnToken = document.getElementById('btn-token-status');
+                if (btnToken) btnToken.click();
+                return;
+            }
+            const err = await resp.json().catch(() => ({ error: 'HTTP ' + resp.status }));
+            throw new Error(err.error || ('HTTP ' + resp.status));
+        }
+        showToast(t('toast.rule_restored', { version }), 'success');
         await loadRules();
     } catch (err) {
-        alert(t('common.error', { err: err.message }));
+        showToast(t('common.error', { err: err.message }), 'error');
+    } finally {
         btn.disabled = false;
     }
 }

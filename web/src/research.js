@@ -7,7 +7,7 @@ async function loadResearch() {
     const alertIDInput = document.getElementById('research-alert-id');
     const alertID = alertIDInput.value.trim();
     if (!alertID) {
-        alert(t('research.prompt_enter_id'));
+        showToast(t('research.prompt_enter_id'), 'warn');
         return;
     }
     const detail = document.getElementById('research-detail');
@@ -234,11 +234,21 @@ function renderResearchDetail(rc) {
                 headers: mutationHeaders(),
                 body: JSON.stringify({ verdict, rationale })
             });
-            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            if (!resp.ok) {
+                if (resp.status === 401 || resp.status === 403) {
+                    showToast(t('token.need_token_toast'), 'error');
+                    const btnToken = document.getElementById('btn-token-status');
+                    if (btnToken) btnToken.click();
+                    statusP.style.display = 'none';
+                    return;
+                }
+                throw new Error('HTTP ' + resp.status);
+            }
             const verdictLabel = verdict === 'worth_researching' ? t('research.verdict_worth')
                 : (verdict === 'irrelevant' ? t('research.verdict_irrelevant') : t('research.verdict_duplicate'));
             statusP.textContent = t('research.submitted', { verdict: verdictLabel });
             statusP.style.color = '#2dd4a7';
+            showToast(t('research.submitted', { verdict: verdictLabel }), 'success');
         } catch (err) {
             statusP.textContent = t('common.error', { err: err.message });
             statusP.style.color = '#e85a5a';
@@ -343,7 +353,7 @@ function buildResearchSparkline(series) {
 let signalChart = null;
 async function loadSignalQuality() {
     const metricUID = document.getElementById('signal-metric-uid').value.trim();
-    if (!metricUID) { alert(t('signal.prompt_enter_uid')); return; }
+    if (!metricUID) { showToast(t('signal.prompt_enter_uid'), 'warn'); return; }
     const list = document.getElementById('signal-quality-list');
     try {
         const resp = await fetch(API_BASE + '/api/signal/quality/' + encodeURIComponent(metricUID));
