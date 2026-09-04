@@ -86,8 +86,8 @@ services:
     environment:
       DATABASE_URL: postgres://capital:capital_dev@timescaledb:5432/capital_observatory?sslmode=disable
       API_BIND: ":8080"
-      # 控制端点（sync/backfill）Bearer 令牌；空 = 拒绝写操作，读端点不受影响
-      API_TOKEN: "${API_TOKEN:-}"
+      # 控制端点（sync/backfill）Bearer 令牌；未显式指定时使用开发默认值 capital_dev_token
+      API_TOKEN: "${API_TOKEN:-capital_dev_token}"
       WEB_DIR: "/app/web"
       # Same JSONL path the Core writes, so /api/clusters/ can read the
       # snapshots produced by the Core without sharing a process.
