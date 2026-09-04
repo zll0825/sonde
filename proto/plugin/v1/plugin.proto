@@ -1,6 +1,6 @@
 syntax = "proto3";
-package capital_observatory.plugin.v1;
-option go_package = "capital_observatory/pkg/proto/plugin/v1;pluginv1";
+package sonde.plugin.v1;
+option go_package = "sonde/pkg/proto/plugin/v1;pluginv1";
 
 // ===========================================================================
 // PluginHost — Core exposes this service to Plugins

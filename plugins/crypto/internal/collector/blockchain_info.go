@@ -11,9 +11,9 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/pkg/model"
-	"capital_observatory/pkg/pluginrunner"
-	"capital_observatory/pkg/provider"
+	"sonde/pkg/model"
+	"sonde/pkg/pluginrunner"
+	"sonde/pkg/provider"
 )
 
 // BlockchainInfoCollector fetches on-chain metrics from blockchain.com's
@@ -102,7 +102,7 @@ func (b *BlockchainInfoCollector) doGet(ctx context.Context, urlStr string) ([]b
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "capital-observatory/0.1.0")
+	req.Header.Set("User-Agent", "sonde/0.1.0")
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := b.client.Do(req)

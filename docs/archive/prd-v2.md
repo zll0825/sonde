@@ -1,10 +1,10 @@
-# Capital Observatory PRD v1.0
+# Sonde PRD v1.0
 
 ## 一、产品简介
 
 ### 产品名称
 
-**Capital Observatory**
+**Sonde**
 
 ### 一句话定位
 
@@ -40,7 +40,7 @@
 
 > "告诉我 XXX 的信息。"
 
-Capital Observatory 希望回答：
+Sonde 希望回答：
 
 > "今天有哪些事情值得你去研究。"
 
@@ -84,7 +84,7 @@ MVP 阶段：
 
 就像 Prometheus 持续监控服务器一样，
 
-Capital Observatory 持续监控资本市场。
+Sonde 持续监控资本市场。
 
 服务器监控关注：
 

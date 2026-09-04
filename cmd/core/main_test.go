@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"capital_observatory/internal/core/alert"
-	"capital_observatory/internal/core/classification"
-	"capital_observatory/internal/core/research"
-	"capital_observatory/pkg/model"
+	"sonde/internal/core/alert"
+	"sonde/internal/core/classification"
+	"sonde/internal/core/research"
+	"sonde/pkg/model"
 )
 
 func TestDistinctMetricCountIncludesSeedAndDeduplicates(t *testing.T) {

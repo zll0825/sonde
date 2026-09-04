@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 func obs(metricUID string, ts time.Time, value float64) model.Observation {

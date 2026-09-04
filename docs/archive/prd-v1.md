@@ -1,6 +1,6 @@
 # PRD v1.0
 
-# Capital Observatory
+# Sonde
 
 **一个面向资本市场的可观测性平台（Capital Observability Platform）**
 
@@ -854,7 +854,7 @@ Kubernetes
 # 18. 推荐目录结构
 
 ```
-capital-observatory/
+sonde/
 
 cmd/
 

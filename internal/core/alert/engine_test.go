@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // fakeAlertStore records calls so tests can assert dedup + outbox behavior.

@@ -3,7 +3,7 @@ package relationmgr
 import (
 	"testing"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 func TestLayerOf(t *testing.T) {

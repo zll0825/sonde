@@ -11,7 +11,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	pb "capital_observatory/pkg/proto/plugin/v1"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 // StreamSession holds the state for one connected Plugin.

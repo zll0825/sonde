@@ -10,7 +10,7 @@ import (
 	"sort"
 	"time"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // ResearchContext is the assembled research payload for the API / frontend.

@@ -1,4 +1,4 @@
-# Capital Observatory — Domain Model Spec
+# Sonde — Domain Model Spec
 
 版本：1.0
 状态：Draft（Sprint 0.1）
@@ -7,7 +7,7 @@
 
 ## 概述
 
-本文档定义 Capital Observatory 的五个核心领域对象。所有字段、状态、关系、约束在此统一，不散落在系统架构文档各处。
+本文档定义 Sonde 的五个核心领域对象。所有字段、状态、关系、约束在此统一，不散落在系统架构文档各处。
 
 每条定义遵循同一结构：
 - **身份**：唯一标识符、人可读名称

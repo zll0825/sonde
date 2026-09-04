@@ -8,7 +8,7 @@ import (
 	"sort"
 	"time"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // TrendDetector fires when the most recent observations form a sustained

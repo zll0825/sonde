@@ -1,4 +1,4 @@
-# Air (hot-reload) config for Capital Observatory core service.
+# Air (hot-reload) config for Sonde core service.
 #   make dev  →  air -c .air.toml  (rebuilds on .go changes, restarts core)
 
 root = "."

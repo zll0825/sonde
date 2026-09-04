@@ -1,4 +1,4 @@
-# Capital Observatory
+# Sonde
 
 ETF / Macro / Crypto 资本数据观测系统：采集 → 质量评估 → 规则检测 → 告警通知 → 研究组装 → 前端展示。
 
@@ -20,7 +20,7 @@ export TELEGRAM_CHAT_ID=        # @userinfobot 获取数字 chat ID
 make dev-up
 
 # 4. 验证链路（应看到 fred / alpha_vantage / coingecko / yahoo 来源的观测入库）
-psql postgres://capital:capital_dev@localhost:5432/capital_observatory \
+psql postgres://sonde:sonde_dev@localhost:5432/sonde \
   -c "SELECT metric_uid, value, source_provider, quality_grade, ingested_at
       FROM observations ORDER BY ingested_at DESC LIMIT 20;"
 ```

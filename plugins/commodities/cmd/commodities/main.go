@@ -9,10 +9,10 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/pkg/pluginrunner"
-	pb "capital_observatory/pkg/proto/plugin/v1"
-	commodities "capital_observatory/plugins/commodities"
-	"capital_observatory/plugins/commodities/internal/collector"
+	"sonde/pkg/pluginrunner"
+	pb "sonde/pkg/proto/plugin/v1"
+	commodities "sonde/plugins/commodities"
+	"sonde/plugins/commodities/internal/collector"
 )
 
 const defaultCollectionInterval = 2 * time.Hour

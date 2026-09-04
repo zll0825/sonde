@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/pkg/model"
-	"capital_observatory/pkg/provider"
+	"sonde/pkg/model"
+	"sonde/pkg/provider"
 )
 
 var alphaTestNow = time.Date(2026, 8, 14, 3, 5, 0, 0, time.UTC)

@@ -17,25 +17,25 @@ import (
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 
-	"capital_observatory/internal/core/alert"
-	"capital_observatory/internal/core/classification"
-	"capital_observatory/internal/core/detector"
-	coreevent "capital_observatory/internal/core/event"
-	"capital_observatory/internal/core/noise"
-	"capital_observatory/internal/core/notifier"
-	"capital_observatory/internal/core/ontology"
-	"capital_observatory/internal/core/pluginmgr"
-	"capital_observatory/internal/core/research"
-	sigutil "capital_observatory/internal/core/signal"
-	"capital_observatory/internal/core/store"
-	"capital_observatory/pkg/model"
-	pb "capital_observatory/pkg/proto/plugin/v1"
+	"sonde/internal/core/alert"
+	"sonde/internal/core/classification"
+	"sonde/internal/core/detector"
+	coreevent "sonde/internal/core/event"
+	"sonde/internal/core/noise"
+	"sonde/internal/core/notifier"
+	"sonde/internal/core/ontology"
+	"sonde/internal/core/pluginmgr"
+	"sonde/internal/core/research"
+	sigutil "sonde/internal/core/signal"
+	"sonde/internal/core/store"
+	"sonde/pkg/model"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://capital:capital_dev@localhost:5432/capital_observatory?sslmode=disable"
+		dsn = "postgres://sonde:sonde_dev@localhost:5432/sonde?sslmode=disable"
 	}
 
 	ctx := signalContext()

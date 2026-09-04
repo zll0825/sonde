@@ -1,10 +1,10 @@
-# Capital Observatory MVP v0.1.0
+# Sonde MVP v0.1.0
 
 发布日期：2026-08-13
 
 ## 发布范围
 
-`v0.1.0` 是 Capital Observatory 的首个可运行 MVP 基线，覆盖 M0-M5、
+`v0.1.0` 是 Sonde 的首个可运行 MVP 基线，覆盖 M0-M5、
 真实数据源接入、运行状态面板，以及稳定化阶段完成的持久检测、告警研究
 关联、命令恢复、告警预算和数据语义修正。带注释标签 `v0.1.0` 指向权威
 发布提交。
@@ -46,7 +46,7 @@ make migrate-status
   已被运行中的应用写入。回滚到不了解这些语义的旧二进制前，必须停止写入
   并验证兼容性。
 - 禁止在 live soak 数据库上运行测试、清表或破坏性迁移。数据库测试使用
-  独立的 `capital_observatory_hardening_test` 数据库。
+  独立的 `sonde_hardening_test` 数据库。
 
 ## 发布复现
 
@@ -61,8 +61,8 @@ git diff --check
 make lint
 make build
 make test-short
-TEST_DATABASE_URL='postgres://capital:capital_dev@localhost:5432/capital_observatory_hardening_test?sslmode=disable' make test
-TEST_DATABASE_URL='postgres://capital:capital_dev@localhost:5432/capital_observatory_hardening_test?sslmode=disable' go test -race -count=1 ./...
+TEST_DATABASE_URL='postgres://sonde:sonde_dev@localhost:5432/sonde_hardening_test?sslmode=disable' make test
+TEST_DATABASE_URL='postgres://sonde:sonde_dev@localhost:5432/sonde_hardening_test?sslmode=disable' go test -race -count=1 ./...
 ```
 
 插件模块的 race gate 还需分别在 `plugins/etf`、`plugins/crypto` 和

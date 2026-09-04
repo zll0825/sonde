@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // ThresholdDetector fires when observations cross a configured boundary.

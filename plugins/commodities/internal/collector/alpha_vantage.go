@@ -17,9 +17,9 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/pkg/model"
-	"capital_observatory/pkg/pluginrunner"
-	"capital_observatory/pkg/provider"
+	"sonde/pkg/model"
+	"sonde/pkg/pluginrunner"
+	"sonde/pkg/provider"
 )
 
 const (
@@ -237,7 +237,7 @@ func (a *AlphaVantageGoldCollector) doQuery(ctx context.Context, function string
 	if err != nil {
 		return nil, time.Time{}, errors.New("create Alpha Vantage request")
 	}
-	req.Header.Set("User-Agent", "capital-observatory/0.2.0")
+	req.Header.Set("User-Agent", "sonde/0.2.0")
 	resp, err := a.client.Do(req)
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("http GET %s: %w", req.URL.Path, provider.SanitizeTransportError(err))

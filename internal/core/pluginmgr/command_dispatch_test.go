@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/internal/core/store"
-	pb "capital_observatory/pkg/proto/plugin/v1"
+	"sonde/internal/core/store"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 func TestCommandToCoreMessage_Sync(t *testing.T) {

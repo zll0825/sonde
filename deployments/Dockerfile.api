@@ -1,4 +1,4 @@
-# Dockerfile.api — builds and runs the Capital Observatory API (REST + static frontend).
+# Dockerfile.api — builds and runs the Sonde API (REST + static frontend).
 #
 # Build stage
 FROM golang:1.22-alpine AS builder

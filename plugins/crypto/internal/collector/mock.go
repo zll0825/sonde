@@ -6,8 +6,8 @@ import (
 	"math/rand"
 	"time"
 
-	"capital_observatory/pkg/model"
-	"capital_observatory/pkg/pluginrunner"
+	"sonde/pkg/model"
+	"sonde/pkg/pluginrunner"
 )
 
 // Mock returns deterministic-looking but jittered crypto data for development

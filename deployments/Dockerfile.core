@@ -1,4 +1,4 @@
-# Dockerfile.core — builds and runs the Capital Observatory core gRPC server.
+# Dockerfile.core — builds and runs the Sonde core gRPC server.
 #
 # Build stage
 FROM golang:1.22-alpine AS builder

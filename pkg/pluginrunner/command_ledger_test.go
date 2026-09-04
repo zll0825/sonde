@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	pb "capital_observatory/pkg/proto/plugin/v1"
 	"google.golang.org/protobuf/proto"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 func TestCommandLedgerConcurrentDeliveryExecutesOnce(t *testing.T) {

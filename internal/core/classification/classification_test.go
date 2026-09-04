@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 func TestClusterer_SameEntityWithinWindow(t *testing.T) {

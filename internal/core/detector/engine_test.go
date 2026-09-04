@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // stubDetector fires a fixed trigger (or error) regardless of input.

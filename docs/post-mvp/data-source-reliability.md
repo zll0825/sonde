@@ -1,7 +1,7 @@
 # Data Source Reliability & Freshness
 
 This document records the verified freshness characteristics and reliability
-patterns for each data source in the capital_observatory production inventory.
+patterns for each data source in the sonde production inventory.
 
 ## Freshness Characteristics
 

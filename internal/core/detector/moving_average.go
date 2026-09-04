@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // MovingAverageDetector fires when the latest value crosses above or below

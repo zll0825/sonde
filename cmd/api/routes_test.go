@@ -20,7 +20,7 @@ func TestRegisterStaticRoutes(t *testing.T) {
 		t.Fatalf("expected 200 for /, got %d", rrRoot.Code)
 	}
 	bodyRoot := rrRoot.Body.String()
-	if !strings.Contains(bodyRoot, "Capital Observatory") {
+	if !strings.Contains(bodyRoot, "Sonde") {
 		t.Errorf("expected landing page title in body, got: %s", bodyRoot[:min(200, len(bodyRoot))])
 	}
 	if !strings.Contains(bodyRoot, "landing-container") {

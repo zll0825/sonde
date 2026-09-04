@@ -1,4 +1,4 @@
-# Capital Observatory — Plugin Developer Guide
+# Sonde — Plugin Developer Guide
 
 本文档面向**插件开发者**：写一个新的 domain plugin（例如 `commodities`、`bonds`、`equities`）之前，先读本文档。它涵盖布局、注册、采集器接口、provider safety 约定、测试模式，以及参考实现清单。
 
@@ -25,7 +25,7 @@ Worktree 在 `go.work` 中把每个 plugin 作为独立 module 保留（不用 v
 
 ```
 plugins/<name>/
-├── go.mod                       # module capital_observatory/plugins/<name>
+├── go.mod                       # module sonde/plugins/<name>
 ├── go.sum                       # go mod tidy 生成，必须提交
 ├── cmd/
 │   └── <name>/

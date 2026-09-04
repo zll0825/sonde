@@ -6,7 +6,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 
-	coreevent "capital_observatory/internal/core/event"
+	coreevent "sonde/internal/core/event"
 )
 
 // Deps is the API process wiring passed from cmd/api.

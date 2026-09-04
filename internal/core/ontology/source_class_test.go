@@ -3,8 +3,8 @@ package ontology
 import (
 	"testing"
 
-	"capital_observatory/pkg/model"
-	pb "capital_observatory/pkg/proto/plugin/v1"
+	"sonde/pkg/model"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 func TestSourceClassFromProto(t *testing.T) {

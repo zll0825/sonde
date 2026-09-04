@@ -1,4 +1,4 @@
-# Capital Observatory Architecture
+# Sonde Architecture
 
 ## 一、系统总览
 

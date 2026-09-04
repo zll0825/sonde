@@ -1,6 +1,6 @@
 # Research Assistant MCP Runbook
 
-> How to configure and attach AI research assistants (Cursor, Claude Desktop, Claude Code) to Capital Observatory via the read-only Model Context Protocol (MCP) server.
+> How to configure and attach AI research assistants (Cursor, Claude Desktop, Claude Code) to Sonde via the read-only Model Context Protocol (MCP) server.
 
 ---
 
@@ -48,15 +48,15 @@ Edit your Claude Desktop configuration file:
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
-Add `capital-observatory` under `mcpServers`:
+Add `sonde` under `mcpServers`:
 
 ```json
 {
   "mcpServers": {
-    "capital-observatory": {
-      "command": "/ABSOLUTE/PATH/TO/capital_observatory/bin/mcp",
+    "sonde": {
+      "command": "/ABSOLUTE/PATH/TO/sonde/bin/mcp",
       "env": {
-        "DATABASE_URL": "postgres://capital:capital_dev@localhost:5432/capital_observatory?sslmode=disable"
+        "DATABASE_URL": "postgres://sonde:sonde_dev@localhost:5432/sonde?sslmode=disable"
       }
     }
   }
@@ -73,20 +73,20 @@ In Cursor:
 1. Open **Settings** -> **Features** -> **MCP**.
 2. Click **Add New MCP Server**.
 3. Fill in:
-   - **Name**: `capital-observatory`
+   - **Name**: `sonde`
    - **Type**: `command`
-   - **Command**: `/ABSOLUTE/PATH/TO/capital_observatory/bin/mcp`
-   - **Environment Variables**: `DATABASE_URL=postgres://capital:capital_dev@localhost:5432/capital_observatory?sslmode=disable`
+   - **Command**: `/ABSOLUTE/PATH/TO/sonde/bin/mcp`
+   - **Environment Variables**: `DATABASE_URL=postgres://sonde:sonde_dev@localhost:5432/sonde?sslmode=disable`
 
 Alternatively, add it to your project-level `.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
-    "capital-observatory": {
+    "sonde": {
       "command": "./bin/mcp",
       "env": {
-        "DATABASE_URL": "postgres://capital:capital_dev@localhost:5432/capital_observatory?sslmode=disable"
+        "DATABASE_URL": "postgres://sonde:sonde_dev@localhost:5432/sonde?sslmode=disable"
       }
     }
   }
@@ -107,7 +107,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | ./bin/mcp
 
 Response:
 ```json
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"capital-observatory-mcp","version":"0.1.0"}}}
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"sonde-mcp","version":"0.1.0"}}}
 ```
 
 ### List Tools (`tools/list`)

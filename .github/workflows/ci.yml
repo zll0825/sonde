@@ -1,4 +1,4 @@
-# Capital Observatory — CI Pipeline
+# Sonde — CI Pipeline
 # M0 deliverable: gofmt / go build / go vet / go test / buf lint
 
 name: CI
@@ -66,9 +66,9 @@ jobs:
       timescaledb:
         image: timescale/timescaledb:2.16.1-pg16
         env:
-          POSTGRES_USER: capital
-          POSTGRES_PASSWORD: capital_test
-          POSTGRES_DB: capital_observatory_test
+          POSTGRES_USER: sonde
+          POSTGRES_PASSWORD: sonde_test
+          POSTGRES_DB: sonde_test
         ports:
           - 5432:5432
         options: >-
@@ -77,10 +77,10 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     env:
-      DATABASE_URL: postgres://capital:capital_test@localhost:5432/capital_observatory_test?sslmode=disable
+      DATABASE_URL: postgres://sonde:sonde_test@localhost:5432/sonde_test?sslmode=disable
       # Integration tests (internal/core/ontology) gate on TEST_DATABASE_URL;
       # without it they skip and the TimescaleDB service above goes unused.
-      TEST_DATABASE_URL: postgres://capital:capital_test@localhost:5432/capital_observatory_test?sslmode=disable
+      TEST_DATABASE_URL: postgres://sonde:sonde_test@localhost:5432/sonde_test?sslmode=disable
       # Notification tests must be deterministic even when repository or runner
       # environments provide credentials.
       TELEGRAM_BOT_TOKEN: ""

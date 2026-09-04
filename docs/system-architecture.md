@@ -1,4 +1,4 @@
-# Capital Observatory — 系统架构设计
+# Sonde — 系统架构设计
 
 版本：1.1
 状态：冻结（设计决策不变；1.1 仅修订里程碑与文档引用）
@@ -1121,7 +1121,7 @@ M0 → M1 → M2 → M3 → M4 → M5
 ## 十三、目录结构
 
 ```
-capital-observatory/
+sonde/
 ├── cmd/
 │   ├── core/main.go
 │   └── api/main.go

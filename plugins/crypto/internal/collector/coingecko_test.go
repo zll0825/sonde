@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"capital_observatory/pkg/model"
-	"capital_observatory/pkg/provider"
+	"sonde/pkg/model"
+	"sonde/pkg/provider"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

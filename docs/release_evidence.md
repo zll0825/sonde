@@ -8,7 +8,7 @@ soak database unless the step is explicitly read-only.
 ## Environment
 
 ```bash
-export DATABASE_URL="postgres://capital:${PGPASS}@localhost:55433/capital_observatory_candidate?sslmode=disable"
+export DATABASE_URL="postgres://sonde:PGPASS@localhost:55433/sonde_candidate?sslmode=disable"
 ```
 
 ## 1. Database Migrations
@@ -61,7 +61,7 @@ Expected: `extension | jsonb | NO | '{}'::jsonb`
 ### Full logical backup
 
 ```bash
-BACKUP_DIR="${BACKUP_DIR:-/var/backups/capital_observatory}"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/sonde}"
 mkdir -p "$BACKUP_DIR"
 TS=$(date +%Y%m%d_%H%M%S)
 pg_dump -Fc --no-owner --no-privileges \
@@ -78,11 +78,11 @@ pg_restore --list "$BACKUP_DIR/release_${TS}.dump" > /dev/null \
 ### Restore to staging and verify
 
 ```bash
-STAGING_URL="postgres://capital:${PGPASS}@localhost:55434/capital_observatory_restore?sslmode=disable"
+STAGING_URL="postgres://sonde:PGPASS@localhost:55434/sonde_restore?sslmode=disable"
 # Start a disposable second Postgres/TimescaleDB instance on port 55434.
 # Do not use dropdb/createdb against the live MVP port 5432.
-dropdb --if-exists --maintenance-db=postgres -h localhost -p 55434 -U capital capital_observatory_restore
-createdb  -h localhost -p 55434 -U capital capital_observatory_restore
+dropdb --if-exists --maintenance-db=postgres -h localhost -p 55434 -U sonde sonde_restore
+createdb  -h localhost -p 55434 -U sonde sonde_restore
 pg_restore --no-owner --no-privileges --dbname "$STAGING_URL" \
   "$BACKUP_DIR/release_${TS}.dump"
 psql "$STAGING_URL" -c "
@@ -177,7 +177,7 @@ other providers.
 ### Step 1 — Stop the worker
 
 ```bash
-sudo systemctl stop capital-core
+sudo systemctl stop sonde-core
 # or: docker compose stop core
 ```
 
@@ -211,7 +211,7 @@ Expected: `006`.
 # Build/deploy an artifact from that commit in a separate worktree or registry;
 # no `v0.8.0` image is part of this repository.
 ROLLBACK_COMMIT=3d9472c
-git worktree add /private/tmp/capital-observatory-mvp-rollback "$ROLLBACK_COMMIT"
+git worktree add /private/tmp/sonde-mvp-rollback "$ROLLBACK_COMMIT"
 # Deploy the artifact built from $ROLLBACK_COMMIT using the environment's
 # normal process/container mechanism, then remove the worktree after rollback.
 ```

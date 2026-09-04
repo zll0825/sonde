@@ -46,7 +46,7 @@ function esc(value) {
 }
 
 // ── Token Management (localStorage persistence) ──────────────────────
-const TOKEN_STORAGE_KEY = 'capital_api_token';
+const TOKEN_STORAGE_KEY = 'sonde_api_token';
 
 function getApiToken() {
     try {

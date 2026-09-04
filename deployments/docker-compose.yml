@@ -1,4 +1,4 @@
-# Capital Observatory — Full-Stack Dev Environment
+# Sonde — Full-Stack Dev Environment
 # M0–M6 deliverable: PostgreSQL + TimescaleDB + Core (gRPC) + API + domain plugins
 #
 # Usage:
@@ -7,7 +7,7 @@
 #   make dev-down   # stop everything
 #
 # After startup:
-#   - Database available at postgres://capital:capital_dev@localhost:5432/capital_observatory
+#   - Database available at postgres://sonde:sonde_dev@localhost:5432/sonde
 #   - Core gRPC server at     :50051
 #   - API + Frontend          http://localhost:8080/
 #
@@ -26,18 +26,18 @@
 services:
   timescaledb:
     image: timescale/timescaledb:2.16.1-pg16
-    container_name: capital-observatory-db
+    container_name: sonde-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: capital
-      POSTGRES_PASSWORD: capital_dev
-      POSTGRES_DB: capital_observatory
+      POSTGRES_USER: sonde
+      POSTGRES_PASSWORD: sonde_dev
+      POSTGRES_DB: sonde
     ports:
       - "5432:5432"
     volumes:
       - tsdb_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U capital -d capital_observatory"]
+      test: ["CMD-SHELL", "pg_isready -U sonde -d sonde"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -47,13 +47,13 @@ services:
     build:
       context: ../
       dockerfile: deployments/Dockerfile.core
-    container_name: capital-observatory-core
+    container_name: sonde-core
     restart: unless-stopped
     depends_on:
       timescaledb:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://capital:capital_dev@timescaledb:5432/capital_observatory?sslmode=disable
+      DATABASE_URL: postgres://sonde:sonde_dev@timescaledb:5432/sonde?sslmode=disable
       CORE_BIND: ":50051"
       # Notification channels, interpolated from the HOST shell that runs
       # `docker compose up`. Empty = channel disabled (NopNotifier fallback).
@@ -65,7 +65,7 @@ services:
       # Cluster snapshot JSONL shared with the API container through the
       # `cluster_snapshots` volume below. Without this variable the Core uses
       # an in-process ring buffer only and /api/clusters/ returns empty.
-      CLUSTER_SNAPSHOTS_FILE: "/data/clusters/capital_observatory_clusters.jsonl"
+      CLUSTER_SNAPSHOTS_FILE: "/data/clusters/sonde_clusters.jsonl"
     ports:
       - "50051:50051"
     volumes:
@@ -76,7 +76,7 @@ services:
     build:
       context: ../
       dockerfile: deployments/Dockerfile.api
-    container_name: capital-observatory-api
+    container_name: sonde-api
     restart: unless-stopped
     depends_on:
       timescaledb:
@@ -84,14 +84,14 @@ services:
       core:
         condition: service_started
     environment:
-      DATABASE_URL: postgres://capital:capital_dev@timescaledb:5432/capital_observatory?sslmode=disable
+      DATABASE_URL: postgres://sonde:sonde_dev@timescaledb:5432/sonde?sslmode=disable
       API_BIND: ":8080"
-      # 控制端点（sync/backfill）Bearer 令牌；未显式指定时使用开发默认值 capital_dev_token
-      API_TOKEN: "${API_TOKEN:-capital_dev_token}"
+      # 控制端点（sync/backfill）Bearer 令牌；未显式指定时使用开发默认值 sonde_dev_token
+      API_TOKEN: "${API_TOKEN:-sonde_dev_token}"
       WEB_DIR: "/app/web"
       # Same JSONL path the Core writes, so /api/clusters/ can read the
       # snapshots produced by the Core without sharing a process.
-      CLUSTER_SNAPSHOTS_FILE: "/data/clusters/capital_observatory_clusters.jsonl"
+      CLUSTER_SNAPSHOTS_FILE: "/data/clusters/sonde_clusters.jsonl"
     ports:
       - "8080:8080"
     volumes:
@@ -105,7 +105,7 @@ services:
       dockerfile: deployments/Dockerfile.plugin
       args:
         PLUGIN_DIR: etf
-    container_name: capital-observatory-etf
+    container_name: sonde-etf
     restart: unless-stopped
     depends_on:
       - core
@@ -124,7 +124,7 @@ services:
       dockerfile: deployments/Dockerfile.plugin
       args:
         PLUGIN_DIR: macro
-    container_name: capital-observatory-macro
+    container_name: sonde-macro
     restart: unless-stopped
     depends_on:
       - core
@@ -134,7 +134,7 @@ services:
       COLLECTION_INTERVAL: "1h"           # FRED publishes daily/weekly -- hourly poll
       PROVIDER: "fred"                    # "fred" = real FRED data; "mock" = synthetic
       FRED_API_KEY: "${FRED_API_KEY:-}"     # REQUIRED -- fails fast if unset
-      PROVIDER_QUOTA_DB_URL: "postgres://capital:capital_dev@timescaledb:5432/capital_observatory?sslmode=disable"
+      PROVIDER_QUOTA_DB_URL: "postgres://sonde:sonde_dev@timescaledb:5432/sonde?sslmode=disable"
 
   # Crypto Plugin: BTC price (CoinGecko), hash rate (mempool.space), tx count & proxy (blockchain.com).
   # No API key required for the free public endpoints.
@@ -144,7 +144,7 @@ services:
       dockerfile: deployments/Dockerfile.plugin
       args:
         PLUGIN_DIR: crypto
-    container_name: capital-observatory-crypto
+    container_name: sonde-crypto
     restart: unless-stopped
     depends_on:
       - core
@@ -162,7 +162,7 @@ services:
       dockerfile: deployments/Dockerfile.plugin
       args:
         PLUGIN_DIR: commodities
-    container_name: capital-observatory-commodities
+    container_name: sonde-commodities
     restart: unless-stopped
     depends_on:
       - core
@@ -173,7 +173,7 @@ services:
       PROVIDER: "real"
       FRED_API_KEY: "${FRED_API_KEY:-}"
       ALPHAVANTAGE_API_KEY: "${ALPHAVANTAGE_API_KEY:-}"
-      PROVIDER_QUOTA_DB_URL: "postgres://capital:capital_dev@timescaledb:5432/capital_observatory?sslmode=disable"
+      PROVIDER_QUOTA_DB_URL: "postgres://sonde:sonde_dev@timescaledb:5432/sonde?sslmode=disable"
 
 volumes:
   tsdb_data:

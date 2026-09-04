@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	pb "capital_observatory/pkg/proto/plugin/v1"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 func TestMarshalPluginCapabilities(t *testing.T) {

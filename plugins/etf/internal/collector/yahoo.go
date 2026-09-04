@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"time"
 
-	"capital_observatory/pkg/model"
-	"capital_observatory/pkg/pluginrunner"
-	"capital_observatory/pkg/provider"
+	"sonde/pkg/model"
+	"sonde/pkg/pluginrunner"
+	"sonde/pkg/provider"
 )
 
 // providerYahooFinance is the source_provider recorded on Yahoo-sourced observations.

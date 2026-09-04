@@ -19,9 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PluginHost_RegisterPlugin_FullMethodName  = "/capital_observatory.plugin.v1.PluginHost/RegisterPlugin"
-	PluginHost_MaintainSession_FullMethodName = "/capital_observatory.plugin.v1.PluginHost/MaintainSession"
-	PluginHost_Heartbeat_FullMethodName       = "/capital_observatory.plugin.v1.PluginHost/Heartbeat"
+	PluginHost_RegisterPlugin_FullMethodName  = "/sonde.plugin.v1.PluginHost/RegisterPlugin"
+	PluginHost_MaintainSession_FullMethodName = "/sonde.plugin.v1.PluginHost/MaintainSession"
+	PluginHost_Heartbeat_FullMethodName       = "/sonde.plugin.v1.PluginHost/Heartbeat"
 )
 
 // PluginHostClient is the client API for PluginHost service.
@@ -176,7 +176,7 @@ func _PluginHost_Heartbeat_Handler(srv interface{}, ctx context.Context, dec fun
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var PluginHost_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "capital_observatory.plugin.v1.PluginHost",
+	ServiceName: "sonde.plugin.v1.PluginHost",
 	HandlerType: (*PluginHostServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

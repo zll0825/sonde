@@ -14,8 +14,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/internal/core/alert"
-	"capital_observatory/pkg/model"
+	"sonde/internal/core/alert"
+	"sonde/pkg/model"
 )
 
 // PostgresAlertStore implements alert.AlertStore against a PostgreSQL pool.

@@ -1,10 +1,10 @@
 // ══════════════════════════════════════════════════════════════════════
-// Capital Observatory - Landing Page Interactive Script & i18n
+// Sonde - Landing Page Interactive Script & i18n
 // ══════════════════════════════════════════════════════════════════════
 
 const LANDING_I18N = {
   zh: {
-    'brand.title': 'Capital Observatory',
+    'brand.title': 'Sonde',
     'nav.pillars': '核心支柱',
     'nav.pipeline': '架构链路',
     'nav.showcase': '功能矩阵',
@@ -36,7 +36,7 @@ const LANDING_I18N = {
     
     // Pillars Section
     'pillars.tag': 'CORE PILLARS',
-    'pillars.heading': '为什么选择 Capital Observatory？',
+    'pillars.heading': '为什么选择 Sonde？',
     'pillars.desc': '拒绝充满玩具式 Mock 数据与告警风暴的传统监控，打造具备真实投资指导意义的异动观测基础设施。',
     
     'pillar1.title': '100% 真实跨市场数据源',
@@ -123,10 +123,10 @@ const LANDING_I18N = {
     'footer.link_doc_arch': '中文系统架构图',
     'footer.link_doc_prd': 'PRD 产品规格文档',
     'footer.link_doc_adr': 'ADR 架构决策记录',
-    'footer.copyright': '© 2026 Capital Observatory. Open-source Capital Intelligence System.'
+    'footer.copyright': '© 2026 Sonde. Open-source Capital Intelligence System.'
   },
   en: {
-    'brand.title': 'Capital Observatory',
+    'brand.title': 'Sonde',
     'nav.pillars': 'Core Pillars',
     'nav.pipeline': 'Pipeline',
     'nav.showcase': 'Showcase',
@@ -158,7 +158,7 @@ const LANDING_I18N = {
     
     // Pillars Section
     'pillars.tag': 'CORE PILLARS',
-    'pillars.heading': 'Why Capital Observatory?',
+    'pillars.heading': 'Why Sonde?',
     'pillars.desc': 'Say goodbye to toy synthetic mock data and devastating alert storms. An enterprise-grade anomaly detection infrastructure built for real capital.',
     
     'pillar1.title': '100% Authentic Market Data',
@@ -221,7 +221,7 @@ const LANDING_I18N = {
     // Quickstart
     'quickstart.tag': 'QUICKSTART',
     'quickstart.heading': 'Geek-Friendly Minimal Deployment',
-    'quickstart.desc': 'Single Go binary with TimescaleDB. No complex frontend npm build pipelines. Launch your own Capital Observatory in 2 minutes.',
+    'quickstart.desc': 'Single Go binary with TimescaleDB. No complex frontend npm build pipelines. Launch your own Sonde in 2 minutes.',
     'quickstart.copy_btn': 'Copy All Commands',
     'quickstart.copied': 'Copied to clipboard!',
     
@@ -245,7 +245,7 @@ const LANDING_I18N = {
     'footer.link_doc_arch': 'Architecture (Mermaid)',
     'footer.link_doc_prd': 'PRD Specification',
     'footer.link_doc_adr': 'Architecture Decisions (ADR)',
-    'footer.copyright': '© 2026 Capital Observatory. Open-source Capital Intelligence System.'
+    'footer.copyright': '© 2026 Sonde. Open-source Capital Intelligence System.'
   }
 };
 
@@ -274,7 +274,7 @@ let cachedStatusData = null;
 
 // ── Language Toggle & Translation ────────────────────────────────────
 function initLanguage() {
-  const saved = localStorage.getItem('capital_lang');
+  const saved = localStorage.getItem('sonde_lang');
   if (saved && (saved === 'zh' || saved === 'en')) {
     currentLang = saved;
   } else {
@@ -291,7 +291,7 @@ function initLanguage() {
 
 function setLanguage(lang) {
   currentLang = lang;
-  localStorage.setItem('capital_lang', lang);
+  localStorage.setItem('sonde_lang', lang);
   
   // Toggle button styles
   const btnZh = document.getElementById('btn-lang-zh');
@@ -392,8 +392,8 @@ function initCopyButtons() {
   if (!btn) return;
   
   btn.addEventListener('click', () => {
-    const code = `git clone https://github.com/zll0825/capital_observatory.git
-cd capital_observatory
+    const code = `git clone https://github.com/zll0825/sonde.git
+cd sonde
 export FRED_API_KEY=your_free_fred_key
 export ALPHAVANTAGE_API_KEY=your_alpha_key
 make dev-up`;

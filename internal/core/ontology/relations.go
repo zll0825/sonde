@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"time"
 
-	"capital_observatory/internal/core/relationmgr"
-	"capital_observatory/pkg/model"
-	pb "capital_observatory/pkg/proto/plugin/v1"
 	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog/log"
+	"sonde/internal/core/relationmgr"
+	"sonde/pkg/model"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 // RelationInput 用户手动创建关系的输入。

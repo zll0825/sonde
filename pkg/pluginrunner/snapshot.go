@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"capital_observatory/pkg/model"
-	pb "capital_observatory/pkg/proto/plugin/v1"
+	"sonde/pkg/model"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 // Snapshot is one observed metric value. Plugin collectors return this shared

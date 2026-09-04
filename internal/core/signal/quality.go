@@ -7,7 +7,7 @@ import (
 	"math"
 	"time"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // Quality 对单次触发事件的可信度评估。

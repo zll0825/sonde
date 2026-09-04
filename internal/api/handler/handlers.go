@@ -16,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 // controlDB is the query/exec surface sync and backfill need. Production

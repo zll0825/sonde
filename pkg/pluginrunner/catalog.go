@@ -6,7 +6,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	pb "capital_observatory/pkg/proto/plugin/v1"
+	pb "sonde/pkg/proto/plugin/v1"
 )
 
 type manifestFile struct {

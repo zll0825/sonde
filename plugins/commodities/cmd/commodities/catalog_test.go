@@ -3,8 +3,8 @@ package main
 import (
 	"testing"
 
-	fredprov "capital_observatory/pkg/provider/fred"
-	commodities "capital_observatory/plugins/commodities"
+	fredprov "sonde/pkg/provider/fred"
+	commodities "sonde/plugins/commodities"
 )
 
 func TestBuildRegistrationFromYAML(t *testing.T) {

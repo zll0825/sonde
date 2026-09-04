@@ -1,4 +1,4 @@
-# Capital Observatory — Plugin Protocol
+# Sonde — Plugin Protocol
 
 版本：1.0
 状态：Frozen（Sprint 0.2）

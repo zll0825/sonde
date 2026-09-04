@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"capital_observatory/pkg/model"
+	"sonde/pkg/model"
 )
 
 type postgresResearchFeedbackStore struct {
