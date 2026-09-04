@@ -1,8 +1,13 @@
 let currentSelectedAlertId = null;
+let currentAlertFilter = 'active';
 
-async function loadAlerts() {
+async function loadAlerts(filter) {
+    if (filter) {
+        currentAlertFilter = filter;
+    }
     try {
-        const resp = await fetch(API_BASE + '/api/alerts');
+        const queryParam = currentAlertFilter ? ('?status=' + encodeURIComponent(currentAlertFilter)) : '';
+        const resp = await fetch(API_BASE + '/api/alerts' + queryParam);
         const alerts = await resp.json();
         alertsList = alerts;
         renderAlerts(alerts);
@@ -31,8 +36,13 @@ function renderAlerts(alerts) {
     }
     list.innerHTML = alerts.map(a => {
         const sev = SEVERITIES.includes(a.severity) ? a.severity : 'info';
+        const st = a.status || 'active';
+        const statusBadge = '<span class="alert-status-badge status-' + esc(st) + '">' + esc(t('alerts.status_' + st)) + '</span>';
         return '<div class="alert-item ' + sev + '" data-alert-id="' + esc(a.id) + '">' +
+            '<div style="display:flex; justify-content:space-between; align-items:center;">' +
             '<div class="alert-title">' + esc(a.title) + '</div>' +
+            statusBadge +
+            '</div>' +
             (a.summary ? '<div class="alert-summary">' + esc(a.summary) + '</div>' : '') +
             '<div class="alert-meta">' + esc(a.metric_id) + ' &middot; ' + esc(a.severity) + ' &middot; ' + new Date(a.triggered_at).toLocaleString() + '</div>' +
             '</div>';
@@ -45,6 +55,9 @@ async function showAlertDetail(alertID) {
     currentSelectedAlertId = alertID;
     const detail = document.getElementById('alert-detail');
     detail.classList.add('active');
+
+    const currentAlert = alertsList && alertsList.find(a => a.id === alertID);
+    renderAlertDetailStatus(currentAlert || { id: alertID, status: 'active' });
 
     try {
         const resp = await fetch(API_BASE + '/api/research/' + encodeURIComponent(alertID));
@@ -89,6 +102,112 @@ async function showAlertDetail(alertID) {
         document.getElementById('detail-title').textContent = alertID;
         document.getElementById('detail-summary').textContent = t('alerts.error_detail');
     }
+}
+
+function renderAlertDetailStatus(alertItem) {
+    const badge = document.getElementById('detail-status-badge');
+    const actionsBar = document.getElementById('alert-actions-bar');
+    if (!badge || !actionsBar) return;
+
+    const st = alertItem.status || 'active';
+    badge.textContent = t('alerts.status_' + st);
+    badge.className = 'alert-status-badge status-' + st;
+    badge.style.display = 'inline-block';
+
+    actionsBar.innerHTML = '';
+    actionsBar.style.display = 'flex';
+
+    if (st === 'active') {
+        const btnAck = document.createElement('button');
+        btnAck.type = 'button';
+        btnAck.className = 'alert-action-btn btn-ack';
+        btnAck.textContent = t('alerts.action_ack');
+        btnAck.addEventListener('click', () => updateAlertStatus(alertItem.id, 'acknowledged'));
+        actionsBar.appendChild(btnAck);
+
+        const btnResolve = document.createElement('button');
+        btnResolve.type = 'button';
+        btnResolve.className = 'alert-action-btn btn-resolve';
+        btnResolve.textContent = t('alerts.action_resolve');
+        btnResolve.addEventListener('click', () => updateAlertStatus(alertItem.id, 'resolved'));
+        actionsBar.appendChild(btnResolve);
+
+        const btnSilence = document.createElement('button');
+        btnSilence.type = 'button';
+        btnSilence.className = 'alert-action-btn btn-silence';
+        btnSilence.textContent = t('alerts.action_silence');
+        btnSilence.addEventListener('click', () => updateAlertStatus(alertItem.id, 'silenced'));
+        actionsBar.appendChild(btnSilence);
+    } else if (st === 'acknowledged') {
+        const btnResolve = document.createElement('button');
+        btnResolve.type = 'button';
+        btnResolve.className = 'alert-action-btn btn-resolve';
+        btnResolve.textContent = t('alerts.action_resolve');
+        btnResolve.addEventListener('click', () => updateAlertStatus(alertItem.id, 'resolved'));
+        actionsBar.appendChild(btnResolve);
+
+        const btnReactivate = document.createElement('button');
+        btnReactivate.type = 'button';
+        btnReactivate.className = 'alert-action-btn btn-reactivate';
+        btnReactivate.textContent = t('alerts.action_reactivate');
+        btnReactivate.addEventListener('click', () => updateAlertStatus(alertItem.id, 'active'));
+        actionsBar.appendChild(btnReactivate);
+
+        const btnSilence = document.createElement('button');
+        btnSilence.type = 'button';
+        btnSilence.className = 'alert-action-btn btn-silence';
+        btnSilence.textContent = t('alerts.action_silence');
+        btnSilence.addEventListener('click', () => updateAlertStatus(alertItem.id, 'silenced'));
+        actionsBar.appendChild(btnSilence);
+    } else {
+        const btnReactivate = document.createElement('button');
+        btnReactivate.type = 'button';
+        btnReactivate.className = 'alert-action-btn btn-reactivate';
+        btnReactivate.textContent = t('alerts.action_reactivate');
+        btnReactivate.addEventListener('click', () => updateAlertStatus(alertItem.id, 'active'));
+        actionsBar.appendChild(btnReactivate);
+    }
+}
+
+async function updateAlertStatus(alertID, newStatus) {
+    try {
+        const resp = await fetch(API_BASE + '/api/alerts/' + encodeURIComponent(alertID), {
+            method: 'PATCH',
+            headers: mutationHeaders(),
+            body: JSON.stringify({ status: newStatus })
+        });
+        if (!resp.ok) {
+            if (resp.status === 401 || resp.status === 403) {
+                showToast(t('token.need_token_toast'), 'error');
+                const btnToken = document.getElementById('btn-token-status');
+                if (btnToken) btnToken.click();
+                return;
+            }
+            const err = await resp.json().catch(() => ({ error: 'HTTP ' + resp.status }));
+            throw new Error(err.error || ('HTTP ' + resp.status));
+        }
+        showToast(t('toast.alert_status_updated', { status: t('alerts.status_' + newStatus) }), 'success');
+        if (alertsList) {
+            const found = alertsList.find(a => a.id === alertID);
+            if (found) found.status = newStatus;
+        }
+        renderAlertDetailStatus({ id: alertID, status: newStatus });
+        await loadAlerts();
+    } catch (err) {
+        showToast(t('common.error', { err: err.message }), 'error');
+    }
+}
+
+function initAlertFilters() {
+    const bar = document.getElementById('alert-filter-bar');
+    if (!bar) return;
+    bar.querySelectorAll('.alert-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            bar.querySelectorAll('.alert-filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            loadAlerts(btn.dataset.filter);
+        });
+    });
 }
 
 function renderTrend(points) {

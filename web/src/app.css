@@ -502,3 +502,167 @@
             font-size: 0.75rem;
             flex: 1;
         }
+
+        /* ── Stage 2: Alert Lifecycle & Rules UX ── */
+        .alert-filter-bar {
+            display: flex;
+            gap: 0.4rem;
+            margin-bottom: 0.8rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px solid #1a2340;
+            flex-wrap: wrap;
+        }
+        .alert-filter-btn {
+            background: #101628;
+            border: 1px solid #2a3450;
+            color: #8892b0;
+            padding: 0.25rem 0.65rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .alert-filter-btn:hover {
+            color: #e0e6f0;
+            border-color: #3b4d75;
+        }
+        .alert-filter-btn.active {
+            background: #1a2744;
+            border-color: #64ffda;
+            color: #64ffda;
+            font-weight: 500;
+        }
+        .alert-status-badge {
+            display: inline-block;
+            padding: 0.15rem 0.45rem;
+            border-radius: 3px;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+            vertical-align: middle;
+            margin-left: 0.4rem;
+        }
+        .status-active {
+            background: rgba(45, 212, 167, 0.15);
+            color: #2dd4a7;
+            border: 1px solid rgba(45, 212, 167, 0.3);
+        }
+        .status-acknowledged {
+            background: rgba(255, 193, 7, 0.15);
+            color: #ffc107;
+            border: 1px solid rgba(255, 193, 7, 0.3);
+        }
+        .status-resolved {
+            background: rgba(100, 160, 255, 0.15);
+            color: #64a0ff;
+            border: 1px solid rgba(100, 160, 255, 0.3);
+        }
+        .status-silenced {
+            background: rgba(136, 146, 176, 0.15);
+            color: #8892b0;
+            border: 1px solid rgba(136, 146, 176, 0.3);
+        }
+        .alert-actions-bar {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            margin-top: 0.8rem;
+            margin-bottom: 0.8rem;
+            flex-wrap: wrap;
+        }
+        .alert-action-btn {
+            padding: 0.3rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            border: 1px solid #2a3450;
+            background: #162035;
+            color: #e0e6f0;
+        }
+        .alert-action-btn:hover {
+            filter: brightness(1.25);
+        }
+        .alert-action-btn.btn-ack {
+            border-color: #ffc107;
+            color: #ffc107;
+        }
+        .alert-action-btn.btn-resolve {
+            border-color: #64a0ff;
+            color: #64a0ff;
+        }
+        .alert-action-btn.btn-silence {
+            border-color: #8892b0;
+            color: #8892b0;
+        }
+        .alert-action-btn.btn-reactivate {
+            border-color: #2dd4a7;
+            color: #2dd4a7;
+        }
+        .rule-edit-panel {
+            background: #0d1220;
+            border: 1px solid #2a3450;
+            border-radius: 6px;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            text-align: left;
+        }
+        .rule-edit-title {
+            font-size: 0.85rem;
+            color: #64ffda;
+            margin-bottom: 0.6rem;
+            font-weight: 600;
+        }
+        .rule-edit-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 0.8rem;
+            margin-bottom: 0.8rem;
+        }
+        .rule-field-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+        }
+        .rule-field-label {
+            font-size: 0.72rem;
+            color: #8892b0;
+        }
+        .rule-field-input {
+            background: #162035;
+            border: 1px solid #2a3450;
+            color: #e0e6f0;
+            padding: 0.35rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.78rem;
+            box-sizing: border-box;
+        }
+        .rule-field-input:focus {
+            border-color: #64ffda;
+            outline: none;
+        }
+        .rule-json-textarea {
+            background: #162035;
+            border: 1px solid #2a3450;
+            color: #e0e6f0;
+            font-family: monospace;
+            font-size: 0.75rem;
+            padding: 0.5rem;
+            border-radius: 4px;
+            width: 100%;
+            min-height: 65px;
+            resize: vertical;
+            box-sizing: border-box;
+        }
+        .rule-json-textarea:focus {
+            border-color: #64ffda;
+            outline: none;
+        }
+        .rule-edit-actions {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+            margin-top: 0.8rem;
+        }
+

@@ -406,11 +406,12 @@ function renderRules(rules) {
     [
         t('rules.th_id'),
         t('rules.th_name'),
-        t('rules.th_scope'),
+        t('rules.th_metric'),
+        t('rules.th_detector'),
+        t('rules.th_severity'),
+        t('rules.th_config'),
         t('rules.th_enabled'),
-        t('rules.th_threshold'),
-        t('rules.th_source'),
-        t('rules.th_target'),
+        t('rules.th_version'),
         t('rules.th_actions')
     ].forEach(txt => {
         const th = document.createElement('th');
@@ -433,34 +434,31 @@ function renderRules(rules) {
         tdName.textContent = rule.name || rule.slug || rule.rule_name || '—';
         tr.appendChild(tdName);
 
-        const tdScope = document.createElement('td');
-        tdScope.textContent = rule.scope || '—';
-        tr.appendChild(tdScope);
+        const tdMetric = document.createElement('td');
+        tdMetric.textContent = rule.metric_id || '—';
+        tr.appendChild(tdMetric);
+
+        const tdDetector = document.createElement('td');
+        tdDetector.textContent = rule.detector_name || '—';
+        tr.appendChild(tdDetector);
+
+        const tdSeverity = document.createElement('td');
+        const sev = rule.severity || 'info';
+        const sevBadge = document.createElement('span');
+        sevBadge.className = 'alert-status-badge status-' + sev;
+        sevBadge.textContent = sev;
+        tdSeverity.appendChild(sevBadge);
+        tr.appendChild(tdSeverity);
+
+        const tdConfig = document.createElement('td');
+        tdConfig.style.cssText = 'font-family:monospace; font-size:0.75rem; color:#64ffda;';
+        tdConfig.textContent = formatRuleConfig(rule.config);
+        tr.appendChild(tdConfig);
 
         const tdEnabled = document.createElement('td');
         const enabled = rule.enabled !== false;
-        const dot = document.createElement('span');
-        dot.style.cssText = 'display:inline-block; width:10px; height:10px; border-radius:50%; background:' + (enabled ? '#2dd4a7' : '#e85a5a') + ';';
-        tdEnabled.appendChild(dot);
-        tr.appendChild(tdEnabled);
-
-        const tdConf = document.createElement('td');
-        tdConf.textContent = rule.confidence_threshold != null ? Number(rule.confidence_threshold).toFixed(2) : '—';
-        tr.appendChild(tdConf);
-
-        const tdSrc = document.createElement('td');
-        tdSrc.textContent = rule.source_entity || rule.source || '—';
-        tr.appendChild(tdSrc);
-
-        const tdTgt = document.createElement('td');
-        tdTgt.textContent = rule.target_entity || rule.target || '—';
-        tr.appendChild(tdTgt);
-
-        const tdActions = document.createElement('td');
-        tdActions.style.cssText = 'white-space:nowrap;';
-
         const toggleLabel = document.createElement('label');
-        toggleLabel.style.cssText = 'display:inline-flex; align-items:center; gap:0.3rem; cursor:pointer; margin-right:0.5rem; font-size:0.75rem;';
+        toggleLabel.style.cssText = 'display:inline-flex; align-items:center; gap:0.3rem; cursor:pointer; font-size:0.75rem;';
         const toggleInput = document.createElement('input');
         toggleInput.type = 'checkbox';
         toggleInput.checked = enabled;
@@ -471,11 +469,28 @@ function renderRules(rules) {
         });
         toggleLabel.appendChild(toggleInput);
         toggleLabel.appendChild(toggleTxt);
-        tdActions.appendChild(toggleLabel);
+        tdEnabled.appendChild(toggleLabel);
+        tr.appendChild(tdEnabled);
+
+        const tdVersion = document.createElement('td');
+        tdVersion.style.cssText = 'color:#8892b0; font-size:0.75rem;';
+        tdVersion.textContent = 'v' + (rule.version || 1);
+        tr.appendChild(tdVersion);
+
+        const tdActions = document.createElement('td');
+        tdActions.style.cssText = 'white-space:nowrap; display:flex; gap:0.3rem; align-items:center;';
+
+        const btnEdit = document.createElement('button');
+        btnEdit.type = 'button';
+        btnEdit.textContent = t('rules.btn_edit');
+        btnEdit.style.cssText = 'background:#1a2744; color:#64ffda; border:1px solid #64ffda; padding:0.2rem 0.5rem; border-radius:4px; font-size:0.72rem; cursor:pointer;';
+        btnEdit.addEventListener('click', () => toggleRuleEdit(rule, tr, btnEdit));
+        tdActions.appendChild(btnEdit);
 
         const btnHistory = document.createElement('button');
+        btnHistory.type = 'button';
         btnHistory.textContent = t('rules.btn_history');
-        btnHistory.style.cssText = 'background:#2a3450; color:#64ffda; border:1px solid #64ffda; padding:0.2rem 0.5rem; border-radius:4px; font-size:0.72rem; cursor:pointer;';
+        btnHistory.style.cssText = 'background:#2a3450; color:#e0e6f0; border:1px solid #3b4d75; padding:0.2rem 0.5rem; border-radius:4px; font-size:0.72rem; cursor:pointer;';
         btnHistory.addEventListener('click', () => toggleRuleHistory(id, tr, btnHistory));
         tdActions.appendChild(btnHistory);
 
@@ -484,6 +499,230 @@ function renderRules(rules) {
     }
     table.appendChild(tbody);
     list.appendChild(table);
+}
+
+function formatRuleConfig(cfg) {
+    if (!cfg) return '—';
+    if (typeof cfg === 'string') {
+        try { cfg = JSON.parse(cfg); } catch (e) { return cfg; }
+    }
+    if (typeof cfg !== 'object') return String(cfg);
+
+    const parts = [];
+    if (cfg.operator && cfg.value !== undefined) {
+        parts.push(cfg.operator + ' ' + cfg.value);
+    } else if (cfg.threshold !== undefined) {
+        parts.push('threshold: ' + cfg.threshold);
+    }
+    if (cfg.consecutive && cfg.consecutive > 1) {
+        parts.push('run: ' + cfg.consecutive);
+    }
+    if (cfg.window_minutes) {
+        parts.push('win: ' + cfg.window_minutes + 'm');
+    }
+    if (parts.length > 0) return parts.join(', ');
+    return JSON.stringify(cfg);
+}
+
+function toggleRuleEdit(rule, row, btn) {
+    const existing = row.nextElementSibling;
+    if (existing && existing.classList.contains('rule-edit-row')) {
+        existing.remove();
+        btn.textContent = t('rules.btn_edit');
+        return;
+    }
+
+    let cfg = rule.config || {};
+    if (typeof cfg === 'string') {
+        try { cfg = JSON.parse(cfg); } catch (e) { cfg = {}; }
+    }
+
+    const editTr = document.createElement('tr');
+    editTr.className = 'rule-edit-row';
+    const editTd = document.createElement('td');
+    editTd.colSpan = 9;
+    editTd.style.cssText = 'background:#0d1220; padding:1rem;';
+
+    const panel = document.createElement('div');
+    panel.className = 'rule-edit-panel';
+
+    const title = document.createElement('div');
+    title.className = 'rule-edit-title';
+    title.textContent = t('rules.edit_title') + ': ' + (rule.name || rule.id);
+    panel.appendChild(title);
+
+    const grid = document.createElement('div');
+    grid.className = 'rule-edit-grid';
+
+    // Severity select
+    const grpSev = document.createElement('div');
+    grpSev.className = 'rule-field-group';
+    const lblSev = document.createElement('label');
+    lblSev.className = 'rule-field-label';
+    lblSev.textContent = t('rules.edit_severity');
+    const selSev = document.createElement('select');
+    selSev.className = 'rule-field-input';
+    ['info', 'warning', 'critical'].forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s;
+        opt.textContent = s;
+        if (rule.severity === s) opt.selected = true;
+        selSev.appendChild(opt);
+    });
+    grpSev.appendChild(lblSev);
+    grpSev.appendChild(selSev);
+    grid.appendChild(grpSev);
+
+    // Operator select
+    const grpOp = document.createElement('div');
+    grpOp.className = 'rule-field-group';
+    const lblOp = document.createElement('label');
+    lblOp.className = 'rule-field-label';
+    lblOp.textContent = t('rules.edit_operator');
+    const selOp = document.createElement('select');
+    selOp.className = 'rule-field-input';
+    ['gt', 'gte', 'lt', 'lte', 'eq', 'neq'].forEach(op => {
+        const opt = document.createElement('option');
+        opt.value = op;
+        opt.textContent = op;
+        if ((cfg.operator || 'gt') === op) opt.selected = true;
+        selOp.appendChild(opt);
+    });
+    grpOp.appendChild(lblOp);
+    grpOp.appendChild(selOp);
+    grid.appendChild(grpOp);
+
+    // Value input
+    const grpVal = document.createElement('div');
+    grpVal.className = 'rule-field-group';
+    const lblVal = document.createElement('label');
+    lblVal.className = 'rule-field-label';
+    lblVal.textContent = t('rules.edit_value');
+    const inputVal = document.createElement('input');
+    inputVal.type = 'number';
+    inputVal.step = 'any';
+    inputVal.className = 'rule-field-input';
+    inputVal.value = cfg.value !== undefined ? cfg.value : (cfg.threshold !== undefined ? cfg.threshold : '');
+    grpVal.appendChild(lblVal);
+    grpVal.appendChild(inputVal);
+    grid.appendChild(grpVal);
+
+    // Consecutive input
+    const grpCons = document.createElement('div');
+    grpCons.className = 'rule-field-group';
+    const lblCons = document.createElement('label');
+    lblCons.className = 'rule-field-label';
+    lblCons.textContent = t('rules.edit_consecutive');
+    const inputCons = document.createElement('input');
+    inputCons.type = 'number';
+    inputCons.min = '1';
+    inputCons.step = '1';
+    inputCons.className = 'rule-field-input';
+    inputCons.value = cfg.consecutive !== undefined ? cfg.consecutive : 1;
+    grpCons.appendChild(lblCons);
+    grpCons.appendChild(inputCons);
+    grid.appendChild(grpCons);
+
+    panel.appendChild(grid);
+
+    // Advanced JSON config
+    const grpJson = document.createElement('div');
+    grpJson.className = 'rule-field-group';
+    const lblJson = document.createElement('label');
+    lblJson.className = 'rule-field-label';
+    lblJson.textContent = t('rules.edit_json');
+    const txtJson = document.createElement('textarea');
+    txtJson.className = 'rule-json-textarea';
+    txtJson.value = JSON.stringify(cfg, null, 2);
+
+    function syncInputsToJson() {
+        try {
+            let cur = {};
+            try { cur = JSON.parse(txtJson.value); } catch (e) { cur = {}; }
+            cur.operator = selOp.value;
+            const valNum = parseFloat(inputVal.value);
+            if (!isNaN(valNum)) cur.value = valNum;
+            const consNum = parseInt(inputCons.value, 10);
+            if (!isNaN(consNum) && consNum > 0) cur.consecutive = consNum;
+            txtJson.value = JSON.stringify(cur, null, 2);
+        } catch (e) { /* ignore */ }
+    }
+
+    selOp.addEventListener('change', syncInputsToJson);
+    inputVal.addEventListener('input', syncInputsToJson);
+    inputCons.addEventListener('input', syncInputsToJson);
+
+    grpJson.appendChild(lblJson);
+    grpJson.appendChild(txtJson);
+    panel.appendChild(grpJson);
+
+    // Actions
+    const actBar = document.createElement('div');
+    actBar.className = 'rule-edit-actions';
+
+    const btnCancel = document.createElement('button');
+    btnCancel.type = 'button';
+    btnCancel.className = 'alert-action-btn';
+    btnCancel.textContent = t('rules.btn_cancel');
+    btnCancel.addEventListener('click', () => {
+        editTr.remove();
+        btn.textContent = t('rules.btn_edit');
+    });
+    actBar.appendChild(btnCancel);
+
+    const btnSave = document.createElement('button');
+    btnSave.type = 'button';
+    btnSave.className = 'alert-action-btn btn-reactivate';
+    btnSave.textContent = t('rules.btn_save');
+    btnSave.addEventListener('click', async () => {
+        let parsedConfig = null;
+        try {
+            parsedConfig = JSON.parse(txtJson.value);
+            if (typeof parsedConfig !== 'object' || parsedConfig === null || Array.isArray(parsedConfig)) {
+                throw new Error(t('rules.invalid_json'));
+            }
+        } catch (e) {
+            showToast(t('rules.invalid_json'), 'error');
+            return;
+        }
+
+        btnSave.disabled = true;
+        try {
+            const resp = await fetch(API_BASE + '/api/rules/' + encodeURIComponent(rule.id), {
+                method: 'PATCH',
+                headers: mutationHeaders(),
+                body: JSON.stringify({
+                    severity: selSev.value,
+                    config: parsedConfig
+                })
+            });
+            if (!resp.ok) {
+                if (resp.status === 401 || resp.status === 403) {
+                    showToast(t('token.need_token_toast'), 'error');
+                    const btnToken = document.getElementById('btn-token-status');
+                    if (btnToken) btnToken.click();
+                    return;
+                }
+                const err = await resp.json().catch(() => ({ error: 'HTTP ' + resp.status }));
+                throw new Error(err.error || ('HTTP ' + resp.status));
+            }
+            showToast(t('toast.rule_config_saved'), 'success');
+            editTr.remove();
+            btn.textContent = t('rules.btn_edit');
+            await loadRules();
+        } catch (err) {
+            showToast(t('common.error', { err: err.message }), 'error');
+        } finally {
+            btnSave.disabled = false;
+        }
+    });
+    actBar.appendChild(btnSave);
+
+    panel.appendChild(actBar);
+    editTd.appendChild(panel);
+    editTr.appendChild(editTd);
+    row.after(editTr);
+    btn.textContent = t('rules.btn_hide');
 }
 
 async function toggleRule(ruleId, enabled, checkbox, labelSpan) {
@@ -527,7 +766,7 @@ async function toggleRuleHistory(ruleId, row, btn) {
     const historyTr = document.createElement('tr');
     historyTr.className = 'rule-history-row';
     const historyTd = document.createElement('td');
-    historyTd.colSpan = 8;
+    historyTd.colSpan = 9;
     historyTd.style.cssText = 'background:#0d1220; padding:1rem;';
 
     const loadingP = document.createElement('p');

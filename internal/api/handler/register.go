@@ -24,6 +24,7 @@ func Register(mux *http.ServeMux, deps Deps) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("/api/alerts", alertsHandler(db))
+	mux.HandleFunc("PATCH /api/alerts/{id}", patchAlertHandler(db))
 	mux.HandleFunc("/api/status", statusHandler(db))
 	mux.HandleFunc("/api/research/", researchHandler(db))
 	mux.HandleFunc("/api/control/sync", syncHandler(db))

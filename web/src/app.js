@@ -128,6 +128,7 @@ initLanguage();
 updateTokenUI();
 
 // Initial fetch
+initAlertFilters();
 loadAlerts();
 fetchStatus();
 setInterval(() => { loadAlerts(); fetchStatus(); }, 30000);

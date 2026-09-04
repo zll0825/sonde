@@ -307,3 +307,73 @@ func TestRulesHistoryIncludesVersion(t *testing.T) {
 		t.Fatalf("actor = %q", actor)
 	}
 }
+
+func TestRulesPatchUpdatesConfigAndSeverity(t *testing.T) {
+	tx := &rulesFakeTx{
+		rows: []pgx.Row{
+			txRow("rule", "metric", "threshold", "warning", []byte(`{"operator":"gt","value":5.0}`), nil,
+				true, "system_default", false, 4),
+			txRow(24),
+		},
+		execTags: []pgconn.CommandTag{
+			pgconn.NewCommandTag("UPDATE 1"),
+			pgconn.NewCommandTag("INSERT 1"),
+			pgconn.NewCommandTag("INSERT 1"),
+		},
+	}
+	store := &rulesStore{
+		db: &rulesFakeDB{},
+		beginTx: func(context.Context) (rulesTx, error) {
+			return tx, nil
+		},
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/api/rules/17", strings.NewReader(`{"severity":"critical","config":{"operator":"gt","value":10.0}}`))
+	req.SetPathValue("id", "17")
+	rec := httptest.NewRecorder()
+
+	store.patchHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !tx.committed {
+		t.Fatal("patch transaction was not committed")
+	}
+	if tx.queryArgs[1][3] != "critical" {
+		t.Errorf("inserted severity = %v, want critical", tx.queryArgs[1][3])
+	}
+	if len(tx.execArgs) != 3 {
+		t.Fatalf("expected 3 exec calls (close + 2 audit logs), got %d", len(tx.execArgs))
+	}
+}
+
+func TestRulesPatchRejectsInvalidPayloads(t *testing.T) {
+	store := &rulesStore{db: &rulesFakeDB{}}
+
+	// Empty payload
+	req := httptest.NewRequest(http.MethodPatch, "/api/rules/17", strings.NewReader(`{}`))
+	req.SetPathValue("id", "17")
+	rec := httptest.NewRecorder()
+	store.patchHandler(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for empty payload", rec.Code)
+	}
+
+	// Invalid severity
+	req = httptest.NewRequest(http.MethodPatch, "/api/rules/17", strings.NewReader(`{"severity":"extreme"}`))
+	req.SetPathValue("id", "17")
+	rec = httptest.NewRecorder()
+	store.patchHandler(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for invalid severity", rec.Code)
+	}
+
+	// Empty config object
+	req = httptest.NewRequest(http.MethodPatch, "/api/rules/17", strings.NewReader(`{"config":{}}`))
+	req.SetPathValue("id", "17")
+	rec = httptest.NewRecorder()
+	store.patchHandler(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for empty config", rec.Code)
+	}
+}

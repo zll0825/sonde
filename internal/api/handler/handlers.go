@@ -54,15 +54,40 @@ func statusHandler(db statusQuerier) http.HandlerFunc {
 	}
 }
 
-// alertsHandler returns the list of active alerts.
+// alertsHandler returns the list of alerts, optionally filtered by status.
+// GET /api/alerts?status=active|acknowledged|resolved|silenced|all (defaults to active)
 func alertsHandler(db statusQuerier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rows, err := db.Query(r.Context(), `
-			SELECT id, title, summary, severity, metric_id, triggered_at, status,
-			       source_provider, source_class, dedup_count, last_deduplicated_at
-			FROM alerts WHERE status = 'active'
-			ORDER BY triggered_at DESC LIMIT 100
-		`)
+		statusParam := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("status")))
+		var (
+			rows pgx.Rows
+			err  error
+		)
+
+		if statusParam == "all" {
+			rows, err = db.Query(r.Context(), `
+				SELECT id, title, summary, severity, metric_id, triggered_at, status,
+				       source_provider, source_class, dedup_count, last_deduplicated_at,
+				       resolved_at
+				FROM alerts
+				ORDER BY triggered_at DESC LIMIT 100
+			`)
+		} else {
+			targetStatus := "active"
+			switch statusParam {
+			case "acknowledged", "resolved", "silenced":
+				targetStatus = statusParam
+			default:
+				targetStatus = "active"
+			}
+			rows, err = db.Query(r.Context(), `
+				SELECT id, title, summary, severity, metric_id, triggered_at, status,
+				       source_provider, source_class, dedup_count, last_deduplicated_at,
+				       resolved_at
+				FROM alerts WHERE status = $1
+				ORDER BY triggered_at DESC LIMIT 100
+			`, targetStatus)
+		}
 		if err != nil {
 			log.Error().Err(err).Msg("query alerts failed")
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
@@ -79,9 +104,10 @@ func alertsHandler(db statusQuerier) http.HandlerFunc {
 				triggeredAt                                    time.Time
 				dedupCount                                     int
 				lastDeduplicatedAt                             *time.Time
+				resolvedAt                                     *time.Time
 			)
 			if err := rows.Scan(&id, &title, &summary, &severity, &metricID, &triggeredAt, &status,
-				&sourceProvider, &sourceClass, &dedupCount, &lastDeduplicatedAt); err != nil {
+				&sourceProvider, &sourceClass, &dedupCount, &lastDeduplicatedAt, &resolvedAt); err != nil {
 				log.Error().Err(err).Msg("scan alert row failed")
 				continue
 			}
@@ -97,6 +123,7 @@ func alertsHandler(db statusQuerier) http.HandlerFunc {
 				"source_class":         sourceClass,
 				"dedup_count":          dedupCount,
 				"last_deduplicated_at": lastDeduplicatedAt,
+				"resolved_at":          resolvedAt,
 			})
 		}
 		if err := rows.Err(); err != nil {
@@ -105,6 +132,79 @@ func alertsHandler(db statusQuerier) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, alerts)
+	}
+}
+
+// patchAlertHandler updates the lifecycle status of an alert.
+// Route: PATCH /api/alerts/{id}
+// Body: {"status": "active"|"acknowledged"|"resolved"|"silenced"}
+func patchAlertHandler(db statusQuerier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "PATCH required"})
+			return
+		}
+
+		id := r.PathValue("id")
+		if id == "" {
+			id = strings.TrimPrefix(r.URL.Path, "/api/alerts/")
+		}
+		id = strings.TrimSpace(id)
+		if id == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "alert id required"})
+			return
+		}
+
+		var req struct {
+			Status string `json:"status"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+			return
+		}
+
+		req.Status = strings.ToLower(strings.TrimSpace(req.Status))
+		switch req.Status {
+		case "active", "acknowledged", "resolved", "silenced":
+			// valid
+		default:
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "status must be one of: active, acknowledged, resolved, silenced",
+			})
+			return
+		}
+
+		var (
+			updatedID, status string
+			updatedAt         time.Time
+			resolvedAt        *time.Time
+		)
+
+		err := db.QueryRow(r.Context(), `
+			UPDATE alerts
+			SET status = $1,
+			    resolved_at = CASE WHEN $1 = 'resolved' THEN NOW() ELSE NULL END,
+			    updated_at = NOW()
+			WHERE id = $2
+			RETURNING id, status, updated_at, resolved_at
+		`, req.Status, id).Scan(&updatedID, &status, &updatedAt, &resolvedAt)
+
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "alert not found"})
+				return
+			}
+			log.Error().Err(err).Str("alert_id", id).Msg("update alert status failed")
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"id":          updatedID,
+			"status":      status,
+			"updated_at":  updatedAt,
+			"resolved_at": resolvedAt,
+		})
 	}
 }
 

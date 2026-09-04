@@ -7,8 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -106,10 +108,10 @@ func (s *rulesStore) listHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rules)
 }
 
-// PATCH /api/rules/{id}  body: {"enabled": true|false}  → toggle a rule on/off.
+// PATCH /api/rules/{id}  body: {"enabled": bool, "config": object, "severity": string, "description": string}
 //
 // Atomically closes the current version, inserts a successor, and appends a
-// rule_audit_log entry. Rule content is never updated in place.
+// rule_audit_log entry for each modified field. Rule content is never updated in place.
 func (s *rulesStore) patchHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPatch {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "PATCH required"})
@@ -124,15 +126,41 @@ func (s *rulesStore) patchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Enabled *bool `json:"enabled"`
+		Enabled     *bool           `json:"enabled"`
+		Config      json.RawMessage `json:"config"`
+		Severity    *string         `json:"severity"`
+		Description *string         `json:"description"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
-	if req.Enabled == nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "enabled (bool) required"})
+	if req.Enabled == nil && req.Config == nil && req.Severity == nil && req.Description == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "at least one of enabled, config, severity, description required",
+		})
 		return
+	}
+
+	if req.Severity != nil {
+		sev := strings.ToLower(strings.TrimSpace(*req.Severity))
+		if sev != "info" && sev != "warning" && sev != "critical" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "severity must be one of: info, warning, critical",
+			})
+			return
+		}
+		req.Severity = &sev
+	}
+
+	if req.Config != nil {
+		var cfgObj map[string]any
+		if err := json.Unmarshal(req.Config, &cfgObj); err != nil || len(cfgObj) == 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "config must be a valid non-empty JSON object",
+			})
+			return
+		}
 	}
 
 	tx, err := s.beginTx(r.Context())
@@ -144,9 +172,9 @@ func (s *rulesStore) patchHandler(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 
 	var (
-		name, metricID, detectorName, severity, source string
-		configBytes                                    []byte
-		description                                    *string
+		name, metricID, detectorName, curSeverity, source string
+		curConfigBytes                                    []byte
+		curDescription                                    *string
 		curEnabled, isOverride                         bool
 		curVersion                                     int
 	)
@@ -155,26 +183,87 @@ func (s *rulesStore) patchHandler(w http.ResponseWriter, r *http.Request) {
 		       enabled, source, is_override, version
 		FROM rules WHERE id = $1 AND effective_to IS NULL
 		FOR UPDATE
-	`, id).Scan(&name, &metricID, &detectorName, &severity, &configBytes,
-		&description, &curEnabled, &source, &isOverride, &curVersion); err != nil {
+	`, id).Scan(&name, &metricID, &detectorName, &curSeverity, &curConfigBytes,
+		&curDescription, &curEnabled, &source, &isOverride, &curVersion); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
 			return
 		}
-		log.Error().Err(err).Int("rule_id", id).Msg("lookup rule enabled failed")
+		log.Error().Err(err).Int("rule_id", id).Msg("lookup rule failed")
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
 		return
 	}
-	if curEnabled == *req.Enabled {
+
+	type changeEntry struct {
+		field    string
+		oldValue any
+		newValue any
+	}
+	var changes []changeEntry
+
+	newEnabled := curEnabled
+	if req.Enabled != nil {
+		newEnabled = *req.Enabled
+		if curEnabled != *req.Enabled {
+			changes = append(changes, changeEntry{
+				field:    "enabled",
+				oldValue: curEnabled,
+				newValue: *req.Enabled,
+			})
+		}
+	}
+
+	newSeverity := curSeverity
+	if req.Severity != nil {
+		newSeverity = *req.Severity
+		if curSeverity != *req.Severity {
+			changes = append(changes, changeEntry{
+				field:    "severity",
+				oldValue: curSeverity,
+				newValue: *req.Severity,
+			})
+		}
+	}
+
+	newDescription := curDescription
+	if req.Description != nil {
+		newDescription = req.Description
+		oldDescStr := ""
+		if curDescription != nil {
+			oldDescStr = *curDescription
+		}
+		if oldDescStr != *req.Description {
+			changes = append(changes, changeEntry{
+				field:    "description",
+				oldValue: oldDescStr,
+				newValue: *req.Description,
+			})
+		}
+	}
+
+	newConfigBytes := curConfigBytes
+	if req.Config != nil {
+		var oldMap, newMap map[string]any
+		_ = json.Unmarshal(curConfigBytes, &oldMap)
+		_ = json.Unmarshal(req.Config, &newMap)
+		oldNorm, _ := json.Marshal(oldMap)
+		newNorm, _ := json.Marshal(newMap)
+		if string(oldNorm) != string(newNorm) {
+			newConfigBytes = req.Config
+			changes = append(changes, changeEntry{
+				field:    "config",
+				oldValue: json.RawMessage(curConfigBytes),
+				newValue: req.Config,
+			})
+		}
+	}
+
+	if len(changes) == 0 {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"id": id, "version": curVersion, "enabled": curEnabled, "status": "unchanged",
+			"id": id, "version": curVersion, "enabled": curEnabled, "severity": curSeverity, "status": "unchanged",
 		})
 		return
 	}
-
-	oldJSON, _ := json.Marshal(curEnabled)
-	newJSON, _ := json.Marshal(*req.Enabled)
-	actor := bearerActorIdentifier(r)
 
 	tag, err := tx.Exec(r.Context(), `
 		UPDATE rules SET effective_to = NOW(), updated_at = NOW()
@@ -197,20 +286,25 @@ func (s *rulesStore) patchHandler(w http.ResponseWriter, r *http.Request) {
 		                   effective_from, effective_to)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NULL)
 		RETURNING id
-	`, name, metricID, detectorName, severity, configBytes, description,
-		*req.Enabled, source, isOverride, curVersion+1).Scan(&newID); err != nil {
+	`, name, metricID, detectorName, newSeverity, newConfigBytes, newDescription,
+		newEnabled, source, isOverride, curVersion+1).Scan(&newID); err != nil {
 		log.Error().Err(err).Int("rule_id", id).Msg("insert rule enabled version failed")
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
 		return
 	}
 
-	if _, err := tx.Exec(r.Context(), `
-		INSERT INTO rule_audit_log (rule_id, scope, field, old_value, new_value, actor)
-		VALUES ($1, 'global', 'enabled', $2::jsonb, $3::jsonb, $4)
-	`, newID, oldJSON, newJSON, actor); err != nil {
-		log.Error().Err(err).Int("rule_id", id).Msg("insert rule audit log failed")
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
-		return
+	actor := bearerActorIdentifier(r)
+	for _, ch := range changes {
+		oldJSON, _ := json.Marshal(ch.oldValue)
+		newJSON, _ := json.Marshal(ch.newValue)
+		if _, err := tx.Exec(r.Context(), fmt.Sprintf(`
+			INSERT INTO rule_audit_log (rule_id, scope, field, old_value, new_value, actor)
+			VALUES ($1, 'global', '%s', $2::jsonb, $3::jsonb, $4)
+		`, ch.field), newID, oldJSON, newJSON, actor); err != nil {
+			log.Error().Err(err).Int("rule_id", id).Str("field", ch.field).Msg("insert rule audit log failed")
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
+			return
+		}
 	}
 
 	if err := tx.Commit(r.Context()); err != nil {
@@ -220,10 +314,11 @@ func (s *rulesStore) patchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"id":      newID,
-		"version": curVersion + 1,
-		"enabled": *req.Enabled,
-		"status":  "updated",
+		"id":       newID,
+		"version":  curVersion + 1,
+		"enabled":  newEnabled,
+		"severity": newSeverity,
+		"status":   "updated",
 	})
 }
 

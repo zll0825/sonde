@@ -67,6 +67,12 @@
             <div class="grid">
                 <div class="card">
                     <h2 data-i18n="alerts.active_title">Active Alerts</h2>
+                    <div class="alert-filter-bar" id="alert-filter-bar">
+                        <button type="button" class="alert-filter-btn active" data-filter="active" data-i18n="alerts.filter_active">活动告警</button>
+                        <button type="button" class="alert-filter-btn" data-filter="acknowledged" data-i18n="alerts.filter_acknowledged">已确认</button>
+                        <button type="button" class="alert-filter-btn" data-filter="resolved" data-i18n="alerts.filter_resolved">已消解</button>
+                        <button type="button" class="alert-filter-btn" data-filter="all" data-i18n="alerts.filter_all">全部告警</button>
+                    </div>
                     <div id="alerts-list">
                         <div class="empty" data-i18n="alerts.loading">Loading...</div>
                     </div>
@@ -74,8 +80,12 @@
                 <div class="card">
                     <h2 data-i18n="alerts.detail_title">Alert Detail & Trend</h2>
                     <div id="alert-detail">
-                        <p id="detail-title" style="font-weight:600; margin-bottom:0.5rem;"></p>
-                        <p id="detail-summary" style="font-size:0.85rem; color:#8892b0; margin-bottom:1rem;"></p>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem; flex-wrap:wrap; gap:0.5rem;">
+                            <p id="detail-title" style="font-weight:600; margin:0;"></p>
+                            <span id="detail-status-badge" class="alert-status-badge" style="display:none;"></span>
+                        </div>
+                        <p id="detail-summary" style="font-size:0.85rem; color:#8892b0; margin-bottom:0.5rem;"></p>
+                        <div id="alert-actions-bar" class="alert-actions-bar" style="display:none;"></div>
                         <div id="trend-chart"></div>
                         <div id="relations-section" style="margin-top:1rem;">
                             <h3 style="font-size:0.85rem; color:#64ffda;" data-i18n="alerts.related_entities">Related Entities</h3>
