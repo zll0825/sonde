@@ -381,6 +381,9 @@ function renderSignalTable(points) {
         return;
     }
     list.innerHTML = '';
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-responsive';
+
     const table = document.createElement('table');
     table.className = 'data-table';
     table.style.fontSize = '0.75rem';
@@ -388,6 +391,7 @@ function renderSignalTable(points) {
     const hRow = document.createElement('tr');
     [
         t('signal.th_time'),
+        t('signal.th_value'),
         t('signal.th_source'),
         t('signal.th_grade'),
         t('signal.th_quality')
@@ -398,24 +402,77 @@ function renderSignalTable(points) {
     });
     thead.appendChild(hRow);
     table.appendChild(thead);
+
     const tbody = document.createElement('tbody');
-    for (const p of points.slice(0, 20)) {
+    for (const p of points.slice(0, 30)) {
         const tr = document.createElement('tr');
-        const cells = [
-            new Date(p.time).toLocaleString(),
-            p.source_class || '—',
-            p.grade || '—',
-            p.quality_score != null ? Number(p.quality_score).toFixed(1) : '—'
-        ];
-        for (const c of cells) {
-            const td = document.createElement('td');
-            td.textContent = c;
-            tr.appendChild(td);
+
+        // 1. Time
+        const tdTime = document.createElement('td');
+        tdTime.style.whiteSpace = 'nowrap';
+        tdTime.textContent = new Date(p.time).toLocaleString();
+        tr.appendChild(tdTime);
+
+        // 2. Value
+        const tdVal = document.createElement('td');
+        tdVal.style.fontFamily = 'monospace';
+        tdVal.style.whiteSpace = 'nowrap';
+        if (p.value != null) {
+            const num = Number(p.value);
+            tdVal.textContent = !isNaN(num) && Math.abs(num) >= 1e6 ? num.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(p.value);
+        } else {
+            tdVal.textContent = '—';
         }
+        tr.appendChild(tdVal);
+
+        // 3. Source Class
+        const tdSrc = document.createElement('td');
+        const srcClass = String(p.source_class || 'unknown').toLowerCase();
+        let srcColor = '#8892b0';
+        let srcBg = 'rgba(136,146,176,0.15)';
+        if (srcClass === 'real') {
+            srcColor = '#64ffda';
+            srcBg = 'rgba(100,255,218,0.15)';
+        } else if (srcClass === 'mock') {
+            srcColor = '#c084fc';
+            srcBg = 'rgba(192,132,252,0.15)';
+        } else if (srcClass === 'test') {
+            srcColor = '#60a5fa';
+            srcBg = 'rgba(96,165,250,0.15)';
+        }
+        tdSrc.innerHTML = `<span style="background:${srcBg}; color:${srcColor}; padding:0.12rem 0.4rem; border-radius:3px; font-size:0.7rem; font-weight:600;">${srcClass.toUpperCase()}</span>`;
+        tr.appendChild(tdSrc);
+
+        // 4. Grade
+        const tdGrade = document.createElement('td');
+        tdGrade.style.color = '#a8b2d1';
+        tdGrade.textContent = p.grade || '—';
+        tr.appendChild(tdGrade);
+
+        // 5. Quality Score
+        const tdScore = document.createElement('td');
+        if (p.quality_score != null) {
+            const score = Number(p.quality_score);
+            let scoreColor = '#ef4444';
+            let scoreBg = 'rgba(239,68,68,0.15)';
+            if (score >= 75) {
+                scoreColor = '#2dd4a7';
+                scoreBg = 'rgba(45,212,167,0.15)';
+            } else if (score >= 50) {
+                scoreColor = '#f59e0b';
+                scoreBg = 'rgba(245,158,11,0.15)';
+            }
+            tdScore.innerHTML = `<span style="background:${scoreBg}; color:${scoreColor}; font-weight:600; padding:0.12rem 0.45rem; border-radius:3px; font-size:0.72rem;">${score.toFixed(1)}</span>`;
+        } else {
+            tdScore.textContent = '—';
+        }
+        tr.appendChild(tdScore);
+
         tbody.appendChild(tr);
     }
     table.appendChild(tbody);
-    list.appendChild(table);
+    wrapper.appendChild(table);
+    list.appendChild(wrapper);
 }
 
 function renderSignalChart(points) {
@@ -423,9 +480,21 @@ function renderSignalChart(points) {
     if (signalChart) { signalChart.dispose(); signalChart = null; }
     el.innerHTML = '';
     signalChart = echarts.init(el);
+    // Sort points chronologically ascending for correct time-series rendering
+    const sorted = points.slice().sort((a, b) => new Date(a.time) - new Date(b.time));
     signalChart.setOption({
         backgroundColor: 'transparent',
-        grid: { top: 20, right: 20, bottom: 30, left: 50 },
+        tooltip: {
+            trigger: 'axis',
+            formatter: function(params) {
+                if (!params || !params[0]) return '';
+                const p = params[0];
+                const dateStr = new Date(p.value[0]).toLocaleString();
+                const scoreVal = Number(p.value[1]).toFixed(1);
+                return `${dateStr}<br/><span style="color:#64ffda;">●</span> ${t('signal.th_quality')}: <b>${scoreVal}</b>`;
+            }
+        },
+        grid: { top: 20, right: 20, bottom: 30, left: 45 },
         xAxis: {
             type: 'time',
             axisLine: { lineStyle: { color: '#2a3450' } },
@@ -438,12 +507,26 @@ function renderSignalChart(points) {
             splitLine: { lineStyle: { color: '#1a2340' } }
         },
         series: [{
+            name: 'Quality Score',
             type: 'line',
-            data: points.map(p => [new Date(p.time), p.quality_score]),
+            data: sorted.map(p => [new Date(p.time), p.quality_score]),
             smooth: true,
             lineStyle: { color: '#64ffda', width: 2 },
             areaStyle: { color: 'rgba(100,255,218,0.1)' },
-            symbol: 'none'
+            symbol: 'circle',
+            symbolSize: 4
         }]
     });
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    const signalInput = document.getElementById('signal-metric-uid');
+    if (signalInput) {
+        signalInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                loadSignalQuality();
+            }
+        });
+    }
+});

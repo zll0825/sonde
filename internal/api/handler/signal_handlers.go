@@ -19,6 +19,7 @@ import (
 type signalQualityPoint struct {
 	Time         time.Time         `json:"time"`
 	MetricID     string            `json:"metric_id"`
+	MetricUID    string            `json:"metric_uid,omitempty"`
 	Value        float64           `json:"value"`
 	SourceClass  model.SourceClass `json:"source_class"`
 	Grade        string            `json:"grade"`
@@ -27,7 +28,7 @@ type signalQualityPoint struct {
 }
 
 // signalQualityHandler serves GET /api/signal/quality/{metric_uid}. It scans the
-// most recent 100 observations for the given metric_uid, computes a quality
+// most recent 100 observations for the given metric_uid or metric_id, computes a quality
 // score per row using signal.ComputeQuality, and returns the timeline.
 //
 // Optional ?at=RFC3339 query parameter selects the point-in-time used to compute
@@ -56,17 +57,17 @@ func signalQualityHandler(db *pgxpool.Pool) http.HandlerFunc {
 		}
 
 		rows, err := db.Query(r.Context(), `
-			SELECT o.time, o.metric_id, o.value, o.source_class, o.quality_grade,
+			SELECT o.time, o.metric_id, o.metric_uid, o.value, o.source_class, o.quality_grade,
 			       COALESCE(sc.cnt, 1) AS source_count
 			FROM observations o
 			LEFT JOIN (
 				SELECT time, metric_id, COUNT(DISTINCT source_provider) AS cnt
 				FROM observations
-				WHERE metric_uid = $1
+				WHERE (metric_uid = $1 OR metric_id = $1)
 				  AND time > $2::timestamp - interval '1 day'
 				GROUP BY time, metric_id
 			) sc ON sc.time = o.time AND sc.metric_id = o.metric_id
-			WHERE o.metric_uid = $1
+			WHERE (o.metric_uid = $1 OR o.metric_id = $1)
 			ORDER BY o.time DESC
 			LIMIT 100
 		`, metricUID, at)
@@ -84,7 +85,7 @@ func signalQualityHandler(db *pgxpool.Pool) http.HandlerFunc {
 				grade    string
 				srcClass model.SourceClass
 			)
-			if err := rows.Scan(&p.Time, &p.MetricID, &p.Value, &srcClass, &grade, &p.SourceCount); err != nil {
+			if err := rows.Scan(&p.Time, &p.MetricID, &p.MetricUID, &p.Value, &srcClass, &grade, &p.SourceCount); err != nil {
 				log.Warn().Err(err).Str("metric_uid", metricUID).Msg("scan signal quality row failed")
 				continue
 			}

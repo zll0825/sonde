@@ -106,10 +106,11 @@ async function showAlertDetail(alertID) {
             threshold: rc.threshold ?? 'N/A'
         })) + (rc.metric_id ? ' &middot; <span class="clickable-link" id="alert-link-to-signal">' + esc(t('pulse.view_signal')) + '</span>' : '');
 
+        const targetMetric = (rc.timeline && rc.timeline[0] && rc.timeline[0].metric_uid) || rc.metric_id;
         const signalLink = document.getElementById('alert-link-to-signal');
-        if (signalLink && rc.metric_id) {
+        if (signalLink && (rc.metric_id || targetMetric)) {
             signalLink.addEventListener('click', () => {
-                switchTab('signal', { metricUid: rc.metric_id });
+                switchTab('signal', { metricUid: targetMetric || rc.metric_id });
             });
         }
 
