@@ -50,6 +50,46 @@ func TestAlertsHandlerReturnsFrozenProvenanceAndDedupAudit(t *testing.T) {
 	if got[0]["latest_verdict"] != "worth_researching" {
 		t.Errorf("latest_verdict = %v, want worth_researching", got[0]["latest_verdict"])
 	}
+	if !strings.Contains(db.lastSQL, "a.mode = $") {
+		t.Errorf("default alerts query missing mode filter: %s", db.lastSQL)
+	}
+	if len(db.lastArgs) < 2 || db.lastArgs[0] != "active" || db.lastArgs[1] != "live" {
+		t.Errorf("default alerts args = %#v, want status=active mode=live", db.lastArgs)
+	}
+}
+
+func TestAlertsHandlerFiltersByMode(t *testing.T) {
+	triggeredAt := time.Date(2026, 8, 7, 2, 3, 4, 0, time.UTC)
+	db := (&fakeDB{}).stub(newFakeRows([]any{
+		"alt_obs", "observe title", "summary", "info", "metric.id", triggeredAt, "active",
+		"fred", "real", 1, nil, nil,
+		nil, nil, nil,
+	}))
+	defer db.exhausted(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/alerts?mode=observe", nil).WithContext(context.Background())
+	rec := httptest.NewRecorder()
+	alertsHandler(db).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(db.lastSQL, "a.mode = $") {
+		t.Errorf("observe query missing mode filter: %s", db.lastSQL)
+	}
+	if len(db.lastArgs) < 2 || db.lastArgs[1] != "observe" {
+		t.Errorf("observe args = %#v, want mode=observe", db.lastArgs)
+	}
+}
+
+func TestAlertsHandlerRejectsIllegalMode(t *testing.T) {
+	db := &fakeDB{}
+	defer db.exhausted(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/alerts?mode=all", nil)
+	rec := httptest.NewRecorder()
+	alertsHandler(db).ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for illegal mode", rec.Code)
+	}
 }
 
 func TestAlertsHandlerFiltersByStatus(t *testing.T) {

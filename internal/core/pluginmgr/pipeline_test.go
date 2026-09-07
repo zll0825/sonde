@@ -64,6 +64,18 @@ func TestTriggerToAlert_BuildsPureAlert(t *testing.T) {
 	if a.SourceProvider != "yahoo_finance" || a.SourceClass != model.SourceClassReal {
 		t.Errorf("alert provenance = %q/%q, want yahoo_finance/real", a.SourceProvider, a.SourceClass)
 	}
+	if a.Mode != model.RuleModeLive {
+		t.Errorf("alert.Mode = %q, want live for empty trigger mode", a.Mode)
+	}
+}
+
+func TestTriggerToAlert_CopiesMode(t *testing.T) {
+	a := triggerToAlert(&detector.Trigger{
+		RuleName: "x", MetricID: "m", DedupKey: "k", Mode: model.RuleModeObserve,
+	}, "p1")
+	if a.Mode != model.RuleModeObserve {
+		t.Errorf("mode = %q, want observe", a.Mode)
+	}
 }
 
 func TestTriggerToAlert_NormalizesMissingSourceClass(t *testing.T) {

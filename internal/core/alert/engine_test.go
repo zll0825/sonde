@@ -156,6 +156,49 @@ func TestHandleTrigger_InsertRaceRecordsDedup(t *testing.T) {
 	}
 }
 
+func TestHandleTrigger_ObserveWritesAlertWithoutOutbox(t *testing.T) {
+	store := newFakeAlertStore()
+	engine := NewEngine(store)
+	alert := sampleAlert("m1|42")
+	alert.Mode = model.RuleModeObserve
+
+	err := engine.HandleTrigger(context.Background(), alert)
+	if err != nil {
+		t.Fatalf("HandleTrigger returned error: %v", err)
+	}
+	if len(store.created) != 1 {
+		t.Fatalf("created %d alerts, want 1", len(store.created))
+	}
+	if store.created[0].Mode != model.RuleModeObserve {
+		t.Errorf("alert.mode = %q, want observe", store.created[0].Mode)
+	}
+	if len(store.events) != 1 || len(store.events[0]) != 0 {
+		t.Fatalf("observe outbox events = %v, want empty slice", store.events)
+	}
+}
+
+func TestHandleTrigger_LiveInfoStillWritesOutbox(t *testing.T) {
+	store := newFakeAlertStore()
+	engine := NewEngine(store)
+	alert := sampleAlert("m1|42")
+	alert.Severity = model.SeverityInfo
+	alert.Mode = model.RuleModeLive
+
+	err := engine.HandleTrigger(context.Background(), alert)
+	if err != nil {
+		t.Fatalf("HandleTrigger returned error: %v", err)
+	}
+	if len(store.events) != 1 || len(store.events[0]) != 2 {
+		t.Fatalf("live+info events = %v, want alert.triggered and research.requested", store.events)
+	}
+	if store.events[0][0].EventType != EventTypeAlertTriggered {
+		t.Errorf("event type = %q, want %q", store.events[0][0].EventType, EventTypeAlertTriggered)
+	}
+	if store.events[0][1].EventType != "research.requested" {
+		t.Errorf("research event type = %q, want research.requested", store.events[0][1].EventType)
+	}
+}
+
 func TestHandleTrigger_StoreLookupErrorPropagates(t *testing.T) {
 	store := newFakeAlertStore()
 	store.getErr = errors.New("db down")

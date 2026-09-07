@@ -431,8 +431,16 @@ function renderRules(rules) {
         tr.appendChild(tdId);
 
         const tdName = document.createElement('td');
-        tdName.textContent = ruleDisplayName(rule);
         tdName.title = rule.name || '';
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = ruleDisplayName(rule);
+        tdName.appendChild(nameSpan);
+        if (String(rule.mode || 'live') === 'observe') {
+            const badge = document.createElement('span');
+            badge.className = 'mode-badge mode-observe';
+            badge.textContent = t('rules.mode_observe');
+            tdName.appendChild(badge);
+        }
         tr.appendChild(tdName);
 
         const tdMetric = document.createElement('td');

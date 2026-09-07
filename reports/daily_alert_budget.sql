@@ -18,6 +18,7 @@ counts AS (
     CROSS JOIN params p
     WHERE a.triggered_at >= p.start_day AT TIME ZONE 'UTC'
       AND a.triggered_at < (p.end_day + 1) AT TIME ZONE 'UTC'
+      AND a.mode = 'live'
     GROUP BY 1
 )
 SELECT

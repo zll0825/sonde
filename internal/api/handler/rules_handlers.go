@@ -60,7 +60,8 @@ func (s *rulesStore) listHandler(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(r.Context(), `
 		SELECT id, name, metric_id, detector_name, severity, config, description,
 		       COALESCE(display_name, ''),
-		       enabled, source, is_override, version, effective_from, effective_to
+		       enabled, source, is_override, version, effective_from, effective_to,
+		       COALESCE(mode, 'live')
 		FROM rules
 		WHERE effective_to IS NULL
 		ORDER BY id
@@ -83,7 +84,7 @@ func (s *rulesStore) listHandler(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(
 			&rule.ID, &rule.Name, &rule.MetricID, &rule.DetectorName, &rule.Severity,
 			&configBytes, &description, &rule.DisplayName, &rule.Enabled, &rule.Source,
-			&rule.IsOverride, &rule.Version, &rule.EffectiveFrom, &effTo,
+			&rule.IsOverride, &rule.Version, &rule.EffectiveFrom, &effTo, &rule.Mode,
 		); err != nil {
 			log.Error().Err(err).Msg("scan rule row failed")
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
@@ -92,6 +93,7 @@ func (s *rulesStore) listHandler(w http.ResponseWriter, r *http.Request) {
 		if description != nil {
 			rule.Description = *description
 		}
+		rule.Mode = model.NormalizeRuleMode(rule.Mode)
 		rule.EffectiveTo = effTo
 		if len(configBytes) > 0 {
 			rule.Config = configBytes
@@ -173,20 +175,20 @@ func (s *rulesStore) patchHandler(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 
 	var (
-		name, metricID, detectorName, curSeverity, source, curDisplayName string
-		curConfigBytes                                                    []byte
-		curDescription                                                    *string
-		curEnabled, isOverride                                            bool
-		curVersion                                                        int
+		name, metricID, detectorName, curSeverity, source, curDisplayName, curMode string
+		curConfigBytes                                                             []byte
+		curDescription                                                             *string
+		curEnabled, isOverride                                                     bool
+		curVersion                                                                 int
 	)
 	if err := tx.QueryRow(r.Context(), `
 		SELECT name, metric_id, detector_name, severity, config, description,
 		       COALESCE(display_name, ''),
-		       enabled, source, is_override, version
+		       enabled, source, is_override, version, COALESCE(mode, 'live')
 		FROM rules WHERE id = $1 AND effective_to IS NULL
 		FOR UPDATE
 	`, id).Scan(&name, &metricID, &detectorName, &curSeverity, &curConfigBytes,
-		&curDescription, &curDisplayName, &curEnabled, &source, &isOverride, &curVersion); err != nil {
+		&curDescription, &curDisplayName, &curEnabled, &source, &isOverride, &curVersion, &curMode); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
 			return
@@ -285,11 +287,11 @@ func (s *rulesStore) patchHandler(w http.ResponseWriter, r *http.Request) {
 	if err := tx.QueryRow(r.Context(), `
 		INSERT INTO rules (name, metric_id, detector_name, severity, config,
 		                   description, display_name, enabled, source, is_override, version,
-		                   effective_from, effective_to)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NULL)
+		                   effective_from, effective_to, mode)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NULL, $12)
 		RETURNING id
 	`, name, metricID, detectorName, newSeverity, newConfigBytes, newDescription,
-		curDisplayName, newEnabled, source, isOverride, curVersion+1).Scan(&newID); err != nil {
+		curDisplayName, newEnabled, source, isOverride, curVersion+1, curMode).Scan(&newID); err != nil {
 		log.Error().Err(err).Int("rule_id", id).Msg("insert rule enabled version failed")
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
 		return
@@ -464,15 +466,16 @@ func (s *rulesStore) restoreHandler(w http.ResponseWriter, r *http.Request) {
 	// find the requested version within that identity. This prevents a version
 	// from another rule being restored accidentally.
 	var (
-		name, metricID, detectorName, severity, source, description, displayName string
-		configBytes                                                              []byte
-		isOverride, enabled                                                      bool
+		name, metricID, detectorName, severity, source, description, displayName, mode string
+		configBytes                                                                    []byte
+		isOverride, enabled                                                            bool
 	)
 	err = tx.QueryRow(r.Context(), `
 		SELECT historical.name, historical.metric_id, historical.detector_name,
 		       historical.severity, historical.config,
 		       COALESCE(historical.description, ''), COALESCE(historical.display_name, ''),
-		       historical.source, historical.is_override, historical.enabled
+		       historical.source, historical.is_override, historical.enabled,
+		       COALESCE(historical.mode, 'live')
 		FROM rules AS anchor
 		JOIN rules AS historical
 		  ON historical.name = anchor.name
@@ -481,7 +484,7 @@ func (s *rulesStore) restoreHandler(w http.ResponseWriter, r *http.Request) {
 		WHERE anchor.id = $1 AND historical.version = $2
 		FOR UPDATE OF anchor, historical
 	`, id, ver).Scan(&name, &metricID, &detectorName, &severity, &configBytes,
-		&description, &displayName, &source, &isOverride, &enabled)
+		&description, &displayName, &source, &isOverride, &enabled, &mode)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "historical rule version not found"})
@@ -525,11 +528,11 @@ func (s *rulesStore) restoreHandler(w http.ResponseWriter, r *http.Request) {
 	if err := tx.QueryRow(r.Context(), `
 		INSERT INTO rules (name, metric_id, detector_name, severity, config,
 		                   description, display_name, enabled, source, is_override, version,
-		                   effective_from, effective_to)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NULL)
+		                   effective_from, effective_to, mode)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NULL, $12)
 		RETURNING id
 	`, name, metricID, detectorName, severity, configArg, description, displayName, enabled,
-		source, isOverride, maxVer+1).Scan(&restoredID); err != nil {
+		source, isOverride, maxVer+1, mode).Scan(&restoredID); err != nil {
 		log.Error().Err(err).Int("rule_id", id).Msg("insert restored rule version failed")
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
 		return

@@ -102,7 +102,7 @@ func restoreRequest(id, version string) *http.Request {
 func TestRulesRestoreCreatesNewPhysicalRowAtomically(t *testing.T) {
 	tx := &rulesFakeTx{
 		rows: []pgx.Row{
-			txRow("rule", "metric", "threshold", "warning", []byte(`{"limit": 2}`), "desc", "", "user_override", true, false),
+			txRow("rule", "metric", "threshold", "warning", []byte(`{"limit": 2}`), "desc", "", "user_override", true, false, "live"),
 			txRow(4),
 			txRow(22),
 		},
@@ -145,7 +145,7 @@ func TestRulesRestoreCreatesNewPhysicalRowAtomically(t *testing.T) {
 func TestRulesRestoreRollsBackWhenInsertFails(t *testing.T) {
 	tx := &rulesFakeTx{
 		rows: []pgx.Row{
-			txRow("rule", "metric", "threshold", "warning", []byte(`{}`), "", "", "system_default", false, true),
+			txRow("rule", "metric", "threshold", "warning", []byte(`{}`), "", "", "system_default", false, true, "live"),
 			txRow(3),
 			errRow{err: errors.New("insert failed")},
 		},
@@ -206,7 +206,7 @@ func TestRulesPatchCreatesVersionAndAuditAtomically(t *testing.T) {
 	tx := &rulesFakeTx{
 		rows: []pgx.Row{
 			txRow("rule", "metric", "threshold", "warning", []byte(`{"limit":2}`), nil, "",
-				true, "system_default", false, 4),
+				true, "system_default", false, 4, "live"),
 			txRow(23),
 		},
 		execTags: []pgconn.CommandTag{pgconn.NewCommandTag("UPDATE 1")},
@@ -241,7 +241,7 @@ func TestRulesPatchAuditActorNeverContainsBearer(t *testing.T) {
 	tx := &rulesFakeTx{
 		rows: []pgx.Row{
 			txRow("rule", "metric", "threshold", "warning", []byte(`{"limit":2}`), nil, "",
-				true, "system_default", false, 4),
+				true, "system_default", false, 4, "live"),
 			txRow(23),
 		},
 		execTags: []pgconn.CommandTag{pgconn.NewCommandTag("UPDATE 1")},
@@ -316,7 +316,7 @@ func TestRulesPatchUpdatesConfigAndSeverity(t *testing.T) {
 	tx := &rulesFakeTx{
 		rows: []pgx.Row{
 			txRow("rule", "metric", "threshold", "warning", []byte(`{"operator":"gt","value":5.0}`), nil, "",
-				true, "system_default", false, 4),
+				true, "system_default", false, 4, "live"),
 			txRow(24),
 		},
 		execTags: []pgconn.CommandTag{
@@ -389,7 +389,7 @@ func TestRulesListSerializesDisplayName(t *testing.T) {
 			query: newFakeRows([]any{
 				1, "fed_balance_drop", "fed.ins.balance_sheet", "trend", model.SeverityInfo,
 				[]byte(`{}`), nil, "美联储资产负债表连续 4 周收缩",
-				true, model.RuleSourcePluginSuggested, false, 1, now, nil,
+				true, model.RuleSourcePluginSuggested, false, 1, now, nil, model.RuleModeLive,
 			}),
 		},
 	}
@@ -412,6 +412,9 @@ func TestRulesListSerializesDisplayName(t *testing.T) {
 	if rules[0]["display_name"] != "美联储资产负债表连续 4 周收缩" {
 		t.Fatalf("display_name = %#v", rules[0]["display_name"])
 	}
+	if rules[0]["mode"] != "live" {
+		t.Fatalf("mode = %#v, want live", rules[0]["mode"])
+	}
 }
 
 func TestRulesListEmptyDisplayNameOmitsField(t *testing.T) {
@@ -421,7 +424,7 @@ func TestRulesListEmptyDisplayNameOmitsField(t *testing.T) {
 			query: newFakeRows([]any{
 				1, "legacy_slug", "metric", "threshold", model.SeverityInfo,
 				[]byte(`{}`), nil, "",
-				true, model.RuleSourcePluginSuggested, false, 1, now, nil,
+				true, model.RuleSourcePluginSuggested, false, 1, now, nil, model.RuleModeObserve,
 			}),
 		},
 	}
@@ -443,5 +446,49 @@ func TestRulesListEmptyDisplayNameOmitsField(t *testing.T) {
 	}
 	if rules[0]["name"] != "legacy_slug" {
 		t.Fatalf("name = %#v", rules[0]["name"])
+	}
+	if rules[0]["mode"] != "observe" {
+		t.Fatalf("mode = %#v, want observe", rules[0]["mode"])
+	}
+}
+
+func TestRulesPatchDoesNotAcceptMode(t *testing.T) {
+	store := &rulesStore{db: &rulesFakeDB{}}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/rules/17", strings.NewReader(`{"mode":"observe"}`))
+	req.SetPathValue("id", "17")
+	rec := httptest.NewRecorder()
+	store.patchHandler(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 when only mode is sent", rec.Code)
+	}
+
+	tx := &rulesFakeTx{
+		rows: []pgx.Row{
+			txRow("rule", "metric", "threshold", "warning", []byte(`{"limit":2}`), nil, "",
+				true, "system_default", false, 4, "observe"),
+			txRow(23),
+		},
+		execTags: []pgconn.CommandTag{pgconn.NewCommandTag("UPDATE 1")},
+	}
+	store = &rulesStore{
+		db: &rulesFakeDB{},
+		beginTx: func(context.Context) (rulesTx, error) {
+			return tx, nil
+		},
+	}
+	req = httptest.NewRequest(http.MethodPatch, "/api/rules/17", strings.NewReader(`{"enabled":false,"mode":"live"}`))
+	req.SetPathValue("id", "17")
+	rec = httptest.NewRecorder()
+	store.patchHandler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if len(tx.queryArgs) < 2 {
+		t.Fatalf("query args = %#v, want lookup + insert", tx.queryArgs)
+	}
+	inserted := tx.queryArgs[1]
+	if len(inserted) < 12 || inserted[11] != "observe" {
+		t.Fatalf("inserted mode = %#v, PATCH must copy current mode and ignore body mode", inserted)
 	}
 }

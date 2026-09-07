@@ -2,6 +2,7 @@ package pluginrunner
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,6 +88,79 @@ rules:
 	}
 	if got := with.GetRules()[0].GetDisplayName(); got != "美联储资产负债表连续 4 周收缩" {
 		t.Fatalf("display_name = %q", got)
+	}
+}
+
+func TestLoadRegistration_Mode(t *testing.T) {
+	omitted, err := LoadRegistration([]byte(`
+name: fixture
+version: "1.0.0"
+rules:
+  - name: omitted_mode
+    metric: us.mkt.extra_fixture
+    detector: threshold
+    severity: info
+    config: '{}'
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if omitted.GetRules()[0].GetMode() != "" {
+		t.Fatalf("omitted mode = %q, want empty so Core treats it as live", omitted.GetRules()[0].GetMode())
+	}
+
+	explicitLive, err := LoadRegistration([]byte(`
+name: fixture
+version: "1.0.0"
+rules:
+  - name: live_mode
+    metric: us.mkt.extra_fixture
+    detector: threshold
+    severity: info
+    config: '{}'
+    mode: live
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if explicitLive.GetRules()[0].GetMode() != "live" {
+		t.Fatalf("mode: live = %q, want live", explicitLive.GetRules()[0].GetMode())
+	}
+
+	observe, err := LoadRegistration([]byte(`
+name: fixture
+version: "1.0.0"
+rules:
+  - name: observe_mode
+    metric: us.mkt.extra_fixture
+    detector: threshold
+    severity: info
+    config: '{}'
+    mode: observe
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observe.GetRules()[0].GetMode() != "observe" {
+		t.Fatalf("mode: observe = %q, want observe", observe.GetRules()[0].GetMode())
+	}
+
+	_, err = LoadRegistration([]byte(`
+name: fixture
+version: "1.0.0"
+rules:
+  - name: bad_mode
+    metric: us.mkt.extra_fixture
+    detector: threshold
+    severity: info
+    config: '{}'
+    mode: shadow
+`))
+	if err == nil {
+		t.Fatal("invalid mode must fail catalog load")
+	}
+	if !strings.Contains(err.Error(), "unknown mode") {
+		t.Fatalf("invalid mode error = %v, want unknown mode", err)
 	}
 }
 

@@ -58,6 +58,23 @@ func TestEvaluateBatch(t *testing.T) {
 		if fire.calls != 1 {
 			t.Errorf("detector called %d times, want 1", fire.calls)
 		}
+		if triggers[0].Mode != model.RuleModeLive {
+			t.Errorf("empty rule mode copied as %q, want live", triggers[0].Mode)
+		}
+	})
+
+	t.Run("copies observe mode onto trigger", func(t *testing.T) {
+		fire := &stubDetector{name: "fire", trigger: &Trigger{RuleID: 1}}
+		engine := NewEngine(fire)
+		rule := enabledRule(1, "m1", "fire")
+		rule.Mode = model.RuleModeObserve
+		triggers := engine.EvaluateBatch(context.Background(), groups, []model.Rule{rule})
+		if len(triggers) != 1 {
+			t.Fatalf("got %d triggers, want 1", len(triggers))
+		}
+		if triggers[0].Mode != model.RuleModeObserve {
+			t.Errorf("mode = %q, want observe", triggers[0].Mode)
+		}
 	})
 
 	t.Run("skips disabled rules", func(t *testing.T) {

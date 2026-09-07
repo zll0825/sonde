@@ -95,3 +95,21 @@ func Review(current Source, currentConfig, suggestedConfig []byte) ReviewOutcome
 func NeedsVersionForDisplayName(current Source, currentDisplayName, suggestedDisplayName string) bool {
 	return current == SourcePluginSuggested && currentDisplayName != suggestedDisplayName
 }
+
+// NeedsVersionForMode is true when Review would skip (identical config)
+// but a plugin_suggested row still needs a new version because mode
+// changed. Empty and live compare equal. user_override is excluded:
+// acceptRule would rewrite source to plugin_suggested.
+func NeedsVersionForMode(current Source, currentMode, suggestedMode string) bool {
+	if current != SourcePluginSuggested {
+		return false
+	}
+	cur, err1 := model.ParseRuleMode(currentMode)
+	sug, err2 := model.ParseRuleMode(suggestedMode)
+	if err1 != nil || err2 != nil {
+		// Illegal suggested mode must still acceptRule so registration fails
+		// closed instead of silently keeping the current row.
+		return true
+	}
+	return cur != sug
+}

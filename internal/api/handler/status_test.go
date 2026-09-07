@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,7 +28,9 @@ type queryStub struct {
 }
 
 type fakeDB struct {
-	stubs []queryStub
+	stubs    []queryStub
+	lastSQL  string
+	lastArgs []any
 }
 
 // stub appends a canned result; the i-th stub answers the i-th query call.
@@ -49,7 +52,9 @@ func (f *fakeDB) exhausted(t *testing.T) {
 	}
 }
 
-func (f *fakeDB) Query(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
+func (f *fakeDB) Query(_ context.Context, sql string, args ...any) (pgx.Rows, error) {
+	f.lastSQL = sql
+	f.lastArgs = append([]any(nil), args...)
 	if len(f.stubs) == 0 {
 		return nil, fmt.Errorf("no stub for query: %s", sql)
 	}
@@ -391,6 +396,9 @@ func TestQueryTodayAlertCounts_OnlyRealDrivesBudget(t *testing.T) {
 	}
 	if got.MockToday != 200 || got.TestToday != 300 || got.UnknownToday != 400 {
 		t.Errorf("categorized counts = %+v", got)
+	}
+	if !strings.Contains(db.lastSQL, "AND mode = 'live'") {
+		t.Fatalf("budget SQL must exclude observe alerts: %s", db.lastSQL)
 	}
 }
 

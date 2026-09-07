@@ -898,7 +898,9 @@ type RuleSuggestion struct {
 	Config       []byte                 `protobuf:"bytes,5,opt,name=config,proto3" json:"config,omitempty"`
 	Description  string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
 	// Domain: Rule.display_name — UI label. Empty means fall back to name (slug).
-	DisplayName   string `protobuf:"bytes,7,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	DisplayName string `protobuf:"bytes,7,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	// Domain: Rule.mode — live | observe. Empty means live.
+	Mode          string `protobuf:"bytes,8,opt,name=mode,proto3" json:"mode,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -978,6 +980,13 @@ func (x *RuleSuggestion) GetDescription() string {
 func (x *RuleSuggestion) GetDisplayName() string {
 	if x != nil {
 		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *RuleSuggestion) GetMode() string {
+	if x != nil {
+		return x.Mode
 	}
 	return ""
 }
@@ -2311,7 +2320,7 @@ const file_plugin_v1_plugin_proto_rawDesc = "" +
 	"\bdecision\x18\x04 \x01(\tR\bdecision\x12\x16\n" +
 	"\x06reason\x18\x05 \x01(\tR\x06reason\x12D\n" +
 	"\vmerged_into\x18\x06 \x01(\v2#.sonde.plugin.v1.RelationSuggestionR\n" +
-	"mergedInto\"\xfa\x01\n" +
+	"mergedInto\"\x8e\x02\n" +
 	"\x0eRuleSuggestion\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
 	"\tmetric_id\x18\x02 \x01(\tR\bmetricId\x12#\n" +
@@ -2319,7 +2328,8 @@ const file_plugin_v1_plugin_proto_rawDesc = "" +
 	"\bseverity\x18\x04 \x01(\x0e2\x19.sonde.plugin.v1.SeverityR\bseverity\x12\x16\n" +
 	"\x06config\x18\x05 \x01(\fR\x06config\x12 \n" +
 	"\vdescription\x18\x06 \x01(\tR\vdescription\x12!\n" +
-	"\fdisplay_name\x18\a \x01(\tR\vdisplayName\"T\n" +
+	"\fdisplay_name\x18\a \x01(\tR\vdisplayName\x12\x12\n" +
+	"\x04mode\x18\b \x01(\tR\x04mode\"T\n" +
 	"\n" +
 	"RuleReview\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +

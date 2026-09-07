@@ -544,6 +544,20 @@
             color: #64ffda;
             font-weight: 500;
         }
+        .mode-badge {
+            display: inline-block;
+            margin-left: 0.4rem;
+            padding: 0.1rem 0.4rem;
+            border-radius: 3px;
+            font-size: 0.68rem;
+            font-weight: 600;
+            vertical-align: middle;
+        }
+        .mode-observe {
+            background: rgba(168, 85, 247, 0.18);
+            color: #c4b5fd;
+            border: 1px solid rgba(168, 85, 247, 0.4);
+        }
         .alert-status-badge {
             display: inline-block;
             padding: 0.15rem 0.45rem;

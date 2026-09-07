@@ -56,7 +56,8 @@ func statusHandler(db statusQuerier) http.HandlerFunc {
 }
 
 // alertsHandler returns the list of alerts, optionally filtered by status and paginated.
-// GET /api/alerts?status=active|acknowledged|resolved|silenced|all&page=1&limit=10&envelope=true
+// GET /api/alerts?status=active|acknowledged|resolved|silenced|all&mode=live|observe&page=1&limit=10&envelope=true
+// Omitted mode defaults to live; illegal mode is 400. Observe alerts are never in the default list.
 func alertsHandler(db statusQuerier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		statusParam := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("status")))
@@ -70,6 +71,12 @@ func alertsHandler(db statusQuerier) http.HandlerFunc {
 			default:
 				targetStatus = "active"
 			}
+		}
+
+		mode, err := model.ParseRuleMode(r.URL.Query().Get("mode"))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "mode must be live or observe"})
+			return
 		}
 
 		pageStr := strings.TrimSpace(r.URL.Query().Get("page"))
@@ -100,9 +107,9 @@ func alertsHandler(db statusQuerier) http.HandlerFunc {
 		if isPaged {
 			var err error
 			if targetStatus == "all" {
-				err = db.QueryRow(r.Context(), `SELECT COUNT(*) FROM alerts`).Scan(&totalCount)
+				err = db.QueryRow(r.Context(), `SELECT COUNT(*) FROM alerts WHERE mode = $1`, string(mode)).Scan(&totalCount)
 			} else {
-				err = db.QueryRow(r.Context(), `SELECT COUNT(*) FROM alerts WHERE status = $1`, targetStatus).Scan(&totalCount)
+				err = db.QueryRow(r.Context(), `SELECT COUNT(*) FROM alerts WHERE status = $1 AND mode = $2`, targetStatus, string(mode)).Scan(&totalCount)
 			}
 			if err != nil {
 				log.Error().Err(err).Msg("count alerts failed")
@@ -111,10 +118,7 @@ func alertsHandler(db statusQuerier) http.HandlerFunc {
 			}
 		}
 
-		var (
-			rows pgx.Rows
-			err  error
-		)
+		var rows pgx.Rows
 
 		if targetStatus == "all" {
 			if isPaged {
@@ -130,8 +134,9 @@ func alertsHandler(db statusQuerier) http.HandlerFunc {
 						ORDER BY created_at DESC
 						LIMIT 1
 					) fb ON true
-					ORDER BY a.triggered_at DESC LIMIT $1 OFFSET $2
-				`, limit, offset)
+					WHERE a.mode = $1
+					ORDER BY a.triggered_at DESC LIMIT $2 OFFSET $3
+				`, string(mode), limit, offset)
 			} else {
 				rows, err = db.Query(r.Context(), `
 					SELECT a.id, a.title, a.summary, a.severity, a.metric_id, a.triggered_at, a.status,
@@ -145,8 +150,9 @@ func alertsHandler(db statusQuerier) http.HandlerFunc {
 						ORDER BY created_at DESC
 						LIMIT 1
 					) fb ON true
+					WHERE a.mode = $1
 					ORDER BY a.triggered_at DESC LIMIT 100
-				`)
+				`, string(mode))
 			}
 		} else {
 			if isPaged {
@@ -162,9 +168,9 @@ func alertsHandler(db statusQuerier) http.HandlerFunc {
 						ORDER BY created_at DESC
 						LIMIT 1
 					) fb ON true
-					WHERE a.status = $1
-					ORDER BY a.triggered_at DESC LIMIT $2 OFFSET $3
-				`, targetStatus, limit, offset)
+					WHERE a.status = $1 AND a.mode = $2
+					ORDER BY a.triggered_at DESC LIMIT $3 OFFSET $4
+				`, targetStatus, string(mode), limit, offset)
 			} else {
 				rows, err = db.Query(r.Context(), `
 					SELECT a.id, a.title, a.summary, a.severity, a.metric_id, a.triggered_at, a.status,
@@ -178,9 +184,9 @@ func alertsHandler(db statusQuerier) http.HandlerFunc {
 						ORDER BY created_at DESC
 						LIMIT 1
 					) fb ON true
-					WHERE a.status = $1
+					WHERE a.status = $1 AND a.mode = $2
 					ORDER BY a.triggered_at DESC LIMIT 100
-				`, targetStatus)
+				`, targetStatus, string(mode))
 			}
 		}
 		if err != nil {
