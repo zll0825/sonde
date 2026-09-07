@@ -1,4 +1,7 @@
-# 资本流动性指标与数据源方案审核
+# 资本流动性指标与数据源方案审核（第一轮）
+
+> 审核方：**gpt6-astra**（openai 家族）｜实现方：Claude（anthropic）
+> 后续轮次：[第二轮 grok-4.6-build / xai](../.trellis/tasks/09-07-liquidity-metrics-datasource-plan/review-v2-archive.md) ｜ [第三轮 gemini-3.1-pro-high / google](../.trellis/tasks/09-07-liquidity-metrics-datasource-plan/review-v3-archive.md)
 
 审核日期：2026-09-07。对象：[原方案](./liquidity-metrics-datasource-plan.md)。代码基线：`f1408cb`。
 

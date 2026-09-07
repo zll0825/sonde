@@ -1,14 +1,14 @@
-# 资本流动性指标体系与免费数据源规划 v4
+# 资本流动性指标体系与免费数据源规划 v3
 
 > 任务：`.trellis/tasks/09-07-liquidity-metrics-datasource-plan`
-> v1 / v2 / v3 / v4 均为 2026-09-07。经三轮独立交叉审核，**三个模型家族各一轮**：openai → xai → google。
-> 审核意见：[第一轮（对 v1，gpt6-astra / openai）](./liquidity-metrics-datasource-plan-review.md) ｜ [第二轮（对 v2，grok-4.6-build / xai）](../.trellis/tasks/09-07-liquidity-metrics-datasource-plan/review-v2-archive.md) ｜ [第三轮（对 v3，gemini-3.1-pro-high / google）](../.trellis/tasks/09-07-liquidity-metrics-datasource-plan/review-v3-archive.md)
-> 存档：`docs/archive/liquidity-metrics-datasource-plan-v1.md`、`-v2.md`、`-v3.md`
+> v1 / v2 / v3 均为 2026-09-07。经两轮独立交叉审核。
+> 审核意见：[第一轮（对 v1）](./liquidity-metrics-datasource-plan-review.md) ｜ [第二轮（对 v2，grok-4.6-build）](../.trellis/tasks/09-07-liquidity-metrics-datasource-plan/review-v2-archive.md)
+> 存档：`docs/archive/liquidity-metrics-datasource-plan-v1.md`、`-v2.md`
 > 网页版：https://claude.ai/code/artifact/ed3d6945-3f20-4fb6-ab52-6fc2fcf3f9a5
 
 ## 0. 修订说明
 
-### 第一轮（v1 → v2）· gpt6-astra / openai
+### 第一轮（v1 → v2）
 
 v1 经独立交叉审核提出 9 条问题，v2 采纳 8 条。**但其中「不成立」的那一条裁决是错的**，见下。
 
@@ -24,7 +24,7 @@ v1 经独立交叉审核提出 9 条问题，v2 采纳 8 条。**但其中「不
 | 8 | 派生引擎不应无条件成为前置 | 成立 | 成立 |
 | 9 | 大表是来源目录，不是接入合同 | 成立 | 成立，但 v2 的 §7 字典本身仍有 3 处 P1 |
 
-### 第二轮（v2 → v3）· grok-4.6-build / xai：v2 的错判与后果
+### 第二轮（v2 → v3）：v2 的错判与后果
 
 **v2 §0 用 FRED 的 `frequency` 字段判定「WRESBAL/WTREGEN 是周三时点」——这是只看了 `frequency` 没看 `title`。** 序列全称（FRED API `fred/series` 实测）：
 
@@ -58,50 +58,17 @@ WDTGAL    Weekly, As of Wednesday   ...U.S. Treasury, General Account: Wednesday
 
 > 第二轮只点名了 `RRPONTSYD` 与 `VIXCLS`；本轮逐条拉 `series/tags` 后发现 **6 条**标错，见 §3.2。
 
-### v3 自查中新发现的第三个静默陷阱（v4 已修正其中的错误描述）
+### v3 自查中新发现的第三个静默陷阱
 
-**TGA 的 `account_type` 字符串在历史上换过三代命名。** v2 的验收条件写「`account_type` 精确匹配 Closing Balance 行，匹配不到即失败」——该断言会让 2022 年之前的全部回填直接失败。三代命名成立，但 v3 对前两代结构的描述是错的，见下。
+**TGA 的 `account_type` 字符串在历史上换过三代命名。** v2 的验收条件写「`account_type` 精确匹配 Closing Balance 行，匹配不到即失败」——该断言会让 2022 年之前的全部回填直接失败。实测（FiscalData）：
 
-### 第三轮（v3 → v4）· gemini-3.1-pro-high / google
+| 期间 | `account_type` 取值 | 有无日初/日终之分 |
+|---|---|---|
+| 2005-10-03 → 2021-09 | `Federal Reserve Account` | **无**，单行单值 |
+| 2021-10 → 2022-04 | `Treasury General Account (TGA)` | **无**，单行单值 |
+| 2022-06 → 至今 | `… (TGA) Opening Balance` / `… (TGA) Closing Balance` | 有 |
 
-第三轮独立复核确认 v3 的 6 类主张全部正确：`WRBWFRBL` 序列有效性、SRF/RRP 端点与筛选逻辑、SOFR 回填端点、22 条 FRED cc 标签、OFR FSI 结构、以及三条代码断言（outbox 无 severity 过滤、`flow_proxy` 实际算的是交易笔数、10 价格 + 6 数量）。**提出 1 条 P1、1 条 P2，均成立。**
-
-**P1：TGA 前两代不是「单行单值」，是「单行双值」。** v3 写「无日初/日终之分，语义须先查证」——**错误，而且是我自己造出来的**：上一轮查 `account_type` 时用了 `fields=account_type,open_today_bal`，把 `close_today_bal` 从响应里过滤掉了，然后据此断言该字段不存在。不加 `fields` 重查（实测）：
-
-| record_date | account_type | open_today_bal | close_today_bal |
-|---|---|---:|---:|
-| 2005-10-03 | `Federal Reserve Account` | 4,381 | **5,448** |
-| 2021-09-30 | `Federal Reserve Account` | 173,745 | **215,160** |
-| 2021-10-01 | `Treasury General Account (TGA)` | 215,160 | **132,452** |
-| 2022-04-15 | `Treasury General Account (TGA)` | 602,292 | **578,473** |
-| 2022-04-18 | `… (TGA) Opening Balance` | 578,473 | `"null"` |
-| 2022-04-18 | `… (TGA) Closing Balance` | **841,253** | `"null"` |
-
-衔接完美：2021-09-30 的 close 215,160 = 2021-10-01 的 open；2022-04-15 的 close 578,473 = 2022-04-18 的 Opening Balance。**规则比 v3 写的简单得多，且无需查证任何语义**，见 §7.1.1。
-
-第三轮还把过渡点精确到天（v3 只给月份区间，且第二个区间偏后）：
-
-- 第一代 → 第二代：**2021-09-30 / 2021-10-01**
-- 第二代 → 第三代：**2022-04-15 / 2022-04-18**（v3 写的 2022-06 偏后）
-
-**P2：PRD `Key Findings` 第 11 条残留 v2 的错误裁决文本**，与已勾选的「撤回」自相矛盾。已修正。
-
-### v4 自查：第三轮审核的建议里有一个 680 倍陷阱
-
-第三轮为回答「周三时点的 RRP 存不存在」，给出 `WLRRAL`（Reverse Repurchase Agreements: Wednesday Level）。**该序列确实存在，但直接用在净流动性公式里会错 680 倍。** 实测分解：
-
-| 观测日 | `WLRRAL` 总额 | `WLRRAFOIAL` 外国官方 | `WLRRAOL` 其他 | `RRPONTSYD` 日频 |
-|---|---:|---:|---:|---:|
-| 2026-08-26 | 356,158 | 355,456 | **702** | 0.702 十亿 = 702 百万 |
-| 2026-09-02 | 357,742 | 357,217 | **525** | 0.525 十亿 = 525 百万 |
-
-前四列单位为百万美元。`WLRRAL = WLRRAFOIAL + WLRRAOL` 校验通过。
-
-`WLRRAL` 的 **99.85% 是外国官方与国际账户逆回购**，与国内 ON RRP 便利完全是两回事。真正对应 `RRPONTSYD` 的周三时点序列是 **`WLRRAOL`**（Others: Wednesday Level，`public domain: citation requested`，2002-12-18 起），数值逐周精确吻合。
-
-误用 `WLRRAL` 会让净流动性**多减约 $3,572 亿**——和本规划里其他几个陷阱一样，减完之后的总量看着依然合理。
-
-> 这条同时说明：**第三轮审核本身也需要复核**。它给的序列名字完全对得上「Wednesday Level RRP」的字面描述，但它没有核对数值。
+过渡点分别落在 2021-09~10 与 2022-04~06 之间。回填必须按代际分支解析，且前两代的单值语义须先确定（是日初还是日终）后才能与第三代拼接。
 
 ---
 
@@ -298,9 +265,6 @@ v2 曾把多条序列标为「无版权声明」——**错误**。FRED 有一�
 | **WRBWFRBL** | Weekly, As of Wednesday（**Wednesday Level**） | Millions USD | 2002-12-18 | `public domain: citation requested` |
 | WRESBAL | Weekly, Ending Wednesday（**Week Average**） | Millions USD | 2002-12-18 | `public domain: citation requested` |
 | WDTGAL | Weekly, As of Wednesday（**Wednesday Level**） | Millions USD | 2002-12-18 | `public domain: citation requested` |
-| **WLRRAOL** | Weekly, As of Wednesday（**Wednesday Level**，Others＝国内 ON RRP） | Millions USD | 2002-12-18 | `public domain: citation requested` |
-| WLRRAL ⚠ | Weekly, As of Wednesday（逆回购**总额**） | Millions USD | 2002-12-18 | `public domain: citation requested` |
-| WLRRAFOIAL | Weekly, As of Wednesday（外国官方与国际账户） | Millions USD | 2002-12-18 | `public domain: citation requested` |
 | WTREGEN | Weekly, Ending Wednesday（**Week Average**） | Millions USD | 2002-12-18 | `public domain: citation requested` |
 | **RRPONTSYD** | Daily | **Billions** USD ⚠ | 2003-02-07 | **`copyrighted: citation required`** |
 | **SOFR** | Daily | Percent | 2018-04-03 | **`copyrighted: citation required`** |
@@ -485,17 +449,17 @@ v2 的本节含 3 处 P1（准备金序列、SRF 端点、RRP 类别与主源）
 
 #### 7.1.1 TGA 的三代 `account_type` 分支（回填必读）
 
-`account_type` 字符串换过三代命名，**不可写成单一精确匹配**。三代都能取到日终值，规则如下：
+`account_type` 字符串换过三代命名，**不可写成单一精确匹配**：
 
-| 期间 | `account_type` | **日终取值** |
+| 期间 | `account_type` | 取值 |
 |---|---|---|
-| 2005-10-03 → **2021-09-30** | `Federal Reserve Account` | 该行的 **`close_today_bal`** |
-| **2021-10-01** → **2022-04-15** | `Treasury General Account (TGA)` | 该行的 **`close_today_bal`** |
-| **2022-04-18** → 至今 | `Treasury General Account (TGA) Closing Balance` | 该行的 **`open_today_bal`**（本代 `close_today_bal` 恒为 `"null"`） |
+| 2005-10-03 → 2021-09 | `Federal Reserve Account` | 单行单值，**无日初/日终之分** |
+| 2021-10 → 2022-04 | `Treasury General Account (TGA)` | 单行单值，**无日初/日终之分** |
+| 2022-06 → 至今 | `Treasury General Account (TGA) Closing Balance` | 取该行的 **`open_today_bal`** |
 
-- 过渡点已精确到天，两处都无缝衔接：2021-09-30 的 `close` = 2021-10-01 的 `open`（215,160）；2022-04-15 的 `close` = 2022-04-18 Opening Balance 行的 `open`（578,473）
-- **查询时不要用 `fields=` 限制字段**。v3 曾因 `fields=account_type,open_today_bal` 把 `close_today_bal` 过滤掉，从而误判前两代「无日终字段」
-- 所有余额都是**字符串**（`"903928"`、`"null"`），解析时不可假定为 number；第三代的 `"null"` 是字符串而非 JSON null
+- 过渡点落在 2021-09~10 与 2022-04~06 之间，实施时须精确定位
+- 前两代的单值语义（日初还是日终）**必须先查证**，否则拼接会在过渡点造成阶跃
+- `close_today_bal` 恒为**字符串 `"null"`**；`open_today_bal` 也是字符串（如 `"903928"`），解析时不可假定为 number
 - 2026-09-03 实测：Opening=944,364 / Closing=**903,928**，差 $404.36 亿
 
 ### 7.2 派生指标（第一批仅离线验证，不入告警）
@@ -520,11 +484,7 @@ v2 的本节含 3 处 P1（准备金序列、SRF 端点、RRP 类别与主源）
 
 - 测量对象：`总资产 − TGA − RRP` 的简化代理
 - **不是会计恒等式**：缺失 FIMA repo、其他存款、流通中货币等项
-- **口径必须同列**，两条路径二选一，不可混：
-  - **周三时点路径**：`WALCL` + `WDTGAL` + **`WLRRAOL`**（三者均为 H.4.1 Wednesday Level，均 `public domain`，均自 2002-12-18 起）
-  - **日频真值路径**：TGA 走 FiscalData 日终、RRP 走 NY Fed（USD 原值），总资产只有周频，须显式标注为 forward-fill 估计
-- **绝不可把 `WRESBAL`/`WTREGEN` 的周平均与 `WALCL` 的周三时点混用**——实测同一周两口径方向可以相反
-- ⚠ **周三时点 RRP 必须用 `WLRRAOL`，不是 `WLRRAL`**。`WLRRAL` 是逆回购总额，其中 99.85% 是外国官方与国际账户（`WLRRAFOIAL`），与国内 ON RRP 无关。2026-09-02 实测：`WLRRAL`=357,742 / `WLRRAFOIAL`=357,217 / `WLRRAOL`=525，而 `WLRRAOL` 与 `RRPONTSYD`(0.525 十亿) 精确吻合。误用 `WLRRAL` 会多减约 **$3,572 亿**
+- **口径必须同列**：三项须同为周三时点（`WALCL` + `WDTGAL` + 周三时点 RRP），或同为日频真值源（日频 TGA 走 FiscalData、日频 RRP 走 NY Fed，总资产只有周频，须显式标注为 forward-fill 估计）。**绝不可把 `WRESBAL`/`WTREGEN` 的周平均与 `WALCL` 的周三时点混用**——实测同一周两口径方向可以相反
 - 混杂因素：单位必须先统一到 USD，**`RRPONTSYD` 为十亿而 WALCL/WDTGAL 为百万**
 - **不能推出**：v1 断言「与 SPX 相关性远高于任何单项」**无任何验证依据，已撤回**
 - 验证方法：(1) 用同一 H.4.1 列或日频真值源重建；(2) 与准备金单项、金融状况指数比较，检验是否提供**增量**信息；(3) 样本外检验；(4) 通过后再讨论是否升级为告警指标
@@ -534,8 +494,7 @@ v2 的本节含 3 处 P1（准备金序列、SRF 端点、RRP 类别与主源）
 - [ ] 每个指标的 `observation_period` / `first_available_at` / `fetched_at` / `vintage` / `max_staleness` 均落库
 - [ ] **序列口径断言**：`fed.ins.reserves` 绑定 `WRBWFRBL`；若有人改成 `WRESBAL`，测试必须失败（两者语义不同）
 - [ ] 单位换算单元测试：**`RRPONTSYD` ×1e9 与 `WALCL` ×1e6 各有独立用例**
-- [ ] TGA 采集按三代 `account_type` 分支解析（前两代取 `close_today_bal`，第三代取 Closing Balance 行的 `open_today_bal`）；**当前代匹配不到即失败**；请求**不得用 `fields=` 限制字段**；值按字符串解析
-- [ ] 净流动性若走周三时点路径，RRP 项绑定 **`WLRRAOL`**；绑成 `WLRRAL` 必须测试失败（相差约 $3,572 亿）
+- [ ] TGA 采集按三代 `account_type` 分支解析；**当前代匹配不到即失败**，历史代走各自分支；值按字符串解析
 - [ ] SRF 采集用 `results/search.json`，按 `operationType` + `operationMethod` 筛选并对当日多窗**求和**；**零使用落 0，不落缺失**
 - [ ] RRP 主源为 NY Fed（USD 原值）；FRED 备源路径有 ×1e9 用例
 - [ ] SOFR−IORB 的前向匹配有跨越 IORB 生效日边界的用例
