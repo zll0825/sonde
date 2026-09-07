@@ -1,5 +1,7 @@
 // etf 插件：GLD 真实价格与交易量（Yahoo Finance），日频采集。
 // 退役指标: gld.ass.daily_flow, eth.ass.daily_flow (无免费可信数据源)
+// 退役指标: gld.ass.flow_proxy (是 gld.ass.volume 的三个月移动平均，对移动平均
+// 做 90 分位检测几乎没有有效波动)
 // 退役实体: ETH-P (关联的指标已全部退役)
 // 新增指标: gld.ass.volume (真实交易量，作为流动性/关注度代理)
 package main
@@ -66,26 +68,9 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Frequency:   "daily",
 				EntityId:    "GLD",
 			},
-			{
-				Id:          "gld.ass.flow_proxy",
-				Name:        "GLD 3-Month Avg Daily Volume (flow proxy)",
-				Description: "3-month average daily trading volume of GLD shares; serves as capital-flow AUM proxy",
-				Unit:        "shares",
-				Frequency:   "daily",
-				EntityId:    "GLD",
-			},
 		},
 		Relations: []*pb.RelationSuggestion{},
-		Rules: []*pb.RuleSuggestion{
-			{
-				Name:         "flow_proxy_spike",
-				MetricId:     "gld.ass.flow_proxy",
-				DetectorName: "percentile",
-				Severity:     pb.Severity_SEVERITY_WARNING,
-				Config:       []byte(`{"percentile":90,"consecutive":1}`),
-				Description:  "GLD 3-month avg daily volume exceeds 90th percentile — potential capital flow spike",
-			},
-		},
-		ChangeLog: "Retired synthetic metrics (gld.ass.daily_flow, eth.ass.daily_flow); retired ETH-P entity; added gld.ass.volume (real source: Yahoo Finance); added gld.ass.flow_proxy (GLD 3-month avg daily volume as capital-flow proxy); added flow_proxy_spike rule",
+		Rules:     []*pb.RuleSuggestion{},
+		ChangeLog: "Retired synthetic metrics (gld.ass.daily_flow, eth.ass.daily_flow); retired ETH-P entity; added gld.ass.volume (real source: Yahoo Finance); retired gld.ass.flow_proxy and its flow_proxy_spike rule (it was gld.ass.volume's 3-month moving average — a 90th-percentile detector on a moving average has almost no effective variance)",
 	}
 }

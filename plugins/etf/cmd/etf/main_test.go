@@ -2,27 +2,25 @@ package main
 
 import "testing"
 
-// TestBuildRegistrationDeclaresMetrics verifies that the registration declares
-// all expected real-source metrics with correct frequencies.
+// TestBuildRegistrationDeclaresMetrics 锁定 etf catalog 的申报面。
+// catalog 是退役的唯一真源——注册对账把「不再申报」翻译成 effective_to，
+// 所以一个指标悄悄回到这里，就等于悄悄复活。
 func TestBuildRegistrationDeclaresMetrics(t *testing.T) {
 	registration := buildRegistration()
 	metrics := registration.GetMetrics()
 	if len(metrics) == 0 {
-		t.Fatal("registration must declare crypto metrics")
+		t.Fatal("registration must declare etf metrics")
 	}
 
-	// All metrics must have a frequency set
 	for _, metric := range metrics {
 		if metric.GetFrequency() == "" {
 			t.Errorf("metric %s frequency must be set", metric.GetId())
 		}
 	}
 
-	// Verify expected metrics are present
 	expectedIDs := map[string]bool{
-		"btc.ass.price":     false,
-		"btc.ass.hash_rate": false,
-		"btc.ass.tx_count":  false,
+		"gld.ass.price":  false,
+		"gld.ass.volume": false,
 	}
 	for _, metric := range metrics {
 		if _, ok := expectedIDs[metric.GetId()]; ok {
@@ -35,8 +33,7 @@ func TestBuildRegistrationDeclaresMetrics(t *testing.T) {
 		}
 	}
 
-	// Verify retired metrics are absent
-	retiredIDs := []string{"btc.ass.exchange_balance", "btc.ass.flow_proxy"}
+	retiredIDs := []string{"gld.ass.daily_flow", "eth.ass.daily_flow", "gld.ass.flow_proxy"}
 	for _, metric := range metrics {
 		for _, retired := range retiredIDs {
 			if metric.GetId() == retired {
@@ -45,9 +42,8 @@ func TestBuildRegistrationDeclaresMetrics(t *testing.T) {
 		}
 	}
 
-	// 规则也必须一并退役：留下一条指向已退役指标的规则，注册对账关不掉它
-	// （对账按插件申报的三元组做差集，仍在申报的规则不会被退役），
-	// 它会每轮找不到观测。
+	// 规则不得指向未申报的指标：这样的规则不会被对账退役（它仍在申报里），
+	// 只会每轮找不到观测。
 	declared := map[string]bool{}
 	for _, metric := range metrics {
 		declared[metric.GetId()] = true

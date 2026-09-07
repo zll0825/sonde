@@ -54,13 +54,7 @@ func main() {
 	repo := ontology.NewStore(db)
 
 	// ── M3: detectors + alert engine + outbox + noise budget ────────────────────
-	detEngine := detector.NewEngine(
-		detector.ThresholdDetector{},
-		detector.PercentileDetector{},
-		detector.TrendDetector{},
-		detector.VolatilityDetector{},
-		detector.MovingAverageDetector{},
-	)
+	detEngine := newDetectorEngine()
 	alertStore := store.NewPostgresAlertStore(db)
 	alertEng := alert.NewEngine(alertStore)
 	outboxStore := store.NewPostgresOutboxStore(db)
@@ -438,4 +432,19 @@ func signalContext() context.Context {
 		cancel()
 	}()
 	return ctx
+}
+
+// newDetectorEngine 是检测器注册的唯一入口。
+//
+// 提成函数是为了让它可被测试钉住：插件 catalog 里写了一个这里没注册的检测器
+// 名，规则会每轮打 WARN 且永不触发——静默失效，不报错。注册面一旦收缩，
+// TestDetectorRegistrationCoversEveryPluginDetector 会先红。
+func newDetectorEngine() *detector.Engine {
+	return detector.NewEngine(
+		detector.ThresholdDetector{},
+		detector.PercentileDetector{},
+		detector.TrendDetector{},
+		detector.VolatilityDetector{},
+		detector.MovingAverageDetector{},
+	)
 }

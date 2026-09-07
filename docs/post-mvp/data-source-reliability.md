@@ -5,6 +5,12 @@ patterns for each data source in the sonde production inventory.
 
 ## Freshness Characteristics
 
+> **2026-09-07 起已过时。** `gld.ass.flow_proxy`、`btc.ass.flow_proxy`、
+> `metal.precious.gold` 三个指标已退役（分别与 `gld.ass.volume`、
+> `btc.ass.tx_count` 同源，以及与 `gld.ass.price` 重复跟踪黄金）。
+> Alpha Vantage 随之无使用者。下表保留为当时的核查记录，**不是现行清单**；
+> 现行申报面以四个插件的 catalog 为准。
+
 | Provider | Metric IDs | Typical Lag | Update Frequency | Notes |
 |----------|-----------|-------------|------------------|-------|
 | yahoo_finance | gld.ass.price, gld.ass.volume | 15-20 min (delayed) | Real-time (market hours) | Free delayed feed; volume reflects daily cumulative |

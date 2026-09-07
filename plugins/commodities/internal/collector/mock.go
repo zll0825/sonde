@@ -11,7 +11,8 @@ import (
 )
 
 // Mock returns deterministic-looking but jittered commodity series for all
-// real-source metrics: oil.energy.wti, metal.industrial.copper, metal.precious.gold.
+// real-source metrics: oil.energy.wti, metal.industrial.copper.
+// metal.precious.gold 已退役（与 gld.ass.price 重复跟踪黄金），mock 侧同步移除。
 type Mock struct{}
 
 func (Mock) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
@@ -35,15 +36,6 @@ func (Mock) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 			SourceClass: model.SourceClassMock,
 			Grade:       "delayed",
 		},
-		{
-			MetricID:    "metal.precious.gold",
-			Value:       2350.0 + rand.Float64()*20.0, // ~2350 $/oz
-			Timestamp:   now,
-			FetchedAt:   now,
-			Provider:    "mock_commodities",
-			SourceClass: model.SourceClassMock,
-			Grade:       "delayed",
-		},
 	}, nil
 }
 
@@ -56,7 +48,7 @@ func (Mock) GetSnapshotsForWindow(ctx context.Context, start, end time.Time) ([]
 	}
 	const maxSamples = 60
 	fetchedAt := time.Now()
-	out := make([]pluginrunner.Snapshot, 0, maxSamples*3)
+	out := make([]pluginrunner.Snapshot, 0, maxSamples*2)
 	for d, n := start, 0; !d.After(end) && n < maxSamples; d, n = d.Add(day), n+1 {
 		seeded := rand.New(rand.NewSource(d.Unix() / 86400))
 		drift := 1.0 + (seeded.Float64()-0.5)*0.008
@@ -64,7 +56,6 @@ func (Mock) GetSnapshotsForWindow(ctx context.Context, start, end time.Time) ([]
 		out = append(out,
 			pluginrunner.Snapshot{MetricID: "oil.energy.wti", Value: 75.0 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_commodities", SourceClass: model.SourceClassMock, Grade: "estimated"},
 			pluginrunner.Snapshot{MetricID: "metal.industrial.copper", Value: 420.0 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_commodities", SourceClass: model.SourceClassMock, Grade: "estimated"},
-			pluginrunner.Snapshot{MetricID: "metal.precious.gold", Value: 2350.0 * drift, Timestamp: d, FetchedAt: fetchedAt, Provider: "mock_commodities", SourceClass: model.SourceClassMock, Grade: "estimated"},
 		)
 	}
 	return out, nil

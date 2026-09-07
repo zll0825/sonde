@@ -15,31 +15,26 @@ type windowedCommodityProvider interface {
 	pluginrunner.WindowedProvider
 }
 
-// RealCollector composes unchanged FRED WTI/copper collection with Alpha
-// Vantage XAUUSD gold. A failed leg does not discard successful sibling data.
+// RealCollector serves WTI and copper from FRED.
+//
+// 它曾经还合成一条 Alpha Vantage 的 XAUUSD 黄金腿。metal.precious.gold 退役后
+// 这条腿没了：它与 etf 的 gld.ass.price 重复跟踪黄金，却独占 Alpha Vantage
+// 25 次/天的全部配额。少了这个 provider，本采集器也不再需要 ALPHAVANTAGE_API_KEY。
 type RealCollector struct {
 	fred windowedCommodityProvider
-	gold windowedCommodityProvider
 }
 
-// NewRealCollector requires credentials for both real providers.
+// NewRealCollector requires FRED credentials.
 func NewRealCollector(fredBindingsYAML []byte) (*RealCollector, error) {
-	gold, err := NewAlphaVantageGoldCollector()
-	if err != nil {
-		return nil, err
-	}
 	baseCommodities, err := NewFREDCollector(fredBindingsYAML)
 	if err != nil {
 		return nil, err
 	}
-	return &RealCollector{fred: baseCommodities, gold: gold}, nil
+	return &RealCollector{fred: baseCommodities}, nil
 }
 
 func (r *RealCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
-	return collectBoth(
-		func() ([]pluginrunner.Snapshot, error) { return r.fred.GetSnapshots(ctx) },
-		func() ([]pluginrunner.Snapshot, error) { return r.gold.GetSnapshots(ctx) },
-	)
+	return r.fred.GetSnapshots(ctx)
 }
 
 func (r *RealCollector) GetSnapshotsForWindow(ctx context.Context, start, end time.Time) ([]pluginrunner.Snapshot, error) {
@@ -49,22 +44,11 @@ func (r *RealCollector) GetSnapshotsForWindow(ctx context.Context, start, end ti
 	if end.Sub(start) > MaxHistoricalWindow {
 		return nil, fmt.Errorf("commodities history window exceeds %s", MaxHistoricalWindow)
 	}
-	return collectBoth(
-		func() ([]pluginrunner.Snapshot, error) { return r.fred.GetSnapshotsForWindow(ctx, start, end) },
-		func() ([]pluginrunner.Snapshot, error) { return r.gold.GetSnapshotsForWindow(ctx, start, end) },
-	)
+	return r.fred.GetSnapshotsForWindow(ctx, start, end)
 }
 
-// LastCoverage delegates coverage lookups to the provider that owns the metric.
+// LastCoverage delegates coverage lookups to the FRED provider.
 func (r *RealCollector) LastCoverage(metricID string) (provider.BackfillCoverage, bool) {
-	if metricID == goldMetricID {
-		if gold, ok := r.gold.(interface {
-			LastCoverage(string) (provider.BackfillCoverage, bool)
-		}); ok {
-			return gold.LastCoverage(metricID)
-		}
-		return provider.BackfillCoverage{}, false
-	}
 	if fred, ok := r.fred.(interface {
 		LastCoverage(string) (provider.BackfillCoverage, bool)
 	}); ok {
@@ -73,9 +57,9 @@ func (r *RealCollector) LastCoverage(metricID string) (provider.BackfillCoverage
 	return provider.BackfillCoverage{}, false
 }
 
-// CircuitState reports both upstream circuits without hiding a degraded leg.
+// CircuitState reports the FRED circuit.
 func (r *RealCollector) CircuitState() string {
-	return fmt.Sprintf("fred=%s,alpha_vantage=%s", circuitState(r.fred), circuitState(r.gold))
+	return fmt.Sprintf("fred=%s", circuitState(r.fred))
 }
 
 func circuitState(value any) string {
@@ -83,25 +67,4 @@ func circuitState(value any) string {
 		return state.CircuitState()
 	}
 	return "unknown"
-}
-
-func collectBoth(first, second func() ([]pluginrunner.Snapshot, error)) ([]pluginrunner.Snapshot, error) {
-	firstSnapshots, firstErr := first()
-	secondSnapshots, secondErr := second()
-	if secondErr != nil {
-		secondErr = pluginrunner.SummarizeCollectionFailures([]pluginrunner.CollectionFailure{{
-			MetricID: goldMetricID,
-			Provider: providerAlphaVantage,
-			Err:      secondErr,
-		}})
-	}
-	snapshots := append(firstSnapshots, secondSnapshots...)
-	switch {
-	case firstErr == nil:
-		return snapshots, secondErr
-	case secondErr == nil:
-		return snapshots, firstErr
-	default:
-		return snapshots, errors.Join(firstErr, secondErr)
-	}
 }

@@ -62,7 +62,7 @@ type yahooChartResponse struct {
 
 // GetSnapshots returns real observations for gld.ass.price and gld.ass.volume.
 func (y *YahooCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
-	price, volume, avgVol3m, err := y.fetchLatestPriceAndVolume(ctx, "GLD")
+	price, volume, err := y.fetchLatestPriceAndVolume(ctx, "GLD")
 	if err != nil {
 		return nil, err
 	}
@@ -87,17 +87,6 @@ func (y *YahooCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snaps
 			SourceClass: model.SourceClassReal,
 			Grade:       "delayed",
 		},
-	}
-	if avgVol3m > 0 {
-		snaps = append(snaps, pluginrunner.Snapshot{
-			MetricID:    "gld.ass.flow_proxy",
-			Value:       avgVol3m,
-			Timestamp:   fetchedAt,
-			FetchedAt:   fetchedAt,
-			Provider:    providerYahooFinance,
-			SourceClass: model.SourceClassReal,
-			Grade:       "delayed",
-		})
 	}
 	return snaps, nil
 }
@@ -145,11 +134,11 @@ func (y *YahooCollector) GetSnapshotsForWindow(ctx context.Context, start, end t
 }
 
 // fetchLatestPriceAndVolume queries the current price and daily trading volume.
-func (y *YahooCollector) fetchLatestPriceAndVolume(ctx context.Context, symbol string) (price, volume, avgVol3m float64, err error) {
+func (y *YahooCollector) fetchLatestPriceAndVolume(ctx context.Context, symbol string) (price, volume float64, err error) {
 	url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1m&range=1d", symbol)
 	yc, err := y.fetchChart(ctx, url, symbol)
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, err
 	}
 
 	meta := yc.Chart.Result[0].Meta
@@ -158,18 +147,18 @@ func (y *YahooCollector) fetchLatestPriceAndVolume(ctx context.Context, symbol s
 	} else if meta.PreviousClose != 0 {
 		price = meta.PreviousClose
 	} else {
-		return 0, 0, 0, fmt.Errorf("no price in yahoo response for %s", symbol)
+		return 0, 0, fmt.Errorf("no price in yahoo response for %s", symbol)
 	}
 
+	// AverageDailyVolume3Month 保留为 volume 的回退来源：盘前/盘后
+	// RegularMarketVolume 为 0，这时用三个月均量顶上比丢掉整条观测好。
+	// 它不再单独作为一个指标上报（gld.ass.flow_proxy 已退役）。
 	if meta.RegularMarketVolume != 0 {
 		volume = float64(meta.RegularMarketVolume)
 	} else if meta.AverageDailyVolume3Month != 0 {
 		volume = float64(meta.AverageDailyVolume3Month)
 	}
-	if meta.AverageDailyVolume3Month != 0 {
-		avgVol3m = float64(meta.AverageDailyVolume3Month)
-	}
-	return price, volume, avgVol3m, nil
+	return price, volume, nil
 }
 
 // fetchDailyClosesAndVolumes queries real daily close bars and volume for [start, end].

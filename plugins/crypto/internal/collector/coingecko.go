@@ -137,22 +137,6 @@ func (r *RealCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 		})
 	}
 
-	// Flow proxy: 7-day % change in tx_count as active-address exchange-flow proxy
-	if flowProxy, err := r.fetchCoinInfo(ctx); err != nil {
-		log.Warn().Err(err).Msg("btc.ass.flow_proxy calculation failed; dropping")
-	} else {
-		fetchedAt := time.Now()
-		snaps = append(snaps, pluginrunner.Snapshot{
-			MetricID:    "btc.ass.flow_proxy",
-			Value:       flowProxy,
-			Timestamp:   fetchedAt,
-			FetchedAt:   fetchedAt,
-			Provider:    providerBlockchainInfo,
-			SourceClass: model.SourceClassReal,
-			Grade:       "estimated",
-		})
-	}
-
 	if len(snaps) == 0 {
 		return nil, fmt.Errorf("all crypto sources (CoinGecko, mempool, blockchain.com) failed")
 	}
@@ -452,28 +436,6 @@ func (r *RealCollector) fetchPrice(ctx context.Context) (float64, error) {
 		return 0, fmt.Errorf("zero price")
 	}
 	return p.Bitcoin.USD, nil
-}
-
-// fetchCoinInfo computes the 7-day percentage change in on-chain activity
-// as a proxy for active-address (exchange-flow) dynamics. Uses blockchain.info
-// transaction history (existing GetTransactionHistory helper) and falls back
-// gracefully if fewer than 2 observations are available.
-func (r *RealCollector) fetchCoinInfo(ctx context.Context) (float64, error) {
-	end := time.Now()
-	start := end.AddDate(0, 0, -8)
-	_, values, err := r.blockchainInfo.GetTransactionHistory(ctx, start, end)
-	if err != nil {
-		return 0, fmt.Errorf("blockchain.info tx history for flow proxy: %w", err)
-	}
-	if len(values) < 2 {
-		return 0, fmt.Errorf("insufficient tx data for 7d flow proxy (got %d values, need ≥2)", len(values))
-	}
-	latest := values[len(values)-1]
-	oldest := values[0]
-	if oldest <= 0 {
-		return 0, fmt.Errorf("non-positive oldest tx value in flow proxy window")
-	}
-	return ((latest - oldest) / oldest) * 100, nil
 }
 
 // fetchHashRate queries mempool.space for current network hash rate in EH/s.
