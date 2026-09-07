@@ -3,6 +3,7 @@ package fred
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -29,7 +30,14 @@ type Collector struct {
 	mu           sync.Mutex
 	coverages    map[string]provider.BackfillCoverage
 	lastCoverage provider.BackfillCoverage
+	// lastObserved 记录每个 metric 最近一次成功取到的观测日期，用来区分
+	// 「还没到发布期」与「真的停更了」。参照 lastCoverage 的同类结构。
+	lastObserved map[string]time.Time
 }
+
+// errNoObservations 标记「窗口内没有观测」。它本身不代表失败——月频序列在
+// 两次发布之间就是这个结果，由 GetSnapshots 结合沉默时长判定。
+var errNoObservations = errors.New("no observations in window")
 
 // Options construct a Collector. Tests inject Client; production uses
 // SharedClient and RequireAPIKey.
@@ -67,6 +75,7 @@ func NewCollector(opts Options) (*Collector, error) {
 		bindings:       append([]Binding(nil), opts.Bindings...),
 		latestLookback: lookback,
 		coverages:      make(map[string]provider.BackfillCoverage),
+		lastObserved:   make(map[string]time.Time),
 	}, nil
 }
 
@@ -106,14 +115,22 @@ func (c *Collector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, 
 
 	now := time.Now()
 	end := now
-	start := end.Add(-c.latestLookback)
 
 	snaps := make([]pluginrunner.Snapshot, 0, len(c.bindings))
 	failures := make([]pluginrunner.CollectionFailure, 0)
 
 	for _, entry := range c.bindings {
+		// 窗口按每条 series 自己的频率推导，不再全表共用一个值：月频序列
+		// 的观测日期是月初、发布滞后约六周，30 天窗口对它必然落空。
+		start := end.Add(-c.lookbackFor(entry.MetricID, entry.Frequency))
 		val, obsTime, err := c.fetchLatest(ctx, entry.SeriesID, entry.Units, entry.UnitScale, start, end)
 		if err != nil {
+			if errors.Is(err, errNoObservations) && c.awaitingRelease(entry.MetricID, entry.Frequency, now) {
+				log.Debug().Str("metric", entry.MetricID).Str("series", entry.SeriesID).
+					Str("frequency", entry.Frequency).
+					Msg("FRED series has no new observation yet; within normal release interval")
+				continue
+			}
 			logFetchSkip(entry.MetricID, entry.SeriesID, err)
 			failures = append(failures, pluginrunner.CollectionFailure{
 				MetricID: entry.MetricID, Provider: ProviderName, Err: err,
@@ -124,6 +141,7 @@ func (c *Collector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, 
 		if ts.IsZero() {
 			ts = now
 		}
+		c.recordObserved(entry.MetricID, ts)
 		snaps = append(snaps, pluginrunner.Snapshot{
 			MetricID:    entry.MetricID,
 			Value:       *val,
@@ -201,7 +219,7 @@ func (c *Collector) fetchLatest(ctx context.Context, seriesID, units string, sca
 		return nil, time.Time{}, fmt.Errorf("decode FRED response: %w", err)
 	}
 	if len(resp.Observations) == 0 {
-		return nil, time.Time{}, fmt.Errorf("no observations for %s", seriesID)
+		return nil, time.Time{}, fmt.Errorf("no observations for %s: %w", seriesID, errNoObservations)
 	}
 	obs := resp.Observations[0]
 	val, ok := ParseValue(obs.Value, scale)
@@ -360,6 +378,48 @@ func (c *Collector) detectGaps(metricID, frequency string, snaps []pluginrunner.
 			Int("total_samples", len(snaps)).
 			Msg("FRED backfill timeline gap detected")
 	}
+}
+
+// lookbackFor 返回该频率的回溯窗口。bindings.yaml 的 latestLookbackDays 降级
+// 为下限兜底，不再是唯一依据——它对日频仍然合适，对月频远远不够。
+func (c *Collector) lookbackFor(metricID, frequency string) time.Duration {
+	window, known := provider.LatestLookback(frequency)
+	if !known {
+		log.Warn().Str("metric", metricID).Str("frequency", frequency).
+			Dur("fallback_window", window).
+			Msg("unknown series frequency; falling back to the most conservative lookback")
+	}
+	if window < c.latestLookback {
+		window = c.latestLookback
+	}
+	return window
+}
+
+// awaitingRelease 判断「窗口内没有观测」是不是正常的发布间隔。
+//
+// 从未成功取到过观测时返回 false：首次采集就落空是配置问题（series 写错、
+// 窗口推导有误），不该被静音成 debug 日志。
+func (c *Collector) awaitingRelease(metricID, frequency string, now time.Time) bool {
+	c.mu.Lock()
+	last, ok := c.lastObserved[metricID]
+	c.mu.Unlock()
+	if !ok || last.IsZero() {
+		return false
+	}
+	limit, _ := provider.StaleThreshold(frequency)
+	return now.Sub(last) <= limit
+}
+
+func (c *Collector) recordObserved(metricID string, observedAt time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.lastObserved == nil {
+		c.lastObserved = make(map[string]time.Time)
+	}
+	if prev, ok := c.lastObserved[metricID]; ok && prev.After(observedAt) {
+		return
+	}
+	c.lastObserved[metricID] = observedAt
 }
 
 func (c *Collector) recordCoverage(metricID string, cov provider.BackfillCoverage) {

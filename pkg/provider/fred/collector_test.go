@@ -322,3 +322,168 @@ series:
 		t.Fatalf("%+v", got)
 	}
 }
+
+func testCollectorWithLookback(t *testing.T, bindings []Binding, lookback time.Duration, rt http.RoundTripper) *Collector {
+	t.Helper()
+	safe := provider.NewSafeHTTPClientWithHTTPClient(provider.Config{
+		ProviderName: "fred-test",
+		Timeout:      5 * time.Second,
+		RPS:          100,
+		Burst:        10,
+		MaxRetries:   0,
+		BaseDelay:    10 * time.Millisecond,
+		MaxDelay:     50 * time.Millisecond,
+	}, &http.Client{Transport: rt})
+	c, err := NewCollector(Options{
+		APIKey:         "test-secret",
+		Client:         safe,
+		Bindings:       bindings,
+		LatestLookback: lookback,
+	})
+	if err != nil {
+		t.Fatalf("NewCollector: %v", err)
+	}
+	return c
+}
+
+func fredBodyAt(date time.Time, value string) *http.Response {
+	body := `{"observations":[{"date":"` + date.Format("2006-01-02") + `","value":"` + value + `"}]}`
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}
+}
+
+func emptyFREDBody() *http.Response {
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"observations":[]}`)), Header: make(http.Header)}
+}
+
+func TestCollector_WindowDerivedPerBindingNotGlobally(t *testing.T) {
+	// 缺陷原样：所有 binding 共用一个 start，月频序列被日频窗口卡死。
+	// 这里把全局下限压到 1 天，月频窗口仍须自己够宽——即证明它不依赖
+	// bindings.yaml 里 30 / 45 这两个偶然值。
+	starts := map[string]time.Time{}
+	c := testCollectorWithLookback(t, []Binding{
+		{MetricID: "us.mkt.cpi", SeriesID: "CPIAUCSL", UnitScale: 1, Frequency: "monthly"},
+		{MetricID: "us.mkt.ten_year_yield", SeriesID: "DGS10", UnitScale: 1, Frequency: "daily"},
+	}, 24*time.Hour, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		q := req.URL.Query()
+		ts, err := time.Parse("2006-01-02", q.Get("observation_start"))
+		if err != nil {
+			t.Errorf("observation_start = %q: %v", q.Get("observation_start"), err)
+		}
+		starts[q.Get("series_id")] = ts
+		return okFREDBody("3.2"), nil
+	}))
+	if _, err := c.GetSnapshots(context.Background()); err != nil {
+		t.Fatalf("GetSnapshots: %v", err)
+	}
+
+	now := time.Now()
+	monthlyBack := now.Sub(starts["CPIAUCSL"])
+	if monthlyBack < 100*24*time.Hour {
+		t.Fatalf("monthly window reaches back %v, too narrow for a six-week publication lag", monthlyBack)
+	}
+	dailyBack := now.Sub(starts["DGS10"])
+	if dailyBack < 29*24*time.Hour || dailyBack > 31*24*time.Hour {
+		t.Fatalf("daily window reaches back %v, want ~30d (unchanged)", dailyBack)
+	}
+}
+
+func TestCollector_GlobalLookbackActsAsFloorOnly(t *testing.T) {
+	// latestLookbackDays 降级为下限：45 > 日频推导的 30，因此日频取 45。
+	var start time.Time
+	c := testCollectorWithLookback(t, []Binding{
+		{MetricID: "oil.energy.wti", SeriesID: "DCOILWTICO", UnitScale: 1, Frequency: "daily"},
+	}, 45*24*time.Hour, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		start, _ = time.Parse("2006-01-02", req.URL.Query().Get("observation_start"))
+		return okFREDBody("91.48"), nil
+	}))
+	if _, err := c.GetSnapshots(context.Background()); err != nil {
+		t.Fatalf("GetSnapshots: %v", err)
+	}
+	if back := time.Since(start); back < 44*24*time.Hour {
+		t.Fatalf("window reaches back %v, want the 45d floor to win over the 30d daily default", back)
+	}
+}
+
+func TestCollector_ReleaseGapDoesNotCountAsFailure(t *testing.T) {
+	// 月频序列在两次发布之间窗口内没有新观测，这是正常的，不该进
+	// CollectionFailure，否则首页会长期挂「连续失败」。
+	calls := 0
+	c := testCollector(t, []Binding{
+		{MetricID: "us.mkt.cpi", SeriesID: "CPIAUCSL", UnitScale: 1, Frequency: "monthly"},
+	}, roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			return fredBodyAt(time.Now().Add(-40*24*time.Hour), "3.2"), nil
+		}
+		return emptyFREDBody(), nil
+	}))
+
+	if snaps, err := c.GetSnapshots(context.Background()); err != nil || len(snaps) != 1 {
+		t.Fatalf("first collect = %d %v, want one snapshot", len(snaps), err)
+	}
+	snaps, err := c.GetSnapshots(context.Background())
+	if err != nil {
+		t.Fatalf("release gap reported as failure: %v", err)
+	}
+	if len(snaps) != 0 {
+		t.Fatalf("len=%d, want no snapshot when nothing new was published", len(snaps))
+	}
+}
+
+func TestCollector_FirstEmptyWindowIsAFailure(t *testing.T) {
+	// 从未取到过观测就落空，说明 series 写错或窗口推导有误，必须报出来。
+	c := testCollector(t, []Binding{
+		{MetricID: "us.mkt.cpi", SeriesID: "CPIAUCSL", UnitScale: 1, Frequency: "monthly"},
+	}, roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return emptyFREDBody(), nil
+	}))
+	snaps, err := c.GetSnapshots(context.Background())
+	if err == nil {
+		t.Fatal("an empty window on the very first collect must not be silenced")
+	}
+	if len(snaps) != 0 {
+		t.Fatalf("len=%d, want 0", len(snaps))
+	}
+}
+
+func TestCollector_OutageBeyondStaleThresholdIsAFailure(t *testing.T) {
+	// 日频序列已停更 10 天，超过 7 天阈值——这是真异常，不能当作发布间隔。
+	calls := 0
+	c := testCollector(t, []Binding{
+		{MetricID: "us.mkt.ten_year_yield", SeriesID: "DGS10", UnitScale: 1, Frequency: "daily"},
+	}, roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			return fredBodyAt(time.Now().Add(-10*24*time.Hour), "4.2"), nil
+		}
+		return emptyFREDBody(), nil
+	}))
+
+	if _, err := c.GetSnapshots(context.Background()); err != nil {
+		t.Fatalf("first collect: %v", err)
+	}
+	if _, err := c.GetSnapshots(context.Background()); err == nil {
+		t.Fatal("a daily series silent for 10 days must still be reported as a failure")
+	}
+}
+
+func TestCollector_BackfillWindowUnaffectedByFrequency(t *testing.T) {
+	// 回填窗口由调用方显式给出，不受 latest 路径的频率推导影响。
+	wantStart := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	wantEnd := time.Date(2020, 3, 1, 0, 0, 0, 0, time.UTC)
+	var gotStart, gotEnd string
+	c := testCollectorWithLookback(t, []Binding{
+		{MetricID: "us.mkt.cpi", SeriesID: "CPIAUCSL", UnitScale: 1, Frequency: "monthly"},
+	}, 24*time.Hour, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		q := req.URL.Query()
+		gotStart, gotEnd = q.Get("observation_start"), q.Get("observation_end")
+		return okFREDBody("3.2"), nil
+	}))
+	if _, err := c.GetSnapshotsForWindow(context.Background(), wantStart, wantEnd); err != nil {
+		t.Fatalf("GetSnapshotsForWindow: %v", err)
+	}
+	if gotStart != wantStart.Format("2006-01-02") || gotEnd != wantEnd.Format("2006-01-02") {
+		t.Fatalf("backfill window = %s..%s, want %s..%s", gotStart, gotEnd,
+			wantStart.Format("2006-01-02"), wantEnd.Format("2006-01-02"))
+	}
+}
