@@ -108,6 +108,66 @@ func AlphaVantageConfig() Config {
 	}
 }
 
+// FiscalDataConfig returns config for the U.S. Treasury FiscalData API.
+// Public, no key; conservative polling to stay a good client.
+func FiscalDataConfig() Config {
+	return Config{
+		ProviderName: "fiscaldata",
+		Timeout:      15 * time.Second,
+		RPS:          0.5,
+		Burst:        2,
+		MaxRetries:   3,
+		BaseDelay:    2 * time.Second,
+		MaxDelay:     30 * time.Second,
+		JitterRatio:  0.25,
+		Circuit: CircuitBreakerConfig{
+			FailureThreshold:    5,
+			OpenDuration:        60 * time.Second,
+			HalfOpenMaxRequests: 1,
+		},
+	}
+}
+
+// NYFedConfig returns config for the NY Fed Markets Data API.
+// Public, no key; repo results and SOFR share this client.
+func NYFedConfig() Config {
+	return Config{
+		ProviderName: "nyfed",
+		Timeout:      15 * time.Second,
+		RPS:          0.5,
+		Burst:        2,
+		MaxRetries:   3,
+		BaseDelay:    2 * time.Second,
+		MaxDelay:     30 * time.Second,
+		JitterRatio:  0.25,
+		Circuit: CircuitBreakerConfig{
+			FailureThreshold:    5,
+			OpenDuration:        60 * time.Second,
+			HalfOpenMaxRequests: 1,
+		},
+	}
+}
+
+// OFRConfig returns config for the OFR Financial Stress Index JSON.
+// A single static document; poll conservatively.
+func OFRConfig() Config {
+	return Config{
+		ProviderName: "ofr",
+		Timeout:      15 * time.Second,
+		RPS:          0.2,
+		Burst:        1,
+		MaxRetries:   3,
+		BaseDelay:    3 * time.Second,
+		MaxDelay:     60 * time.Second,
+		JitterRatio:  0.25,
+		Circuit: CircuitBreakerConfig{
+			FailureThreshold:    5,
+			OpenDuration:        60 * time.Second,
+			HalfOpenMaxRequests: 1,
+		},
+	}
+}
+
 // BlockchainInfoConfig returns config for blockchain.com charts API.
 // No official rate limit documented; conservative polling recommended.
 func BlockchainInfoConfig() Config {

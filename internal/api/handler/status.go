@@ -81,6 +81,7 @@ type metricStatus struct {
 	MetricID    string        `json:"metric_id"`
 	UID         string        `json:"uid"`
 	Name        string        `json:"name"`
+	Description string        `json:"description"`
 	Unit        string        `json:"unit"`
 	Frequency   string        `json:"frequency"`
 	LatestValue *float64      `json:"latest_value"`
@@ -133,13 +134,14 @@ func loadStatus(ctx context.Context, db statusQuerier, now time.Time) (*statusPa
 	var latestDataAt *time.Time
 	for _, def := range defs {
 		m := metricStatus{
-			MetricID:  def.id,
-			UID:       def.uid,
-			Name:      def.name,
-			Unit:      def.unit,
-			Frequency: def.frequency,
-			Freshness: freshnessRed, // no data yet ⇒ the collection side is broken
-			Series:    []seriesPoint{},
+			MetricID:    def.id,
+			UID:         def.uid,
+			Name:        def.name,
+			Description: def.description,
+			Unit:        def.unit,
+			Frequency:   def.frequency,
+			Freshness:   freshnessRed, // no data yet ⇒ the collection side is broken
+			Series:      []seriesPoint{},
 		}
 		if obs, ok := latest[def.uid]; ok {
 			value := obs.value
@@ -164,14 +166,14 @@ func loadStatus(ctx context.Context, db statusQuerier, now time.Time) (*statusPa
 }
 
 type metricDef struct {
-	id, uid, name, unit, frequency string
+	id, uid, name, description, unit, frequency string
 }
 
 // queryCurrentMetrics: design D3 query 2 — the current version of every
 // active metric definition (versioned tables retire rows via effective_to).
 func queryCurrentMetrics(ctx context.Context, db statusQuerier) ([]metricDef, error) {
 	rows, err := db.Query(ctx, `
-		SELECT id, uid, name, unit, frequency
+		SELECT id, uid, name, COALESCE(description, ''), unit, frequency
 		FROM metric_definitions
 		WHERE effective_to IS NULL AND active = TRUE
 		ORDER BY id`)
@@ -183,7 +185,7 @@ func queryCurrentMetrics(ctx context.Context, db statusQuerier) ([]metricDef, er
 	defs := make([]metricDef, 0)
 	for rows.Next() {
 		var d metricDef
-		if err := rows.Scan(&d.id, &d.uid, &d.name, &d.unit, &d.frequency); err != nil {
+		if err := rows.Scan(&d.id, &d.uid, &d.name, &d.description, &d.unit, &d.frequency); err != nil {
 			return nil, fmt.Errorf("scan metric definition: %w", err)
 		}
 		defs = append(defs, d)

@@ -188,6 +188,18 @@ func TestLoadStatus_EmptyDB(t *testing.T) {
 	}
 }
 
+func TestQueryCurrentMetricsSQLCoalescesDescription(t *testing.T) {
+	db := &fakeDB{}
+	db.stub(newFakeRows())
+	defer db.exhausted(t)
+	if _, err := queryCurrentMetrics(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(db.lastSQL, "COALESCE(description, '')") {
+		t.Fatal("queryCurrentMetrics must COALESCE nullable description into a Go string")
+	}
+}
+
 func TestLoadStatus_JoinAndFreshness(t *testing.T) {
 	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
 	db := &fakeDB{}
@@ -196,9 +208,9 @@ func TestLoadStatus_JoinAndFreshness(t *testing.T) {
 		[]any{"plg_crypto", "crypto", true, false, "running", nil, 320, 0, "coingecko/btc.price: timeout", 2, []byte(`{"windowed_backfill":true,"max_backfill_days":365,"requires_secrets":["COINGECKO_KEY"],"mock_available":true}`), []byte(`{"secret.COINGECKO_KEY":"missing"}`)},
 	))
 	db.stub(newFakeRows( // metric definitions
-		[]any{"gld.ass.price", "mtr_aaa", "GLD Price", "USD", "daily"},
-		[]any{"btc.usd.price", "mtr_bbb", "BTC Price", "USD", "hourly"},
-		[]any{"walcl", "mtr_ccc", "WALCL", "USD bn", "weekly"},
+		[]any{"gld.ass.price", "mtr_aaa", "GLD Price", "GLD spot", "USD", "daily"},
+		[]any{"btc.usd.price", "mtr_bbb", "BTC Price", "", "USD", "hourly"},
+		[]any{"walcl", "mtr_ccc", "WALCL", "Fed assets", "USD bn", "weekly"},
 	))
 	// mtr_ccc deliberately has no observation: the metric must still appear,
 	// red, with a null value — missing data is itself a state to surface.
@@ -273,6 +285,9 @@ func TestLoadStatus_JoinAndFreshness(t *testing.T) {
 	}
 	if p.Metrics[0].Provider != "yahoo" || p.Metrics[0].Grade != "delayed" {
 		t.Errorf("metrics[0] provider/grade = %q/%q, want yahoo/delayed", p.Metrics[0].Provider, p.Metrics[0].Grade)
+	}
+	if p.Metrics[0].Description != "GLD spot" {
+		t.Errorf("metrics[0].Description = %q, want GLD spot", p.Metrics[0].Description)
 	}
 	// series: newest 30, ascending by time
 	if len(p.Metrics[0].Series) != 2 || p.Metrics[0].Series[0].V != 310.5 || p.Metrics[0].Series[1].V != 312.0 {

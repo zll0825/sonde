@@ -8,7 +8,7 @@ API_PORT ?= 8080
 # Workspace modules with Go code. NOTE: `go build ./...` from the repo root
 # only matches the ROOT module — plugin modules are invisible to it. Add new
 # plugin modules here or they silently escape every gate.
-GO_MODULES ?= . ./plugins/etf ./plugins/crypto ./plugins/macro ./plugins/commodities
+GO_MODULES ?= . ./plugins/etf ./plugins/crypto ./plugins/macro ./plugins/commodities ./plugins/fedops
 
 # ---- Help ----
 help: ## Show this help
@@ -126,6 +126,12 @@ run-commodities: ## Run Commodities (needs FRED_API_KEY)
 run-commodities-mock: ## Run the Commodities plugin with PROVIDER=mock (offline dev)
 	cd plugins/commodities && CORE_ADDR=localhost:50051 PROVIDER=mock go run ./cmd/commodities
 
+run-fedops: ## Run fedops (FiscalData / NY Fed / OFR — no API key)
+	cd plugins/fedops && CORE_ADDR=localhost:50051 go run ./cmd/fedops
+
+run-fedops-mock: ## Run fedops with PROVIDER=mock (offline dev)
+	cd plugins/fedops && CORE_ADDR=localhost:50051 PROVIDER=mock go run ./cmd/fedops
+
 # ---- CI ----
 lint: ## Run gofmt + go vet + buf lint (all workspace modules)
 	gofmt -l .
@@ -169,4 +175,4 @@ clean-data: ## DESTRUCTIVE: stop stack AND delete database volumes
 #   - crypto: no key required (CoinGecko / mempool.space free tiers)
 #   - ETF: no key required (Yahoo Finance public API)
 #   - Telegram: set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID on core env to enable
-.PHONY: help install-tools proto migrate-up migrate-down migrate-status migrate-force dev dev-up dev-down dev-logs lint test build build-mcp clean clean-data run-core run-api run-etf run-crypto run-crypto-mock run-macro run-macro-mock run-commodities run-commodities-mock
+.PHONY: help install-tools proto migrate-up migrate-down migrate-status migrate-force dev dev-up dev-down dev-logs lint test build build-mcp clean clean-data run-core run-api run-etf run-crypto run-crypto-mock run-macro run-macro-mock run-commodities run-commodities-mock run-fedops run-fedops-mock

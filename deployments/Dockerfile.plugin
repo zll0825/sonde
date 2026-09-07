@@ -17,6 +17,7 @@ COPY plugins/etf/go.mod ./plugins/etf/go.mod
 COPY plugins/macro/go.mod ./plugins/macro/go.mod
 COPY plugins/crypto/go.mod ./plugins/crypto/go.mod
 COPY plugins/commodities/go.mod ./plugins/commodities/go.mod
+COPY plugins/fedops/go.mod ./plugins/fedops/go.mod
 
 # Shared root-module packages the plugins import (pluginrunner, proto stubs).
 COPY pkg/ ./pkg/

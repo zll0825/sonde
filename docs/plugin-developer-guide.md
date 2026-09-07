@@ -202,10 +202,23 @@ go mod tidy
 go test ./... -count=1
 ```
 
-新 plugin 加入 worktree：
+新 plugin 加入 worktree 时必须**同一改动**写齐，漏一处就会逃出 `make test` 或让 compose 构建失败：
+
 ```bash
 go work use ./plugins/<name>
 ```
+
+| 文件 | 改动 |
+|---|---|
+| `go.work` | `use ./plugins/<name>` |
+| `Makefile` `GO_MODULES` | 追加 `./plugins/<name>` |
+| `.github/workflows/ci.yml` | vet / build / race-test **三处**循环都加 |
+| `deployments/Dockerfile.plugin` | `COPY plugins/<name>/go.mod` |
+| `deployments/Dockerfile.core` | 同上（`go.work` 要求每个 use 的 go.mod 都在） |
+| `deployments/Dockerfile.api` | 同上 |
+| `deployments/docker-compose.yml` | 新服务；只注入该插件真正需要的密钥 |
+
+无密钥插件（如 `fedops`）不要抄 macro 的 `FRED_API_KEY`。FRED 序列进现有 `macro` 的 YAML，不要再开一个 FRED 客户端。跨源公式放 `scripts/liquidity/`，不要注册成 catalog 指标。口径陷阱见 `.trellis/spec/backend/liquidity-collectors.md`。
 
 ---
 
@@ -217,3 +230,4 @@ go work use ./plugins/<name>
 | Crypto    | CoinGecko / Mempool / Blockchain | `plugins/crypto/internal/collector/{coingecko,blockchain_info}.go` | 多 client、多 bearer/private token、单位缩放 |
 | Macro     | FRED          | `plugins/macro/internal/collector/fred.go` | FRED 标准模式、系列化 fetchRange、429/Retry-After、弹性 unit scale |
 | Commodities | FRED + Alpha Vantage | `plugins/commodities/internal/collector/{fred,alpha_vantage,real}.go` | FRED WTI/铜与 XAUUSD 现货/历史组合、partial failure、凭据安全错误 |
+| Fedops | FiscalData / NY Fed / OFR | `plugins/fedops/internal/collector/{fiscaldata,nyfed,ofr,real}.go` | 无密钥多源组合、httptest 夹具、windowed backfill |

@@ -16,6 +16,7 @@
 #   - macro-plugin        Fed balance, US yields, USD index, USD/CNY, CPI, inflation (FRED real data)
 #   - crypto-plugin       BTC price (CoinGecko), hash rate (mempool), tx count (blockchain.com)
 #   - commodities-plugin  WTI/copper (FRED)
+#   - fedops-plugin       TGA / RRP / SRF / SOFR / OFR FSI (no API key)
 #
 # To observe the live pipeline:
 #   SELECT * FROM observations ORDER BY ingested_at DESC;
@@ -174,6 +175,24 @@ services:
       PROVIDER: "real"
       FRED_API_KEY: "${FRED_API_KEY:-}"
       PROVIDER_QUOTA_DB_URL: "postgres://sonde:sonde_dev@timescaledb:5432/sonde?sslmode=disable"
+
+  # Fedops Plugin: TGA (FiscalData), RRP/SRF/SOFR (NY Fed), OFR FSI.
+  # No API key — missing FRED_API_KEY must not fail this service.
+  fedops-plugin:
+    build:
+      context: ../
+      dockerfile: deployments/Dockerfile.plugin
+      args:
+        PLUGIN_DIR: fedops
+    container_name: sonde-fedops
+    restart: unless-stopped
+    depends_on:
+      - core
+    environment:
+      CORE_ADDR: "core:50051"
+      PLUGIN_ID: "fedops"
+      COLLECTION_INTERVAL: "1h"
+      PROVIDER: "real"
 
 volumes:
   tsdb_data:

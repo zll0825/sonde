@@ -267,6 +267,7 @@ function buildPulseCard(m) {
     const name = document.createElement('span');
     name.className = 'pulse-name';
     name.textContent = m.name || m.metric_id || '—';
+    if (m.description) name.title = m.description;
     head.appendChild(dot);
     head.appendChild(name);
     card.appendChild(head);

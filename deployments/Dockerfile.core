@@ -15,6 +15,7 @@ COPY plugins/etf/go.mod ./plugins/etf/go.mod
 COPY plugins/macro/go.mod ./plugins/macro/go.mod
 COPY plugins/crypto/go.mod ./plugins/crypto/go.mod
 COPY plugins/commodities/go.mod ./plugins/commodities/go.mod
+COPY plugins/fedops/go.mod ./plugins/fedops/go.mod
 COPY pkg/ ./pkg/
 COPY internal/ ./internal/
 COPY cmd/core/ ./cmd/core/
