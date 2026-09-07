@@ -21,21 +21,15 @@ type BackfillCoverage struct {
 }
 
 // DetectGaps walks sorted timestamps and flags gaps larger than 2x the expected period.
-// Supported frequencies: "daily", "weekly", "monthly".
+// Frequency vocabulary and periods come from FrequencyPeriod; unknown frequencies
+// keep the historical 30-day fallback.
 func DetectGaps(times []time.Time, freq string) []Gap {
 	var gaps []Gap
 	if len(times) < 2 {
 		return nil
 	}
-	var period time.Duration
-	switch freq {
-	case "daily":
-		period = 24 * time.Hour
-	case "weekly":
-		period = 7 * 24 * time.Hour
-	case "monthly":
-		period = 30 * 24 * time.Hour
-	default:
+	period, ok := FrequencyPeriod(freq)
+	if !ok {
 		period = 30 * 24 * time.Hour
 	}
 	for i := 1; i < len(times); i++ {

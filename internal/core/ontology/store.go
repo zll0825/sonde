@@ -54,7 +54,8 @@ func NewStore(db DB) *Store {
 //  3. reviewAndAcceptRelations → relations (accepted) / relation_suggestions
 //     (pending or rejected-for-audit). Identical re-registrations write nothing.
 //  4. reviewAndAcceptRules → rules (accepted) / rule_suggestions (conflict).
-//  5. Bump registration_version only when something was actually written
+//  5. reconcileRegistration → close metrics/rules this plugin stopped declaring.
+//  6. Bump registration_version only when something was actually written
 //     (or on first registration), so reconnect spam never inflates versions.
 //
 // Returns the assigned plugin_id and the new (or unchanged) registration_version.
@@ -131,9 +132,17 @@ func (s *Store) RegisterPlugin(ctx context.Context, req *pb.RegisterPluginReques
 		return "", 0, fmt.Errorf("review rules: %w", rerr)
 	}
 
-	// 5. Bump only when the registration materialized a change.
+	// 5. Reconcile: close anything this plugin no longer declares. Must run
+	// inside the same transaction as the upserts above — a half-commit would
+	// leave a window where the old version is closed and the new one is absent.
+	retired, rerr := reconcileRegistration(ctx, tx, pluginID, req)
+	if rerr != nil {
+		return "", 0, fmt.Errorf("reconcile registration: %w", rerr)
+	}
+
+	// 6. Bump only when the registration materialized a change.
 	changed := entitiesChanged > 0 || metricsChanged > 0 ||
-		relationsAccepted > 0 || rulesAccepted > 0 || isFirstRegistration
+		relationsAccepted > 0 || rulesAccepted > 0 || retired > 0 || isFirstRegistration
 	if changed {
 		if err := tx.QueryRow(ctx, `
 			UPDATE plugins SET registration_version = registration_version + 1, updated_at = NOW()
