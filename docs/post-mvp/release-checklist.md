@@ -4,6 +4,12 @@ Phase 3 acceptance criteria for the domain-complete real-data coverage release.
 
 ## Metric Inventory (Final)
 
+> **2026-09-07 起已过时。** `gld.ass.flow_proxy`、`btc.ass.flow_proxy`、
+> `metal.precious.gold` 三个指标已退役（分别与 `gld.ass.volume`、
+> `btc.ass.tx_count` 同源，以及与 `gld.ass.price` 重复跟踪黄金）。
+> Alpha Vantage 随之无使用者。下表保留为当时的核查记录，**不是现行清单**；
+> 现行申报面以四个插件的 catalog 为准。
+
 ### ETF Plugin (3 metrics, all real)
 | Metric ID | Unit | Frequency | Source | Provider |
 |-----------|------|-----------|--------|----------|

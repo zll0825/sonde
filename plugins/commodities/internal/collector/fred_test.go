@@ -103,12 +103,9 @@ func TestSharedProvider_LiveYAMLSnapshotsAreReal(t *testing.T) {
 		t.Fatalf("GetSnapshots: %v", err)
 	}
 	if len(snaps) != 2 {
-		t.Fatalf("snapshots=%d, want 2 FRED legs (gold stays on Alpha Vantage)", len(snaps))
+		t.Fatalf("snapshots=%d, want 2 FRED legs (WTI and copper)", len(snaps))
 	}
 	for _, snap := range snaps {
-		if snap.MetricID == goldMetricID {
-			t.Fatal("gold must not come from the FRED provider")
-		}
 		if snap.SourceClass != model.SourceClassReal || snap.Provider != fredprov.ProviderName {
 			t.Fatalf("snap=%+v", snap)
 		}

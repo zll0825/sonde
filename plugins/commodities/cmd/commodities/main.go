@@ -1,5 +1,8 @@
-// commodities 插件：覆盖三大商品维度——能源（WTI 原油）、工业金属（IMF 初级铜价）、
-// 贵金属（XAUUSD 黄金现货）。WTI/铜来自 FRED，黄金来自 Alpha Vantage。
+// commodities 插件：覆盖两大商品维度——能源（WTI 原油）与工业金属（IMF 初级铜价），
+// 均来自 FRED。
+// 退役指标: metal.precious.gold (与 etf 的 gld.ass.price 重复跟踪黄金，却独占
+// Alpha Vantage 25 次/天的全部配额)；连带退役 GOLD 实体、gold_percentile_surge
+// 规则与两条 GOLD 关系，ALPHAVANTAGE_API_KEY 随之无使用者。
 package main
 
 import (

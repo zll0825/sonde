@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -296,7 +295,8 @@ func queryPlugins(ctx context.Context, db statusQuerier) ([]pluginStatus, []expe
 		        AND last_heartbeat > now() - interval '90 seconds') AS healthy,
 		       state, last_collect_at, last_collect_duration_ms,
 		       last_collect_count, COALESCE(last_collect_error, ''), consecutive_errors,
-		       COALESCE(capabilities, '{}'::jsonb)
+		       COALESCE(capabilities, '{}'::jsonb),
+		       COALESCE(runtime, '{}'::jsonb)
 		FROM plugins
 		ORDER BY name`)
 	if err != nil {
@@ -308,13 +308,14 @@ func queryPlugins(ctx context.Context, db statusQuerier) ([]pluginStatus, []expe
 	expected := make([]expectedPluginStatus, 0)
 	for rows.Next() {
 		var (
-			p      pluginStatus
-			lastAt pgtype.Timestamptz // nullable last_collect_at
-			caps   []byte
+			p       pluginStatus
+			lastAt  pgtype.Timestamptz // nullable last_collect_at
+			caps    []byte
+			runtime []byte
 		)
 		if err := rows.Scan(&p.ID, &p.Name, &p.Connected, &p.Healthy, &p.State, &lastAt,
 			&p.LastCollectDurationMs, &p.LastCollectCount, &p.LastCollectError,
-			&p.ConsecutiveErrors, &caps); err != nil {
+			&p.ConsecutiveErrors, &caps, &runtime); err != nil {
 			return nil, nil, fmt.Errorf("scan plugin %s: %w", p.ID, err)
 		}
 		if lastAt.Valid {
@@ -328,16 +329,7 @@ func queryPlugins(ctx context.Context, db statusQuerier) ([]pluginStatus, []expe
 			Capabilities: parseCapabilityJSON(caps),
 			Ready:        true,
 		}
-		if len(exp.Capabilities.RequiresSecrets) > 0 {
-			exp.SecretsPresent = make(map[string]bool, len(exp.Capabilities.RequiresSecrets))
-			for _, key := range exp.Capabilities.RequiresSecrets {
-				present := os.Getenv(key) != ""
-				exp.SecretsPresent[key] = present
-				if !present {
-					exp.Ready = false
-				}
-			}
-		}
+		applySecretReadiness(&exp, runtime)
 		expected = append(expected, exp)
 	}
 	return plugins, expected, rows.Err()
@@ -364,4 +356,40 @@ func parseCapabilityJSON(raw []byte) capabilityStatus {
 		out.RequiresSecrets = parsed.RequiresSecrets
 	}
 	return out
+}
+
+// applySecretReadiness fills SecretsPresent/Ready from what the plugin reported
+// on its heartbeat.
+//
+// 此前这里是 os.Getenv(key)，在 API 进程里求值——但密钥只存在于插件容器，
+// API 容器根本没有 FRED_API_KEY，于是 macro / commodities 明明拿着真实密钥
+// 正常采集，首页却一直显示「缺少密钥」。现在由插件在心跳里如实上报
+// （pluginrunner.secretReadiness），Core 落到 plugins.runtime，这里只做读取。
+//
+// 没有上报的键一律不表态：这类插件要么还没心跳过（连接状态已经单独展示了），
+// 要么是尚未升级的旧版本。把「不知道」显示成「缺失」，正是上一版的错误。
+// 真实模式下缺必需密钥的插件会在启动时快速失败、根本不会心跳；能报出
+// missing 的通常是 PROVIDER=mock 的会话，那是值得显示的状态。
+func applySecretReadiness(exp *expectedPluginStatus, runtimeJSON []byte) {
+	if len(exp.Capabilities.RequiresSecrets) == 0 || len(runtimeJSON) == 0 {
+		return
+	}
+	var runtime map[string]string
+	if err := json.Unmarshal(runtimeJSON, &runtime); err != nil {
+		return
+	}
+	for _, key := range exp.Capabilities.RequiresSecrets {
+		state, reported := runtime[model.SecretRuntimePrefix+key]
+		if !reported {
+			continue
+		}
+		if exp.SecretsPresent == nil {
+			exp.SecretsPresent = make(map[string]bool, len(exp.Capabilities.RequiresSecrets))
+		}
+		present := state == model.SecretPresent
+		exp.SecretsPresent[key] = present
+		if !present {
+			exp.Ready = false
+		}
+	}
 }

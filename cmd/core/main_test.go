@@ -157,3 +157,22 @@ func TestHandleResearchRequestRejectsPermanentFailures(t *testing.T) {
 		})
 	}
 }
+
+// TestDetectorRegistrationCoversEveryPluginDetector 钉住 Core 侧的注册面。
+//
+// 插件是独立模块，不能反向导入 internal/core（Core 不懂金融语义、插件不依赖
+// Core 内部是硬约束），所以它们无从得知这里注册了什么。两侧各钉一半：Core 钉
+// 注册面，每个插件的 catalog 测试钉「申报的检测器名都在这五个之内」。任一侧
+// 漂移，都会有一边先红，而不是等到生产环境里每轮打 WARN 却没人看。
+func TestDetectorRegistrationCoversEveryPluginDetector(t *testing.T) {
+	want := []string{"moving_average", "percentile", "threshold", "trend", "volatility"}
+	got := newDetectorEngine().Names()
+	if len(got) != len(want) {
+		t.Fatalf("registered detectors = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("registered detectors = %v, want %v", got, want)
+		}
+	}
+}

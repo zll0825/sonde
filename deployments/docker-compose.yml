@@ -12,10 +12,10 @@
 #   - API + Frontend          http://localhost:8080/
 #
 # Plugins (see each service's PROVIDER env):
-#   - etf-plugin          GLD price, volume & proxy (Yahoo Finance real data)
+#   - etf-plugin          GLD price & volume (Yahoo Finance real data)
 #   - macro-plugin        Fed balance, US yields, USD index, USD/CNY, CPI, inflation (FRED real data)
-#   - crypto-plugin       BTC price (CoinGecko), hash rate (mempool), tx count & proxy (blockchain.com)
-#   - commodities-plugin  Spot gold (Alpha Vantage) & WTI/copper (FRED)
+#   - crypto-plugin       BTC price (CoinGecko), hash rate (mempool), tx count (blockchain.com)
+#   - commodities-plugin  WTI/copper (FRED)
 #
 # To observe the live pipeline:
 #   SELECT * FROM observations ORDER BY ingested_at DESC;
@@ -98,7 +98,7 @@ services:
       - cluster_snapshots:/data/clusters
       - ../web:/app/web:ro
 
-  # ETF Plugin: GLD real price, volume, and 3m avg volume proxy via Yahoo Finance.
+  # ETF Plugin: GLD real price and volume via Yahoo Finance.
   etf-plugin:
     build:
       context: ../
@@ -136,7 +136,7 @@ services:
       FRED_API_KEY: "${FRED_API_KEY:-}"     # REQUIRED -- fails fast if unset
       PROVIDER_QUOTA_DB_URL: "postgres://sonde:sonde_dev@timescaledb:5432/sonde?sslmode=disable"
 
-  # Crypto Plugin: BTC price (CoinGecko), hash rate (mempool.space), tx count & proxy (blockchain.com).
+  # Crypto Plugin: BTC price (CoinGecko), hash rate (mempool.space), tx count (blockchain.com).
   # No API key required for the free public endpoints.
   crypto-plugin:
     build:
@@ -154,8 +154,9 @@ services:
       COLLECTION_INTERVAL: "1h"           # public APIs are low-rate-limit
       PROVIDER: "real"                    # "real" = CoinGecko+mempool; "mock" = synthetic
 
-  # Commodities Plugin: WTI/copper from FRED and XAUUSD spot gold from Alpha Vantage.
-  # Both keys are required in real mode; missing credentials fail setup loudly.
+  # Commodities Plugin: WTI/copper from FRED.
+  # FRED_API_KEY is required in real mode; a missing credential fails setup loudly.
+  # metal.precious.gold retired -- ALPHAVANTAGE_API_KEY no longer has a consumer.
   commodities-plugin:
     build:
       context: ../
@@ -169,10 +170,9 @@ services:
     environment:
       CORE_ADDR: "core:50051"
       PLUGIN_ID: "commodities"
-      COLLECTION_INTERVAL: "2h"           # 12 Alpha Vantage spot calls/day (free tier: 25/day)
+      COLLECTION_INTERVAL: "2h"           # 12 collections/day
       PROVIDER: "real"
       FRED_API_KEY: "${FRED_API_KEY:-}"
-      ALPHAVANTAGE_API_KEY: "${ALPHAVANTAGE_API_KEY:-}"
       PROVIDER_QUOTA_DB_URL: "postgres://sonde:sonde_dev@timescaledb:5432/sonde?sslmode=disable"
 
 volumes:

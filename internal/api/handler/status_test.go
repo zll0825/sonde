@@ -185,12 +185,10 @@ func TestLoadStatus_EmptyDB(t *testing.T) {
 
 func TestLoadStatus_JoinAndFreshness(t *testing.T) {
 	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
-	t.Setenv("COINGECKO_KEY", "")
-
 	db := &fakeDB{}
 	db.stub(newFakeRows( // plugins
-		[]any{"plg_etf", "etf", true, true, "running", now.Add(-2 * time.Hour), 125, 3, "", 0, []byte(`{}`)},
-		[]any{"plg_crypto", "crypto", true, false, "running", nil, 320, 0, "coingecko/btc.price: timeout", 2, []byte(`{"windowed_backfill":true,"max_backfill_days":365,"requires_secrets":["COINGECKO_KEY"],"mock_available":true}`)},
+		[]any{"plg_etf", "etf", true, true, "running", now.Add(-2 * time.Hour), 125, 3, "", 0, []byte(`{}`), []byte(`{}`)},
+		[]any{"plg_crypto", "crypto", true, false, "running", nil, 320, 0, "coingecko/btc.price: timeout", 2, []byte(`{"windowed_backfill":true,"max_backfill_days":365,"requires_secrets":["COINGECKO_KEY"],"mock_available":true}`), []byte(`{"secret.COINGECKO_KEY":"missing"}`)},
 	))
 	db.stub(newFakeRows( // metric definitions
 		[]any{"gld.ass.price", "mtr_aaa", "GLD Price", "USD", "daily"},
@@ -238,10 +236,10 @@ func TestLoadStatus_JoinAndFreshness(t *testing.T) {
 		t.Errorf("expected_plugins[1] = %+v", p.ExpectedPlugins[1])
 	}
 	if p.ExpectedPlugins[1].SecretsPresent["COINGECKO_KEY"] {
-		t.Errorf("secrets_present should be false when env is unset: %+v", p.ExpectedPlugins[1].SecretsPresent)
+		t.Errorf("secrets_present should be false when the plugin reports it missing: %+v", p.ExpectedPlugins[1].SecretsPresent)
 	}
 	if p.ExpectedPlugins[1].Ready {
-		t.Errorf("expected_plugins[1].ready = true, want false when required secret is missing")
+		t.Errorf("expected_plugins[1].ready = true, want false when the plugin reports a required secret missing")
 	}
 	if !p.ExpectedPlugins[0].Ready {
 		t.Errorf("expected_plugins[0].ready = false, want true when no secrets required")
@@ -298,23 +296,59 @@ func TestLoadStatus_JoinAndFreshness(t *testing.T) {
 	}
 }
 
-func TestLoadStatus_ExpectedPluginReadyFromAPIEnv(t *testing.T) {
+// TestLoadStatus_SecretReadinessComesFromTheHeartbeat 锁住一个曾经长期误报的
+// 结论来源：密钥就绪必须来自插件自己上报的 runtime，而不是 API 进程的环境变量。
+//
+// 旧实现是 os.Getenv(key)。密钥只存在于插件容器——compose 里 sonde-api 没有
+// FRED_API_KEY——所以 macro / commodities 明明拿着真实密钥正常采集，首页却
+// 一直显示「缺少密钥」。
+func TestLoadStatus_SecretReadinessComesFromTheHeartbeat(t *testing.T) {
 	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
 	caps := []byte(`{"windowed_backfill":true,"requires_secrets":["FRED_API_KEY"]}`)
 	cases := []struct {
-		name      string
-		env       string
-		wantReady bool
+		name         string
+		runtime      string
+		wantReady    bool
+		wantReported bool
+		wantPresent  bool
 	}{
-		{"missing secret while process down", "", false},
-		{"secret present while process down", "present", true},
+		{
+			name:         "plugin reports the secret present",
+			runtime:      `{"secret.FRED_API_KEY":"present"}`,
+			wantReady:    true,
+			wantReported: true,
+			wantPresent:  true,
+		},
+		{
+			name:         "plugin reports the secret missing",
+			runtime:      `{"secret.FRED_API_KEY":"missing"}`,
+			wantReady:    false,
+			wantReported: true,
+			wantPresent:  false,
+		},
+		{
+			// 尚未升级的插件、或还没心跳过的插件：不知道就不表态。
+			// 把「不知道」显示成「缺失」正是上一版的错误。
+			name:         "plugin has not reported yet",
+			runtime:      `{}`,
+			wantReady:    true,
+			wantReported: false,
+		},
+		{
+			name:         "runtime carries other keys only",
+			runtime:      `{"circuit_state":"closed"}`,
+			wantReady:    true,
+			wantReported: false,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("FRED_API_KEY", tc.env)
+			// 环境变量刻意设成与期望相反：结论必须完全来自 runtime。
+			t.Setenv("FRED_API_KEY", "this-must-be-ignored")
+
 			db := &fakeDB{}
 			db.stub(newFakeRows(
-				[]any{"plg_macro", "macro", false, false, "stopped", nil, 0, 0, "", 0, caps},
+				[]any{"plg_macro", "macro", true, true, "running", now.Add(-time.Hour), 10, 6, "", 0, caps, []byte(tc.runtime)},
 			))
 			db.stub(newFakeRows())
 			db.stub(newFakeRows())
@@ -329,14 +363,16 @@ func TestLoadStatus_ExpectedPluginReadyFromAPIEnv(t *testing.T) {
 			if len(p.ExpectedPlugins) != 1 {
 				t.Fatalf("expected_plugins len = %d, want 1", len(p.ExpectedPlugins))
 			}
-			if p.Plugins[0].Connected {
-				t.Errorf("plugins[0].connected = true, want false (process down)")
+			exp := p.ExpectedPlugins[0]
+			if exp.Ready != tc.wantReady {
+				t.Errorf("ready = %v, want %v", exp.Ready, tc.wantReady)
 			}
-			if p.ExpectedPlugins[0].Ready != tc.wantReady {
-				t.Errorf("ready = %v, want %v", p.ExpectedPlugins[0].Ready, tc.wantReady)
+			got, reported := exp.SecretsPresent["FRED_API_KEY"]
+			if reported != tc.wantReported {
+				t.Fatalf("secrets_present reported = %v, want %v (map=%+v)", reported, tc.wantReported, exp.SecretsPresent)
 			}
-			if got := p.ExpectedPlugins[0].SecretsPresent["FRED_API_KEY"]; got != tc.wantReady {
-				t.Errorf("secrets_present[FRED_API_KEY] = %v, want %v", got, tc.wantReady)
+			if reported && got != tc.wantPresent {
+				t.Errorf("secrets_present[FRED_API_KEY] = %v, want %v", got, tc.wantPresent)
 			}
 		})
 	}

@@ -31,8 +31,12 @@ metrics:
     frequency: daily
     entity: US
   - id: us.mkt.dollar_index
-    name: US Dollar Index
-    description: DXY US Dollar Index
+    name: 美联储广义贸易加权美元指数（DTWEXBGS）
+    description: >-
+      Federal Reserve Nominal Broad U.S. Dollar Index (FRED DTWEXBGS,
+      Index Jan 2006=100). NOT the ICE dollar index (DXY): the two use
+      different baskets and different bases, and DTWEXBGS reads ~119 where
+      DXY reads ~100. Thresholds written for DXY do not transfer.
     unit: index
     frequency: daily
     entity: US
@@ -73,12 +77,20 @@ rules:
     severity: warning
     config: '{"percentile":90,"consecutive":2}'
     description: 10Y yield at/above 90th percentile for 2+ days
+  # 原为 threshold gt 105——那是照 DXY 定的阈值，而本指标是 DTWEXBGS
+  # （实测 2026-08-28 = 118.7479），永久为真。改为相对自身 20 日均线：
+  # 均线跟着序列走，结构上不可能一直为真。
+  # margin 1.5 由两年 DTWEXBGS 实测定出（value-SMA20 的 p95=1.566），
+  # 触发率约 6.3% 的交易日。
+  # min_observations 不是 moving_average 读的字段，而是喂给 Core 的
+  # frequencyAwareLookback——它只认 consecutive / min_observations，看不见
+  # window。不写这一项，回看窗口只按 5 期算，SMA20 会静默退化成 SMA5。
   - name: usd_index_extreme
     metric: us.mkt.dollar_index
-    detector: threshold
+    detector: moving_average
     severity: info
-    config: '{"operator":"gt","value":105}'
-    description: DXY above 105
+    config: '{"window":20,"margin":1.5,"above":true,"min_observations":25}'
+    description: 美元指数高于自身 20 日均线 1.5 点以上——相对自身分布的强势偏离
   - name: inflation_above_target
     metric: us.mkt.inflation_yoy
     detector: threshold

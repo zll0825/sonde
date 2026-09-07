@@ -1,6 +1,9 @@
 // crypto 插件：BTC 价格（CoinGecko）、全网算力（mempool.space）、
 // 链上交易数（blockchain.com），小时级轮询。
 // 退役指标: btc.ass.exchange_balance (无免费可信数据源)
+// 退役指标: btc.ass.flow_proxy (与 btc.ass.tx_count 同源，是该序列的 7 日变化率；
+// 名字写着「活跃地址」，测的也不是资金流)
+//
 // 新增指标: btc.ass.tx_count (真实链上活跃度指标)
 package main
 
@@ -78,24 +81,24 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Frequency:   "daily",
 				EntityId:    "BTC",
 			},
-			{
-				Id:          "btc.ass.flow_proxy",
-				Name:        "BTC Active Addresses 7d Change (flow proxy)",
-				Description: "7-day percentage change in active addresses; serves as on-chain exchange-flow proxy",
-				Unit:        "%",
-				Frequency:   "daily",
-				EntityId:    "BTC",
-			},
 		},
 		Relations: []*pb.RelationSuggestion{},
 		Rules: []*pb.RuleSuggestion{
+			// 原为 percentile 95：对价格水平做分位检测，在上行趋势里创新高即持续
+			// 处于高分位。用 702 条真实观测按实际回看窗口（hourly 指标被 7 天
+			// 下限锁死，约 140 点）复算，现状在 22.8% 的评估上触发。
+			//
+			// volatility 也不行——同一窗口下 cv 分布本身双峰，任何阈值都在
+			// 12~25% 之间。trend 要求连续同向上涨，结构上会自行终止，且尺度无关
+			// （绝对 margin 会随 BTC 价格水平老化）。
+			// consecutive 4 + tolerance 0.002 实测触发率 0.9%。
 			{
 				Name:         "btc_price_change",
 				MetricId:     "btc.ass.price",
-				DetectorName: "percentile",
+				DetectorName: "trend",
 				Severity:     pb.Severity_SEVERITY_WARNING,
-				Config:       []byte(`{"percentile":95,"consecutive":1}`),
-				Description:  "BTC price exceeds 95th percentile of recent history",
+				Config:       []byte(`{"direction":"up","consecutive":4,"tolerance":0.002,"min_observations":10}`),
+				Description:  "BTC 连续 4 个采集周期上涨且每次涨幅 ≥0.2%——持续走高而非某个价位",
 			},
 			{
 				Name:         "btc_hashrate_drop",
@@ -113,15 +116,7 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Config:       []byte(`{"percentile":90,"consecutive":1}`),
 				Description:  "BTC daily transaction count above 90th percentile (high network activity)",
 			},
-			{
-				Name:         "flow_proxy_spike",
-				MetricId:     "btc.ass.flow_proxy",
-				DetectorName: "percentile",
-				Severity:     pb.Severity_SEVERITY_WARNING,
-				Config:       []byte(`{"percentile":90,"consecutive":1}`),
-				Description:  "Active-address 7d change (flow proxy) exceeds 90th percentile — unusual exchange flow",
-			},
 		},
-		ChangeLog: "Retired btc.ass.exchange_balance (no free source); added btc.ass.tx_count (blockchain.com real source); added btc.ass.flow_proxy (active address 7d change as exchange-flow proxy); new rules: btc_hashrate_drop, btc_tx_surge, flow_proxy_spike",
+		ChangeLog: "Retired btc.ass.exchange_balance (no free source) and btc.ass.flow_proxy (duplicate of btc.ass.tx_count: it was that series' 7d change rate, mislabelled as active addresses), with its flow_proxy_spike rule; added btc.ass.tx_count (blockchain.com real source); rules: btc_hashrate_drop, btc_tx_surge",
 	}
 }

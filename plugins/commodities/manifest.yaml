@@ -1,10 +1,10 @@
 name: commodities
 version: "0.2.0"
-description: WTI oil, IMF primary copper, and XAUUSD spot gold for growth, demand, and safe-haven research
+description: WTI oil and IMF primary copper for growth and industrial-demand research
 capabilities:
   windowedBackfill: true
   maxBackfillDays: 3650
-  requiresSecrets: [FRED_API_KEY, ALPHAVANTAGE_API_KEY]
+  requiresSecrets: [FRED_API_KEY]
   mockAvailable: true
 entities:
   - id: OIL
@@ -17,11 +17,6 @@ entities:
     namespace: commodity
     type: instrument
     tags: [industrial_metal, copper, pmi_proxy]
-  - id: GOLD
-    name: Gold Spot (XAUUSD)
-    namespace: commodity
-    type: instrument
-    tags: [precious_metal, gold, safe_haven, real_rates]
 metrics:
   - id: oil.energy.wti
     name: WTI Crude Oil Spot ($/bbl)
@@ -35,40 +30,30 @@ metrics:
     unit: USD/mt
     frequency: monthly
     entity: COPPER
-  - id: metal.precious.gold
-    name: Gold Spot (XAUUSD, USD/troy oz)
-    description: Physical spot gold quoted as XAUUSD by Alpha Vantage, in USD per troy ounce
-    unit: USD/troy oz
-    frequency: daily
-    entity: GOLD
-relations:
-  - source: OIL
-    target: GOLD
-    type: correlates
-    direction: forward
-    description: Surging oil prices often coincide with safe-haven gold demand (inflation signal)
-  - source: COPPER
-    target: GOLD
-    type: correlates
-    direction: forward
-    description: Copper-gold ratio is a classic growth-vs-safe-haven regime indicator
+relations: []
 rules:
+  # 原为 threshold gt 100：现值 91.48 尚未触发，但油价一旦破 100 就会长期为真。
+  # 改为 trend——它要求连续同向上涨，结构上会自行终止，且是尺度无关的：
+  # 绝对 margin 会随油价水平老化（$10 在 40 美元油价下是 25%，在 120 下是 8%）。
+  # consecutive 4 + tolerance 0.005 由两年 DCOILWTICO 实测定出：要求连续 4 个
+  # 交易日每日涨幅 ≥0.5%（累计约 2%），触发率 2.2% 的交易日。
+  # min_observations 给 frequencyAwareLookback 留余量：它按 consecutive+1=5 算
+  # 只有 5 个交易日，遇上假期就凑不齐点数，规则会静默失效。
   - name: wti_spike_threshold
     metric: oil.energy.wti
-    detector: threshold
+    detector: trend
     severity: warning
-    config: '{"operator":"gt","value":100}'
-    description: WTI oil above $100/bbl—extreme price levels causing demand destruction
-  - name: gold_percentile_surge
-    metric: metal.precious.gold
-    detector: percentile
-    severity: warning
-    config: '{"percentile":90,"consecutive":2}'
-    description: Gold at/above 90th percentile for 2+ days—possible safe-haven stress
+    config: '{"direction":"up","consecutive":4,"tolerance":0.005,"min_observations":10}'
+    description: WTI 连续 4 个交易日上涨且每日涨幅 ≥0.5%——持续走高而非某个绝对价位
   - name: copper_downtrend
     metric: metal.industrial.copper
     detector: trend
     severity: info
     config: '{"direction":"down","consecutive":5}'
     description: Copper declining 5+ days—potential industrial slowdown signal
-changeLog: YAML catalog; WTI and copper on FRED; gold on Alpha Vantage XAUUSD
+changeLog: >-
+  Retired metal.precious.gold with its GOLD entity, gold_percentile_surge rule,
+  the two GOLD relations, and the Alpha Vantage collection path — it duplicated
+  gld.ass.price as a gold tracker while consuming the whole 25-calls/day
+  Alpha Vantage quota. ALPHAVANTAGE_API_KEY now has no consumer and was removed
+  from requiresSecrets. WTI and copper stay on FRED.

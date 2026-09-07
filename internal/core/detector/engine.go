@@ -1,12 +1,17 @@
-// Package detector 按规则评估观测序列并产出触发事件（Trigger）。内置三类
+// Package detector 按规则评估观测序列并产出触发事件（Trigger）。内置五类
 // 探测器：threshold（阈值越界）、percentile（历史分位异常）、trend（连续
-// 趋势）。触发不等于告警——去重与生命周期由 alert 包负责。
+// 同向变动）、volatility（变异系数越界）、moving_average（穿越自身均线）。
+// 触发不等于告警——去重与生命周期由 alert 包负责。
+//
+// 实际生效的注册面在 cmd/core/main.go 的 newDetectorEngine；插件申报了未注册
+// 的检测器名，规则会每轮打 WARN 且永不触发，不会报错。
 package detector
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -57,6 +62,20 @@ func NewEngine(detectors ...Detector) *Engine {
 		d[det.Name()] = det
 	}
 	return &Engine{detectors: d}
+}
+
+// Names returns the registered detector names in sorted order.
+//
+// 存在的理由：插件申报了一个未注册的检测器名，规则会每轮打 WARN 且永不触发
+// （见 EvaluateBatch）——这是静默失效，不是报错。有了这个访问器，注册面本身
+// 才能被测试钉住，插件侧的 catalog 测试也有了一份可对照的权威名单。
+func (e *Engine) Names() []string {
+	out := make([]string, 0, len(e.detectors))
+	for name := range e.detectors {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // EvaluateBatch 对每组观测评估所有匹配规则。入参必须已按 MetricID 分组；
