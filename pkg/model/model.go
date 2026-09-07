@@ -206,3 +206,18 @@ type ResearchFeedback struct {
 	UserID    *string   `json:"user_id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// SecretRuntimePrefix 是插件心跳 runtime 键的密钥前缀：
+// "secret.FRED_API_KEY" → "present" / "missing"。
+//
+// 这是插件与 API 之间的线上契约，两侧都必须用同一个常量，因此放在共享的
+// model 包——插件侧在 pkg/pluginrunner 写入，Core 落到 plugins.runtime，
+// API 在 /api/status 读出。密钥就绪只有持有密钥的插件进程知道：API 容器里
+// 没有 FRED_API_KEY，在那边 os.Getenv 只会得出错误结论。
+const SecretRuntimePrefix = "secret."
+
+// SecretPresent / SecretMissing 是上述键的两个取值。
+const (
+	SecretPresent = "present"
+	SecretMissing = "missing"
+)

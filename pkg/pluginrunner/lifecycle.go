@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"sonde/pkg/model"
 	pb "sonde/pkg/proto/plugin/v1"
 )
 
@@ -122,6 +123,9 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 	if err := ValidateCapabilities(reg, collector); err != nil {
 		return err
 	}
+	// 密钥就绪只有插件进程自己知道——Core 与 API 各在自己的容器里，读不到
+	// 这里的环境变量。取一次，之后每次心跳如实上报。
+	requiredSecrets := reg.GetCapabilities().GetRequiresSecrets()
 
 	conn, err := grpc.NewClient(coreAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -148,7 +152,7 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 		result := l.executeCollection(commandID, collect)
 		// Publish the updated outcome immediately after this result. Snapshot and
 		// ACK delivery retain priority if the bounded send queue is saturated.
-		defer runner.SubmitHeartbeat(pluginID, l.heartbeatStatus(collector))
+		defer runner.SubmitHeartbeat(pluginID, l.heartbeatStatus(collector, requiredSecrets))
 		if result.err != nil {
 			errMessage := SanitizeCollectionError(result.err)
 			log.Error().Str("error", errMessage).Str("command_id", commandID).Msg("collector command failed")
@@ -252,7 +256,7 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				runner.SubmitHeartbeat(pluginID, l.heartbeatStatus(collector))
+				runner.SubmitHeartbeat(pluginID, l.heartbeatStatus(collector, requiredSecrets))
 			}
 		}
 	}()
@@ -324,10 +328,37 @@ type CircuitStateProvider interface {
 
 // heartbeatStatus returns a race-free collection outcome merged with optional
 // collector runtime metadata.
-func (l *Lifecycle) heartbeatStatus(collector Provider) *pb.PluginStatus {
+func (l *Lifecycle) heartbeatStatus(collector Provider, requiredSecrets []string) *pb.PluginStatus {
 	runtime := make(map[string]string)
 	if csp, ok := collector.(CircuitStateProvider); ok {
 		runtime["circuit_state"] = csp.CircuitState()
 	}
+	for key, value := range secretReadiness(requiredSecrets) {
+		runtime[key] = value
+	}
 	return l.status.snapshot(runtime)
+}
+
+// secretReadiness reports whether each declared required secret is actually set
+// in THIS process.
+//
+// 之前 /api/status 用 os.Getenv 在 API 进程里判断，但密钥只存在于插件容器：
+// macro / commodities 明明拿着真实密钥正常采集，首页却一直显示「缺少密钥」。
+// 判断必须发生在持有密钥的那一侧，再随心跳带出来。
+//
+// 缺少必需密钥的真实插件会在启动时快速失败、根本不会心跳；能报出 missing 的
+// 通常是 PROVIDER=mock 的会话——这恰恰是值得显示的状态。
+func secretReadiness(requiredSecrets []string) map[string]string {
+	if len(requiredSecrets) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(requiredSecrets))
+	for _, key := range requiredSecrets {
+		state := model.SecretMissing
+		if os.Getenv(key) != "" {
+			state = model.SecretPresent
+		}
+		out[model.SecretRuntimePrefix+key] = state
+	}
+	return out
 }
