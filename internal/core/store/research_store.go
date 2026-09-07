@@ -79,6 +79,34 @@ func (s *PostgresResearchStore) GetObservations(ctx context.Context, metricUID s
 	return observations, nil
 }
 
+// GetMetricByID returns the current (or latest, if retired) metric definition
+// by its human-readable id, or nil if not found.
+func (s *PostgresResearchStore) GetMetricByID(ctx context.Context, metricID string) (*model.MetricDefinition, error) {
+	if metricID == "" {
+		return nil, nil
+	}
+	row := s.db.QueryRow(ctx, `
+		SELECT id, uid, name, COALESCE(description, ''), unit, frequency, entity_id, plugin_id,
+		       active, version
+		FROM metric_definitions
+		WHERE id = $1
+		ORDER BY CASE WHEN effective_to IS NULL THEN 0 ELSE 1 END, version DESC
+		LIMIT 1
+	`, metricID)
+
+	var m model.MetricDefinition
+	if err := row.Scan(
+		&m.ID, &m.UID, &m.Name, &m.Description, &m.Unit, &m.Frequency,
+		&m.EntityID, &m.PluginID, &m.Active, &m.Version,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("scan metric: %w", err)
+	}
+	return &m, nil
+}
+
 // GetEntityByID returns the current version (effective_to IS NULL) of an entity
 // by its id, or nil if not found.
 func (s *PostgresResearchStore) GetEntityByID(ctx context.Context, entityID string) (*model.Entity, error) {

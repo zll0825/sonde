@@ -36,9 +36,9 @@ func TestRegistrationPreservesFREDLegs(t *testing.T) {
 		}{metric.GetName(), metric.GetDescription(), metric.GetUnit(), metric.GetFrequency()}
 	}
 
-	// 退役黄金不得动到另外两条腿。
+	// 退役黄金不得动到另外两条腿的测量对象、单位和频率。显示名中文化不改这些。
 	wti := metrics["oil.energy.wti"]
-	if wti.unit != "USD/bbl" || wti.frequency != "daily" || !strings.Contains(wti.description, "West Texas Intermediate") {
+	if wti.unit != "USD/bbl" || wti.frequency != "daily" || !strings.Contains(wti.name, "WTI") {
 		t.Fatalf("WTI registration changed: %+v", wti)
 	}
 	copper := metrics["metal.industrial.copper"]

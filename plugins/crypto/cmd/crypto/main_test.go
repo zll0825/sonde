@@ -56,6 +56,9 @@ func TestBuildRegistrationDeclaresMetrics(t *testing.T) {
 		if !declared[rule.GetMetricId()] {
 			t.Errorf("rule %s targets undeclared metric %s", rule.GetName(), rule.GetMetricId())
 		}
+		if rule.GetDisplayName() == "" {
+			t.Errorf("rule %s missing display_name", rule.GetName())
+		}
 	}
 }
 

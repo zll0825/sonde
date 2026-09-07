@@ -5,7 +5,10 @@ async function fetchStatus() {
         if (!resp.ok) throw new Error('status ' + resp.status);
         statusData = await resp.json();
         renderStatus(statusData);
-        if (alertsList && alertsList.length === 0) renderAlerts(alertsList);
+        // Alerts list looks up metric names from statusData. loadAlerts() and
+        // fetchStatus() race on first paint; if alerts won, the row still
+        // shows the raw metric_id until we re-render here.
+        if (Array.isArray(alertsList)) renderAlerts(alertsList);
         hasFetched = true;
         isOnline = true;
         document.getElementById('status-pill').textContent = t('status.online');

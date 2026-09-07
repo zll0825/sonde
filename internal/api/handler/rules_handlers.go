@@ -59,6 +59,7 @@ func (s *rulesStore) listHandler(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := s.db.Query(r.Context(), `
 		SELECT id, name, metric_id, detector_name, severity, config, description,
+		       COALESCE(display_name, ''),
 		       enabled, source, is_override, version, effective_from, effective_to
 		FROM rules
 		WHERE effective_to IS NULL
@@ -81,7 +82,7 @@ func (s *rulesStore) listHandler(w http.ResponseWriter, r *http.Request) {
 		)
 		if err := rows.Scan(
 			&rule.ID, &rule.Name, &rule.MetricID, &rule.DetectorName, &rule.Severity,
-			&configBytes, &description, &rule.Enabled, &rule.Source,
+			&configBytes, &description, &rule.DisplayName, &rule.Enabled, &rule.Source,
 			&rule.IsOverride, &rule.Version, &rule.EffectiveFrom, &effTo,
 		); err != nil {
 			log.Error().Err(err).Msg("scan rule row failed")
@@ -172,19 +173,20 @@ func (s *rulesStore) patchHandler(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 
 	var (
-		name, metricID, detectorName, curSeverity, source string
-		curConfigBytes                                    []byte
-		curDescription                                    *string
-		curEnabled, isOverride                            bool
-		curVersion                                        int
+		name, metricID, detectorName, curSeverity, source, curDisplayName string
+		curConfigBytes                                                    []byte
+		curDescription                                                    *string
+		curEnabled, isOverride                                            bool
+		curVersion                                                        int
 	)
 	if err := tx.QueryRow(r.Context(), `
 		SELECT name, metric_id, detector_name, severity, config, description,
+		       COALESCE(display_name, ''),
 		       enabled, source, is_override, version
 		FROM rules WHERE id = $1 AND effective_to IS NULL
 		FOR UPDATE
 	`, id).Scan(&name, &metricID, &detectorName, &curSeverity, &curConfigBytes,
-		&curDescription, &curEnabled, &source, &isOverride, &curVersion); err != nil {
+		&curDescription, &curDisplayName, &curEnabled, &source, &isOverride, &curVersion); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
 			return
@@ -282,12 +284,12 @@ func (s *rulesStore) patchHandler(w http.ResponseWriter, r *http.Request) {
 	var newID int
 	if err := tx.QueryRow(r.Context(), `
 		INSERT INTO rules (name, metric_id, detector_name, severity, config,
-		                   description, enabled, source, is_override, version,
+		                   description, display_name, enabled, source, is_override, version,
 		                   effective_from, effective_to)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NULL)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NULL)
 		RETURNING id
 	`, name, metricID, detectorName, newSeverity, newConfigBytes, newDescription,
-		newEnabled, source, isOverride, curVersion+1).Scan(&newID); err != nil {
+		curDisplayName, newEnabled, source, isOverride, curVersion+1).Scan(&newID); err != nil {
 		log.Error().Err(err).Int("rule_id", id).Msg("insert rule enabled version failed")
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
 		return
@@ -462,15 +464,15 @@ func (s *rulesStore) restoreHandler(w http.ResponseWriter, r *http.Request) {
 	// find the requested version within that identity. This prevents a version
 	// from another rule being restored accidentally.
 	var (
-		name, metricID, detectorName, severity, source, description string
-		configBytes                                                 []byte
-		isOverride, enabled                                         bool
+		name, metricID, detectorName, severity, source, description, displayName string
+		configBytes                                                              []byte
+		isOverride, enabled                                                      bool
 	)
 	err = tx.QueryRow(r.Context(), `
 		SELECT historical.name, historical.metric_id, historical.detector_name,
 		       historical.severity, historical.config,
-		       COALESCE(historical.description, ''), historical.source,
-		       historical.is_override, historical.enabled
+		       COALESCE(historical.description, ''), COALESCE(historical.display_name, ''),
+		       historical.source, historical.is_override, historical.enabled
 		FROM rules AS anchor
 		JOIN rules AS historical
 		  ON historical.name = anchor.name
@@ -479,7 +481,7 @@ func (s *rulesStore) restoreHandler(w http.ResponseWriter, r *http.Request) {
 		WHERE anchor.id = $1 AND historical.version = $2
 		FOR UPDATE OF anchor, historical
 	`, id, ver).Scan(&name, &metricID, &detectorName, &severity, &configBytes,
-		&description, &source, &isOverride, &enabled)
+		&description, &displayName, &source, &isOverride, &enabled)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "historical rule version not found"})
@@ -522,11 +524,11 @@ func (s *rulesStore) restoreHandler(w http.ResponseWriter, r *http.Request) {
 	var restoredID int
 	if err := tx.QueryRow(r.Context(), `
 		INSERT INTO rules (name, metric_id, detector_name, severity, config,
-		                   description, enabled, source, is_override, version,
+		                   description, display_name, enabled, source, is_override, version,
 		                   effective_from, effective_to)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NULL)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NULL)
 		RETURNING id
-	`, name, metricID, detectorName, severity, configArg, description, enabled,
+	`, name, metricID, detectorName, severity, configArg, description, displayName, enabled,
 		source, isOverride, maxVer+1).Scan(&restoredID); err != nil {
 		log.Error().Err(err).Int("rule_id", id).Msg("insert restored rule version failed")
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})

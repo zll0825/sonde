@@ -890,13 +890,15 @@ func (x *RelationReview) GetMergedInto() *RelationSuggestion {
 }
 
 type RuleSuggestion struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	MetricId      string                 `protobuf:"bytes,2,opt,name=metric_id,json=metricId,proto3" json:"metric_id,omitempty"`
-	DetectorName  string                 `protobuf:"bytes,3,opt,name=detector_name,json=detectorName,proto3" json:"detector_name,omitempty"`
-	Severity      Severity               `protobuf:"varint,4,opt,name=severity,proto3,enum=sonde.plugin.v1.Severity" json:"severity,omitempty"`
-	Config        []byte                 `protobuf:"bytes,5,opt,name=config,proto3" json:"config,omitempty"`
-	Description   string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Name         string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	MetricId     string                 `protobuf:"bytes,2,opt,name=metric_id,json=metricId,proto3" json:"metric_id,omitempty"`
+	DetectorName string                 `protobuf:"bytes,3,opt,name=detector_name,json=detectorName,proto3" json:"detector_name,omitempty"`
+	Severity     Severity               `protobuf:"varint,4,opt,name=severity,proto3,enum=sonde.plugin.v1.Severity" json:"severity,omitempty"`
+	Config       []byte                 `protobuf:"bytes,5,opt,name=config,proto3" json:"config,omitempty"`
+	Description  string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	// Domain: Rule.display_name — UI label. Empty means fall back to name (slug).
+	DisplayName   string `protobuf:"bytes,7,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -969,6 +971,13 @@ func (x *RuleSuggestion) GetConfig() []byte {
 func (x *RuleSuggestion) GetDescription() string {
 	if x != nil {
 		return x.Description
+	}
+	return ""
+}
+
+func (x *RuleSuggestion) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
 	}
 	return ""
 }
@@ -2302,14 +2311,15 @@ const file_plugin_v1_plugin_proto_rawDesc = "" +
 	"\bdecision\x18\x04 \x01(\tR\bdecision\x12\x16\n" +
 	"\x06reason\x18\x05 \x01(\tR\x06reason\x12D\n" +
 	"\vmerged_into\x18\x06 \x01(\v2#.sonde.plugin.v1.RelationSuggestionR\n" +
-	"mergedInto\"\xd7\x01\n" +
+	"mergedInto\"\xfa\x01\n" +
 	"\x0eRuleSuggestion\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
 	"\tmetric_id\x18\x02 \x01(\tR\bmetricId\x12#\n" +
 	"\rdetector_name\x18\x03 \x01(\tR\fdetectorName\x125\n" +
 	"\bseverity\x18\x04 \x01(\x0e2\x19.sonde.plugin.v1.SeverityR\bseverity\x12\x16\n" +
 	"\x06config\x18\x05 \x01(\fR\x06config\x12 \n" +
-	"\vdescription\x18\x06 \x01(\tR\vdescription\"T\n" +
+	"\vdescription\x18\x06 \x01(\tR\vdescription\x12!\n" +
+	"\fdisplay_name\x18\a \x01(\tR\vdisplayName\"T\n" +
 	"\n" +
 	"RuleReview\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +

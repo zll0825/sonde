@@ -431,11 +431,13 @@ function renderRules(rules) {
         tr.appendChild(tdId);
 
         const tdName = document.createElement('td');
-        tdName.textContent = rule.name || rule.slug || rule.rule_name || '—';
+        tdName.textContent = ruleDisplayName(rule);
+        tdName.title = rule.name || '';
         tr.appendChild(tdName);
 
         const tdMetric = document.createElement('td');
-        tdMetric.textContent = rule.metric_id || '—';
+        tdMetric.textContent = metricDisplayName(rule.metric_id);
+        tdMetric.title = rule.metric_id || '';
         tr.appendChild(tdMetric);
 
         const tdDetector = document.createElement('td');
@@ -594,7 +596,8 @@ function toggleRuleEdit(rule, row, btn) {
 
     const title = document.createElement('div');
     title.className = 'rule-edit-title';
-    title.textContent = t('rules.edit_title') + ': ' + (rule.name || rule.id);
+    title.textContent = t('rules.edit_title') + ': ' + ruleDisplayName(rule);
+    title.title = rule.name || '';
     panel.appendChild(title);
 
     const grid = document.createElement('div');

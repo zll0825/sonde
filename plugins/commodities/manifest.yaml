@@ -8,25 +8,25 @@ capabilities:
   mockAvailable: true
 entities:
   - id: OIL
-    name: Crude Oil (WTI)
+    name: 原油（WTI）
     namespace: commodity
     type: instrument
     tags: [energy, oil, wti, us]
   - id: COPPER
-    name: Copper (IMF Primary)
+    name: 铜（IMF 初级商品）
     namespace: commodity
     type: instrument
     tags: [industrial_metal, copper, pmi_proxy]
 metrics:
   - id: oil.energy.wti
-    name: WTI Crude Oil Spot ($/bbl)
-    description: West Texas Intermediate crude oil spot price in USD per barrel
+    name: WTI 原油现货价（美元/桶）
+    description: 西德克萨斯中质原油现货价格，单位美元/桶
     unit: USD/bbl
     frequency: daily
     entity: OIL
   - id: metal.industrial.copper
-    name: COMEX Copper (IMF Primary, USD/mt)
-    description: Copper price from IMF Primary Commodity Prices (PCOPPUSDM), USD per metric ton, monthly
+    name: IMF 初级商品铜价（美元/吨）
+    description: IMF 初级商品价格中的铜价（PCOPPUSDM），单位美元/公吨，月频
     unit: USD/mt
     frequency: monthly
     entity: COPPER
@@ -44,13 +44,15 @@ rules:
     detector: trend
     severity: warning
     config: '{"direction":"up","consecutive":4,"tolerance":0.005,"min_observations":10}'
+    display_name: WTI 原油连续 4 个交易日上涨且每日涨幅 ≥0.5%
     description: WTI 连续 4 个交易日上涨且每日涨幅 ≥0.5%——持续走高而非某个绝对价位
   - name: copper_downtrend
     metric: metal.industrial.copper
     detector: trend
     severity: info
     config: '{"direction":"down","consecutive":5}'
-    description: Copper declining 5+ days—potential industrial slowdown signal
+    display_name: IMF 初级铜价连续 5 期下跌
+    description: 铜价连续 5 期下跌——工业需求放缓信号
 changeLog: >-
   Retired metal.precious.gold with its GOLD entity, gold_percentile_surge rule,
   the two GOLD relations, and the Alpha Vantage collection path — it duplicated

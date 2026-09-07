@@ -18,6 +18,7 @@ type ResearchContext struct {
 	AlertID           string                 `json:"alert_id"`
 	MetricID          string                 `json:"metric_id"`
 	MetricName        string                 `json:"metric_name"`
+	EntityName        string                 `json:"entity_name"`
 	WindowStart       time.Time              `json:"window_start"`
 	WindowEnd         time.Time              `json:"window_end"`
 	CurrentValue      float64                `json:"current_value"`
@@ -133,6 +134,7 @@ type Assembler struct {
 // ResearchStore is the persistence interface for research assembly.
 type ResearchStore interface {
 	GetObservations(ctx context.Context, metricUID string, since, until time.Time, limit int) ([]model.Observation, error)
+	GetMetricByID(ctx context.Context, metricID string) (*model.MetricDefinition, error)
 	GetEntityByID(ctx context.Context, entityID string) (*model.Entity, error)
 	GetRelatedEntities(ctx context.Context, entityID string) ([]model.Relation, error)
 	SaveSnapshot(ctx context.Context, snapshot model.ResearchSnapshot) error
@@ -207,6 +209,14 @@ func (a *Assembler) Assemble(ctx context.Context, alert model.Alert) (*ResearchC
 	}
 	out.Timeline = timelineEntries
 
+	metric, err := a.store.GetMetricByID(ctx, alert.MetricID)
+	if err != nil {
+		return nil, fmt.Errorf("fetch metric %s: %w", alert.MetricID, err)
+	}
+	if metric != nil {
+		out.MetricName = metric.Name
+	}
+
 	// Fetch related entities + relations (via metric → entity → relations).
 	// For MVP: use metric's entity from evidence. entityID is extracted once
 	// here so buildOverlays below can reuse the same value.
@@ -217,7 +227,7 @@ func (a *Assembler) Assemble(ctx context.Context, alert model.Alert) (*ResearchC
 			return nil, fmt.Errorf("fetch entity %s: %w", entityID, err)
 		}
 		if entity != nil {
-			out.MetricName = entity.Name
+			out.EntityName = entity.Name
 			out.RelatedEntities = append(out.RelatedEntities, EntityRef{
 				ID:         entity.ID,
 				Name:       entity.Name,

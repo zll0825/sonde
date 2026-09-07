@@ -34,6 +34,10 @@ func (m *mockViewStore) GetObservations(ctx context.Context, metricUID string, s
 	return result, nil
 }
 
+func (m *mockViewStore) GetMetricByID(context.Context, string) (*model.MetricDefinition, error) {
+	return nil, nil
+}
+
 func (m *mockViewStore) GetEntityByID(ctx context.Context, entityID string) (*model.Entity, error) {
 	return m.entities[entityID], nil
 }

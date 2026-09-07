@@ -79,7 +79,7 @@ function renderAlerts(alerts) {
             '<div style="display:flex; align-items:center;">' + verdictBadge + statusBadge + '</div>' +
             '</div>' +
             (a.summary ? '<div class="alert-summary">' + esc(a.summary) + '</div>' : '') +
-            '<div class="alert-meta">' + esc(a.metric_id) + ' &middot; ' + esc(a.severity) + ' &middot; ' + new Date(a.triggered_at).toLocaleString() + '</div>' +
+            '<div class="alert-meta" title="' + esc(a.metric_id || '') + '">' + esc(metricDisplayName(a.metric_id)) + ' &middot; ' + esc(a.severity) + ' &middot; ' + new Date(a.triggered_at).toLocaleString() + '</div>' +
             '</div>';
     }).join('');
     list.querySelectorAll('.alert-item').forEach(el =>
@@ -113,9 +113,11 @@ async function showAlertDetail(alertID) {
         }
         const rc = await respResearch.json();
         document.getElementById('detail-title').textContent = rc.alert_id || alertID;
-        const metricDisplayName = rc.metric_name || rc.metric_id || '—';
-        document.getElementById('detail-summary').innerHTML = esc(t('alerts.research_summary', {
-            name: metricDisplayName,
+        const metricLabel = rc.metric_name || metricDisplayName(rc.metric_id);
+        const summaryEl = document.getElementById('detail-summary');
+        summaryEl.title = rc.metric_id || '';
+        summaryEl.innerHTML = esc(t('alerts.research_summary', {
+            name: metricLabel,
             current: rc.current_value ?? 'N/A',
             threshold: rc.threshold ?? 'N/A'
         })) + (rc.metric_id ? ' &middot; <span class="clickable-link" id="alert-link-to-signal">' + esc(t('pulse.view_signal')) + '</span>' : '');
@@ -619,7 +621,8 @@ function toggleClusterDetail(cluster, row, btn) {
         for (const m of mergeEntries) {
             const li = document.createElement('li');
             li.style.cssText = 'padding:0.2rem 0;';
-            li.textContent = (m.alert_id || '—') + ' · ' + (m.metric_id || '—') + ' · ' + (m.reason || '—');
+            li.textContent = (m.alert_id || '—') + ' · ' + metricDisplayName(m.metric_id) + ' · ' + (m.reason || '—');
+            li.title = m.metric_id || '';
             ulMerge.appendChild(li);
         }
         panel.appendChild(ulMerge);

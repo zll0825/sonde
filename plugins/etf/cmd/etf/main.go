@@ -45,7 +45,7 @@ func buildRegistration() *pb.RegisterPluginRequest {
 		Entities: []*pb.EntityDeclaration{
 			{
 				Id:         "GLD",
-				Name:       "GLD",
+				Name:       "SPDR 黄金 ETF",
 				Namespace:  "gld",
 				EntityType: pb.EntityType_ENTITY_TYPE_ASSET,
 				Tags:       []string{"gold", "etf"},
@@ -54,16 +54,16 @@ func buildRegistration() *pb.RegisterPluginRequest {
 		Metrics: []*pb.MetricDeclaration{
 			{
 				Id:          "gld.ass.price",
-				Name:        "GLD Price (USD)",
-				Description: "Current price of GLD share in USD",
+				Name:        "SPDR 黄金 ETF 价格（美元）",
+				Description: "SPDR 黄金 ETF（GLD）份额现价，单位美元",
 				Unit:        "USD",
 				Frequency:   "daily",
 				EntityId:    "GLD",
 			},
 			{
 				Id:          "gld.ass.volume",
-				Name:        "GLD Trading Volume (shares/day)",
-				Description: "Daily trading volume of GLD shares; liquidity and market interest proxy",
+				Name:        "SPDR 黄金 ETF 日成交量（股）",
+				Description: "SPDR 黄金 ETF 每日成交股数，流动性与市场关注度的代理",
 				Unit:        "shares",
 				Frequency:   "daily",
 				EntityId:    "GLD",

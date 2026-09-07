@@ -8,53 +8,52 @@ capabilities:
   mockAvailable: true
 entities:
   - id: FED
-    name: Federal Reserve
+    name: 美联储
     namespace: fed
     type: institution
     tags: [central_bank, us]
   - id: US
-    name: United States
+    name: 美国
     namespace: us
     type: market
     tags: [us]
 metrics:
   - id: fed.ins.balance_sheet
-    name: Fed Balance Sheet (USD)
-    description: Total assets held by the Federal Reserve in USD
+    name: 美联储资产负债表（美元）
+    description: 美联储持有的总资产规模，单位美元
     unit: USD
     frequency: weekly
     entity: FED
   - id: us.mkt.ten_year_yield
-    name: US 10Y Treasury Yield (%)
-    description: Yield on the 10-year US Treasury note
+    name: 10年期美债收益率（%）
+    description: 美国 10 年期国债收益率
     unit: "%"
     frequency: daily
     entity: US
   - id: us.mkt.dollar_index
     name: 美联储广义贸易加权美元指数（DTWEXBGS）
     description: >-
-      Federal Reserve Nominal Broad U.S. Dollar Index (FRED DTWEXBGS,
-      Index Jan 2006=100). NOT the ICE dollar index (DXY): the two use
-      different baskets and different bases, and DTWEXBGS reads ~119 where
-      DXY reads ~100. Thresholds written for DXY do not transfer.
+      美联储名义广义贸易加权美元指数（FRED DTWEXBGS，2006 年 1 月=100）。
+      不是 ICE 美元指数（DXY）：两者篮子和基期都不同，DTWEXBGS 读数约 119，
+      DXY 约 100。按 DXY 写的阈值不能直接套用。
     unit: index
     frequency: daily
     entity: US
   - id: us.mkt.usd_cny
-    name: USD/CNY Exchange Rate
-    description: Offshore USD to CNY exchange rate
+    name: 美元兑人民币汇率（离岸）
+    description: 离岸市场美元兑人民币即期汇率
     unit: CNY per USD
     frequency: daily
     entity: US
   - id: us.mkt.cpi
-    name: US Consumer Price Index
-    description: Consumer Price Index for All Urban Consumers (CPI-U), seasonally adjusted
+    name: 美国消费者物价指数（CPI-U，季调）
+    description: 美国城镇消费者物价指数（CPI-U），经季节性调整
     unit: index
     frequency: monthly
     entity: US
   - id: us.mkt.inflation_yoy
-    name: US YoY Inflation Rate (%)
-    description: CPI-based year-over-year percent change in consumer prices
+    name: 美国同比通胀率（%）
+    description: 基于 CPI 的消费者价格同比变化率
     unit: "%"
     frequency: monthly
     entity: US
@@ -70,13 +69,15 @@ rules:
     detector: trend
     severity: info
     config: '{"direction":"down","consecutive":4}'
-    description: Fed balance sheet shrinking 4+ weeks in a row (QT signal)
+    display_name: 美联储资产负债表连续 4 周收缩
+    description: 美联储资产负债表连续 4 周以上收缩（量化紧缩信号）
   - name: yield_spike_percentile
     metric: us.mkt.ten_year_yield
     detector: percentile
     severity: warning
     config: '{"percentile":90,"consecutive":2}'
-    description: 10Y yield at/above 90th percentile for 2+ days
+    display_name: 10年期美债收益率连续 2 日处于 90 分位以上
+    description: 10 年期美债收益率连续 2 日处于 90 分位及以上
   # 原为 threshold gt 105——那是照 DXY 定的阈值，而本指标是 DTWEXBGS
   # （实测 2026-08-28 = 118.7479），永久为真。改为相对自身 20 日均线：
   # 均线跟着序列走，结构上不可能一直为真。
@@ -90,11 +91,13 @@ rules:
     detector: moving_average
     severity: info
     config: '{"window":20,"margin":1.5,"above":true,"min_observations":25}'
-    description: 美元指数高于自身 20 日均线 1.5 点以上——相对自身分布的强势偏离
+    display_name: 美联储广义贸易加权美元指数高于自身 20 日均线 1.5 点以上
+    description: 美联储广义贸易加权美元指数高于自身 20 日均线 1.5 点以上——相对自身分布的强势偏离
   - name: inflation_above_target
     metric: us.mkt.inflation_yoy
     detector: threshold
     severity: warning
     config: '{"operator":"gt","value":3.0,"consecutive":2}'
-    description: YoY inflation above 3% for 2+ consecutive months (above Fed target)
+    display_name: 美国同比通胀率连续 2 个月高于 3%
+    description: 同比通胀率连续 2 个月高于 3%（高于美联储目标）
 changeLog: YAML catalog; CPI (us.mkt.cpi) and YoY inflation (us.mkt.inflation_yoy); inflation_above_target rule

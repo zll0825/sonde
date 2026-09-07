@@ -48,6 +48,46 @@ rules:
 	if string(reg.GetRules()[0].GetConfig()) != `{"operator":"gt","value":1}` {
 		t.Fatalf("config=%s", reg.GetRules()[0].GetConfig())
 	}
+	if reg.GetRules()[0].GetDisplayName() != "" {
+		t.Fatalf("old catalog without display_name must stay empty, got %q", reg.GetRules()[0].GetDisplayName())
+	}
+}
+
+func TestLoadRegistration_DisplayNameOptional(t *testing.T) {
+	without, err := LoadRegistration([]byte(`
+name: fixture
+version: "1.0.0"
+rules:
+  - name: legacy_slug
+    metric: us.mkt.extra_fixture
+    detector: threshold
+    severity: info
+    config: '{}'
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if without.GetRules()[0].GetDisplayName() != "" {
+		t.Fatalf("missing display_name = %q, want empty so frontend falls back to name", without.GetRules()[0].GetDisplayName())
+	}
+
+	with, err := LoadRegistration([]byte(`
+name: fixture
+version: "1.0.0"
+rules:
+  - name: legacy_slug
+    metric: us.mkt.extra_fixture
+    detector: threshold
+    severity: info
+    config: '{}'
+    display_name: 美联储资产负债表连续 4 周收缩
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := with.GetRules()[0].GetDisplayName(); got != "美联储资产负债表连续 4 周收缩" {
+		t.Fatalf("display_name = %q", got)
+	}
 }
 
 func TestValidateCapabilities_RejectsMismatch(t *testing.T) {

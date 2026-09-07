@@ -57,6 +57,9 @@ func TestBuildRegistrationFromYAML(t *testing.T) {
 		if r.GetName() != want.name || r.GetMetricId() != want.metric || r.GetDetectorName() != want.detector || string(r.GetConfig()) != want.config {
 			t.Errorf("rules[%d]=%+v, want %+v", i, r, want)
 		}
+		if r.GetDisplayName() == "" {
+			t.Errorf("rule %s missing display_name", r.GetName())
+		}
 	}
 }
 
@@ -117,6 +120,9 @@ func TestDollarIndexIsNotMislabelledAsDXY(t *testing.T) {
 		}
 		if strings.Contains(m.GetName(), "DXY") {
 			t.Errorf("name %q claims DXY; the series is DTWEXBGS", m.GetName())
+		}
+		if !strings.Contains(m.GetName(), "广义贸易加权") {
+			t.Errorf("name %q must say 广义贸易加权, not a generic 美元指数", m.GetName())
 		}
 		if !strings.Contains(m.GetDescription(), "DTWEXBGS") {
 			t.Errorf("description must name the actual series: %q", m.GetDescription())

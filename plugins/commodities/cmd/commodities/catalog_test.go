@@ -56,6 +56,9 @@ func TestBuildRegistrationFromYAML(t *testing.T) {
 		if r.GetName() != want.name || r.GetMetricId() != want.metric || r.GetDetectorName() != want.detector {
 			t.Errorf("rules[%d]=%+v, want %+v", i, r, want)
 		}
+		if r.GetDisplayName() == "" {
+			t.Errorf("rule %s missing display_name", r.GetName())
+		}
 	}
 }
 

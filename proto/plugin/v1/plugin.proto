@@ -131,6 +131,8 @@ message RuleSuggestion {
   Severity severity = 4;
   bytes config = 5;
   string description = 6;
+  // Domain: Rule.display_name — UI label. Empty means fall back to name (slug).
+  string display_name = 7;
 }
 
 message RuleReview {
