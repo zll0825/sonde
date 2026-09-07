@@ -21,6 +21,9 @@ func TestBudgetSQLFileExists(t *testing.T) {
 	if !strings.Contains(string(b), "real_count") {
 		t.Fatalf("unexpected budget SQL: %s", p)
 	}
+	if !strings.Contains(string(b), "a.mode = 'live'") {
+		t.Fatal("budget SQL must exclude observe alerts")
+	}
 }
 
 func TestReadBudgetSQLFromPackageDir(t *testing.T) {
@@ -69,6 +72,9 @@ func TestUsageMentionsAlertsAndBudget(t *testing.T) {
 func TestAlertsSQLIsActiveOnly(t *testing.T) {
 	if !strings.Contains(alertsActiveSQL, "status = 'active'") {
 		t.Error("alerts SQL must filter status = 'active'")
+	}
+	if !strings.Contains(alertsActiveSQL, "mode = 'live'") {
+		t.Error("alerts SQL must default to live mode like GET /api/alerts")
 	}
 	for _, col := range []string{"source_provider", "source_class", "dedup_count", "last_deduplicated_at"} {
 		if !strings.Contains(alertsActiveSQL, col) {

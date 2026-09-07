@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"sonde/internal/core/relationmgr"
 	"sonde/internal/core/rulemgr"
+	"sonde/pkg/model"
 	pb "sonde/pkg/proto/plugin/v1"
 )
 
@@ -84,13 +85,13 @@ func reviewAndAcceptRelations(ctx context.Context, tx pgx.Tx, pluginID string, s
 func reviewAndAcceptRules(ctx context.Context, tx pgx.Tx, pluginID string, suggestions []*pb.RuleSuggestion) (accepted, skipped, pendingConflict int, err error) {
 	for _, rule := range suggestions {
 		// Look up the current rule by (name, metric_id, detector_name).
-		var currentSource, currentDisplayName string
+		var currentSource, currentDisplayName, currentMode string
 		var currentConfig []byte
 		queryErr := tx.QueryRow(ctx, `
-			SELECT source, config, COALESCE(display_name, '') FROM rules
+			SELECT source, config, COALESCE(display_name, ''), COALESCE(mode, 'live') FROM rules
 			WHERE name = $1 AND metric_id = $2 AND detector_name = $3 AND effective_to IS NULL
 			ORDER BY version DESC LIMIT 1
-		`, rule.GetName(), rule.GetMetricId(), rule.GetDetectorName()).Scan(&currentSource, &currentConfig, &currentDisplayName)
+		`, rule.GetName(), rule.GetMetricId(), rule.GetDetectorName()).Scan(&currentSource, &currentConfig, &currentDisplayName, &currentMode)
 
 		if errors.Is(queryErr, pgx.ErrNoRows) {
 			// No existing rule → accept unconditionally (it's new).
@@ -113,7 +114,8 @@ func reviewAndAcceptRules(ctx context.Context, tx pgx.Tx, pluginID string, sugge
 			// on a plugin_suggested row must still version, otherwise soak
 			// rules keep an empty label and the UI falls back to the slug.
 			// user_override stays skipped: acceptRule would rewrite source.
-			if rulemgr.NeedsVersionForDisplayName(rulemgr.Source(currentSource), currentDisplayName, rule.GetDisplayName()) {
+			if rulemgr.NeedsVersionForDisplayName(rulemgr.Source(currentSource), currentDisplayName, rule.GetDisplayName()) ||
+				rulemgr.NeedsVersionForMode(rulemgr.Source(currentSource), currentMode, rule.GetMode()) {
 				if err := acceptRule(ctx, tx, rule); err != nil {
 					return accepted, skipped, pendingConflict, fmt.Errorf("accept rule %q: %w", rule.GetName(), err)
 				}
@@ -238,13 +240,18 @@ func acceptRule(ctx context.Context, tx pgx.Tx, rule *pb.RuleSuggestion) error {
 		}
 	}
 
+	mode, err := model.ParseRuleMode(rule.GetMode())
+	if err != nil {
+		return fmt.Errorf("rule %q mode: %w", rule.GetName(), err)
+	}
+
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO rules (name, metric_id, detector_name, severity, config,
-			description, display_name, enabled, source, is_override, version, effective_from
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'plugin_suggested', FALSE, $9, NOW())
+			description, display_name, mode, enabled, source, is_override, version, effective_from
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'plugin_suggested', FALSE, $10, NOW())
 	`, rule.GetName(), rule.GetMetricId(), rule.GetDetectorName(),
 		severityToString(rule.GetSeverity()), rule.GetConfig(),
-		rule.GetDescription(), rule.GetDisplayName(), enabled, maxVersion+1); err != nil {
+		rule.GetDescription(), rule.GetDisplayName(), mode, enabled, maxVersion+1); err != nil {
 		return fmt.Errorf("insert rule: %w", err)
 	}
 	return nil

@@ -45,3 +45,29 @@ func TestAlertsRerenderAfterStatusLocksNameLookup(t *testing.T) {
 		t.Fatal("empty-only re-render leaves first-paint alert rows on raw metric_id")
 	}
 }
+
+func TestAlertsDefaultListDoesNotRequestObserve(t *testing.T) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	webSrc := filepath.Join(filepath.Dir(thisFile), "../../../web/src")
+	alerts, err := os.ReadFile(filepath.Join(webSrc, "alerts.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(alerts)
+	if !strings.Contains(text, "queryParams.set('mode', 'observe')") {
+		t.Fatal("observe filter must set mode=observe")
+	}
+	if !strings.Contains(text, "currentAlertFilter === 'observe'") {
+		t.Fatal("default list must only add mode=observe when the observe filter is active")
+	}
+	statusGo, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "status.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(statusGo), "AND mode = 'live'") {
+		t.Fatal("/api/status budget SQL must exclude observe alerts")
+	}
+}

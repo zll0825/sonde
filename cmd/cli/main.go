@@ -29,7 +29,7 @@ DATABASE_URL defaults to the local compose DSN.
 const alertsActiveSQL = `
 		SELECT id, title, summary, severity, metric_id, triggered_at, status,
 		       source_provider, source_class, dedup_count, last_deduplicated_at
-		FROM alerts WHERE status = 'active'
+		FROM alerts WHERE status = 'active' AND mode = 'live'
 		ORDER BY triggered_at DESC LIMIT 100
 	`
 

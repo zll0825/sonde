@@ -70,34 +70,40 @@ func (e *Engine) HandleTrigger(ctx context.Context, alert model.Alert) error {
 		return nil
 	}
 
-	notificationPayload, err := json.Marshal(map[string]interface{}{
-		"alert_id":     alert.ID,
-		"title":        alert.Title,
-		"summary":      alert.Summary,
-		"severity":     string(alert.Severity),
-		"metric_id":    alert.MetricID,
-		"rule_id":      alert.RuleID,
-		"triggered_at": alert.TriggeredAt,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal alert event payload: %w", err)
+	alert.Mode = model.NormalizeRuleMode(alert.Mode)
+
+	var events []PendingEvent
+	if alert.Mode != model.RuleModeObserve {
+		notificationPayload, err := json.Marshal(map[string]interface{}{
+			"alert_id":     alert.ID,
+			"title":        alert.Title,
+			"summary":      alert.Summary,
+			"severity":     string(alert.Severity),
+			"metric_id":    alert.MetricID,
+			"rule_id":      alert.RuleID,
+			"triggered_at": alert.TriggeredAt,
+		})
+		if err != nil {
+			return fmt.Errorf("marshal alert event payload: %w", err)
+		}
+		researchRequest := coreevent.NewResearchRequest(alert.ID)
+		researchPayload, err := json.Marshal(researchRequest)
+		if err != nil {
+			return fmt.Errorf("marshal research request payload: %w", err)
+		}
+		researchKey := researchRequest.AlertID
+		events = []PendingEvent{
+			{EventType: EventTypeAlertTriggered, Payload: notificationPayload},
+			{EventType: coreevent.TypeResearchRequested, Payload: researchPayload, DedupKey: &researchKey},
+		}
 	}
-	researchRequest := coreevent.NewResearchRequest(alert.ID)
-	researchPayload, err := json.Marshal(researchRequest)
-	if err != nil {
-		return fmt.Errorf("marshal research request payload: %w", err)
-	}
-	researchKey := researchRequest.AlertID
 
 	log.Info().
 		Str("title", alert.Title).
 		Str("metric", alert.MetricID).
 		Str("severity", string(alert.Severity)).
+		Str("mode", string(alert.Mode)).
 		Msg("alert triggered")
-	events := []PendingEvent{
-		{EventType: EventTypeAlertTriggered, Payload: notificationPayload},
-		{EventType: coreevent.TypeResearchRequested, Payload: researchPayload, DedupKey: &researchKey},
-	}
 	if err := e.store.CreateAlertWithEvents(ctx, alert, events); err != nil {
 		if errors.Is(err, ErrDuplicateAlert) {
 			// Lost the insert race to a concurrent trigger. Audit this duplicate

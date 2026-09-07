@@ -17,11 +17,14 @@ async function loadAlerts(filter, page) {
     }
     try {
         const queryParams = new URLSearchParams({
-            status: currentAlertFilter || 'active',
+            status: currentAlertFilter === 'observe' ? 'all' : (currentAlertFilter || 'active'),
             page: String(currentAlertPage),
             limit: String(currentAlertLimit),
             envelope: 'true'
         });
+        if (currentAlertFilter === 'observe') {
+            queryParams.set('mode', 'observe');
+        }
         const resp = await fetch(API_BASE + '/api/alerts?' + queryParams.toString());
         const data = await resp.json();
 

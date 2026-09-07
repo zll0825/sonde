@@ -236,6 +236,62 @@ func TestIntegration_Reconcile_KeepsManualRules(t *testing.T) {
 	}
 }
 
+func TestIntegration_PluginSuggestedModeOnlyVersions(t *testing.T) {
+	db := dbConn(t)
+	truncateAll(t, db)
+	ctx := context.Background()
+	s := NewStore(db)
+
+	rule := suggestRule("mode_rule", "mode.metric")
+	if _, _, err := s.RegisterPlugin(ctx, reconcileRequest("ModePlugin",
+		[]string{"mode.metric"}, []*pb.RuleSuggestion{rule})); err != nil {
+		t.Fatalf("first RegisterPlugin: %v", err)
+	}
+	var version int
+	var mode, source string
+	if err := db.QueryRow(ctx, `
+		SELECT version, mode, source FROM rules WHERE name = 'mode_rule' AND effective_to IS NULL
+	`).Scan(&version, &mode, &source); err != nil {
+		t.Fatalf("query initial rule: %v", err)
+	}
+	if version != 1 || mode != "live" || source != "plugin_suggested" {
+		t.Fatalf("initial version/mode/source = %d/%s/%s, want 1/live/plugin_suggested", version, mode, source)
+	}
+
+	rule.Mode = "observe"
+	if _, _, err := s.RegisterPlugin(ctx, reconcileRequest("ModePlugin",
+		[]string{"mode.metric"}, []*pb.RuleSuggestion{rule})); err != nil {
+		t.Fatalf("mode-only RegisterPlugin: %v", err)
+	}
+	if err := db.QueryRow(ctx, `
+		SELECT version, mode, source FROM rules WHERE name = 'mode_rule' AND effective_to IS NULL
+	`).Scan(&version, &mode, &source); err != nil {
+		t.Fatalf("query mode-only rule: %v", err)
+	}
+	if version != 2 || mode != "observe" {
+		t.Fatalf("plugin_suggested mode-only version/mode = %d/%s, want 2/observe", version, mode)
+	}
+
+	if _, err := db.Exec(ctx, `
+		UPDATE rules SET source = 'user_override' WHERE name = 'mode_rule' AND effective_to IS NULL
+	`); err != nil {
+		t.Fatalf("mark user_override: %v", err)
+	}
+	rule.Mode = "live"
+	if _, _, err := s.RegisterPlugin(ctx, reconcileRequest("ModePlugin",
+		[]string{"mode.metric"}, []*pb.RuleSuggestion{rule})); err != nil {
+		t.Fatalf("user_override RegisterPlugin: %v", err)
+	}
+	if err := db.QueryRow(ctx, `
+		SELECT version, mode, source FROM rules WHERE name = 'mode_rule' AND effective_to IS NULL
+	`).Scan(&version, &mode, &source); err != nil {
+		t.Fatalf("query user_override rule: %v", err)
+	}
+	if version != 2 || mode != "observe" || source != "user_override" {
+		t.Fatalf("user_override must keep v2/observe, got %d/%s/%s", version, mode, source)
+	}
+}
+
 func TestIntegration_Reconcile_ObservationsSurviveRetirement(t *testing.T) {
 	db := dbConn(t)
 	truncateAll(t, db)

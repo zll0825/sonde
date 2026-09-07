@@ -64,3 +64,33 @@ func TestNeedsVersionForDisplayName(t *testing.T) {
 		})
 	}
 }
+
+func TestNeedsVersionForMode(t *testing.T) {
+	tests := []struct {
+		name      string
+		source    Source
+		current   string
+		suggested string
+		want      bool
+	}{
+		{"live to observe versions", SourcePluginSuggested, "live", "observe", true},
+		{"empty current to observe versions", SourcePluginSuggested, "", "observe", true},
+		{"empty suggested equals live", SourcePluginSuggested, "live", "", false},
+		{"empty both is live", SourcePluginSuggested, "", "", false},
+		{"LIVE suggested equals live", SourcePluginSuggested, "live", "LIVE", false},
+		{"illegal suggested still versions", SourcePluginSuggested, "live", "shadow", true},
+		{"same observe skips", SourcePluginSuggested, "observe", "observe", false},
+		{"observe back to live versions", SourcePluginSuggested, "observe", "live", true},
+		{"user override is not rewritten", SourceUserOverride, "live", "observe", false},
+		{"system default already accepts via Review", SourceSystemDefault, "live", "observe", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NeedsVersionForMode(tt.source, tt.current, tt.suggested)
+			if got != tt.want {
+				t.Fatalf("NeedsVersionForMode(%q, %q, %q) = %v, want %v",
+					tt.source, tt.current, tt.suggested, got, tt.want)
+			}
+		})
+	}
+}

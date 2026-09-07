@@ -61,6 +61,7 @@ type ruleFile struct {
 	Config      string `yaml:"config"`
 	Description string `yaml:"description"`
 	DisplayName string `yaml:"display_name"`
+	Mode        string `yaml:"mode"`
 }
 
 // LoadRegistration compiles a plugin manifest.yaml into RegisterPluginRequest.
@@ -106,10 +107,14 @@ func LoadRegistration(manifestYAML []byte) (*pb.RegisterPluginRequest, error) {
 		if err != nil {
 			return nil, fmt.Errorf("rules[%d]: %w", i, err)
 		}
+		mode, err := parseRuleMode(r.Mode)
+		if err != nil {
+			return nil, fmt.Errorf("rules[%d]: %w", i, err)
+		}
 		rules = append(rules, &pb.RuleSuggestion{
 			Name: r.Name, MetricId: r.Metric, DetectorName: r.Detector,
 			Severity: sev, Config: []byte(r.Config), Description: r.Description,
-			DisplayName: r.DisplayName,
+			DisplayName: r.DisplayName, Mode: mode,
 		})
 	}
 	return &pb.RegisterPluginRequest{
@@ -185,5 +190,20 @@ func parseSeverity(s string) (pb.Severity, error) {
 		return pb.Severity_SEVERITY_INFO, nil
 	default:
 		return pb.Severity_SEVERITY_UNSPECIFIED, fmt.Errorf("unknown severity %q", s)
+	}
+}
+
+// parseRuleMode keeps omitted mode as proto empty (Core treats empty as live).
+// Explicit live/observe are passed through; anything else fails the catalog.
+func parseRuleMode(s string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "":
+		return "", nil
+	case "live":
+		return "live", nil
+	case "observe":
+		return "observe", nil
+	default:
+		return "", fmt.Errorf("unknown mode %q", s)
 	}
 }

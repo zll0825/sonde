@@ -46,6 +46,7 @@ type Trigger struct {
 	PluginID       string
 	SourceProvider string
 	SourceClass    model.SourceClass
+	Mode           model.RuleMode
 }
 
 // Engine orchestrates rule evaluation across all detectors.
@@ -128,6 +129,7 @@ func (e *Engine) EvaluateBatch(ctx context.Context, groups map[string][]model.Ob
 			continue
 		}
 		if trigger != nil {
+			trigger.Mode = model.NormalizeRuleMode(rule.Mode)
 			triggers = append(triggers, trigger)
 		}
 	}

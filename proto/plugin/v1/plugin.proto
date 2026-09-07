@@ -133,6 +133,8 @@ message RuleSuggestion {
   string description = 6;
   // Domain: Rule.display_name — UI label. Empty means fall back to name (slug).
   string display_name = 7;
+  // Domain: Rule.mode — live | observe. Empty means live.
+  string mode = 8;
 }
 
 message RuleReview {

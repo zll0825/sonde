@@ -4,6 +4,8 @@ package model
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -133,6 +135,7 @@ type Rule struct {
 	MetricID      string          `json:"metric_id"`
 	DetectorName  string          `json:"detector_name"`
 	Severity      Severity        `json:"severity"`
+	Mode          RuleMode        `json:"mode"`
 	Config        json.RawMessage `json:"config"` // JSONB
 	Description   string          `json:"description,omitempty"`
 	Enabled       bool            `json:"enabled"`
@@ -159,6 +162,37 @@ const (
 	RuleSourceSystemDefault   RuleSource = "system_default"
 )
 
+// RuleMode is the rule lifecycle: live counts toward budget and notifies;
+// observe persists alerts without outbox dispatch. Empty normalizes to live.
+type RuleMode string
+
+const (
+	RuleModeLive    RuleMode = "live"
+	RuleModeObserve RuleMode = "observe"
+)
+
+// NormalizeRuleMode maps omitted/empty mode to live. Unknown values are
+// returned unchanged so persistence CHECK constraints can reject them —
+// illegal modes must not silently become live.
+func NormalizeRuleMode(mode RuleMode) RuleMode {
+	if mode == "" {
+		return RuleModeLive
+	}
+	return mode
+}
+
+// ParseRuleMode accepts live, observe, or empty (→ live). Anything else errors.
+func ParseRuleMode(s string) (RuleMode, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", string(RuleModeLive):
+		return RuleModeLive, nil
+	case string(RuleModeObserve):
+		return RuleModeObserve, nil
+	default:
+		return "", fmt.Errorf("invalid rule mode %q (want live or observe)", s)
+	}
+}
+
 // ---- Alert ----
 
 type Alert struct {
@@ -179,6 +213,7 @@ type Alert struct {
 	PluginID           string      `json:"plugin_id"`
 	SourceProvider     string      `json:"source_provider"`
 	SourceClass        SourceClass `json:"source_class"`
+	Mode               RuleMode    `json:"mode"`
 	DedupCount         int         `json:"dedup_count"`
 	LastDeduplicatedAt *time.Time  `json:"last_deduplicated_at,omitempty"`
 	TriggeredAt        time.Time   `json:"triggered_at"`

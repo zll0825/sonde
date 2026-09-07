@@ -270,7 +270,8 @@ func queryTodayAlertCounts(ctx context.Context, db statusQuerier) (budgetStatus,
 			count(*) FILTER (WHERE source_class = 'unknown')
 		FROM alerts
 		WHERE triggered_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
-		  AND triggered_at < (date_trunc('day', now() AT TIME ZONE 'UTC') + interval '1 day') AT TIME ZONE 'UTC'`,
+		  AND triggered_at < (date_trunc('day', now() AT TIME ZONE 'UTC') + interval '1 day') AT TIME ZONE 'UTC'
+		  AND mode = 'live'`,
 	).Scan(&counts.RealToday, &counts.MockToday, &counts.TestToday, &counts.UnknownToday)
 	if err != nil {
 		return budgetStatus{}, err

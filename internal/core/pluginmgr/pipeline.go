@@ -193,6 +193,7 @@ func triggerToAlert(t *detector.Trigger, pluginID string) model.Alert {
 		PluginID:          pluginID,
 		SourceProvider:    t.SourceProvider,
 		SourceClass:       model.NormalizeSourceClass(t.SourceClass),
+		Mode:              model.NormalizeRuleMode(t.Mode),
 		TriggeredAt:       now,
 	}
 }

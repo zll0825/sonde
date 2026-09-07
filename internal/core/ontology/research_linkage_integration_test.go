@@ -274,6 +274,58 @@ func registerResearchPlugin(t *testing.T, db *pgxpool.Pool) string {
 	return pluginID
 }
 
+func TestIntegration_ObserveTriggerPersistsAlertWithoutOutbox(t *testing.T) {
+	db := dbConn(t)
+	truncateAll(t, db)
+	ctx := context.Background()
+	pluginID := registerResearchPlugin(t, db)
+
+	engine := alert.NewEngine(store.NewPostgresAlertStore(db))
+	observe := researchTestAlert("alt_observe_only", "observe-only", pluginID)
+	observe.Mode = model.RuleModeObserve
+	if err := engine.HandleTrigger(ctx, observe); err != nil {
+		t.Fatalf("HandleTrigger observe: %v", err)
+	}
+
+	var mode string
+	if err := db.QueryRow(ctx, `SELECT mode FROM alerts WHERE id = $1`, observe.ID).Scan(&mode); err != nil {
+		t.Fatalf("query observe alert: %v", err)
+	}
+	if mode != string(model.RuleModeObserve) {
+		t.Fatalf("alerts.mode = %q, want observe", mode)
+	}
+	var outbox int
+	if err := db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM event_outbox
+		WHERE event_type IN ($1, $2)
+	`, alert.EventTypeAlertTriggered, coreevent.TypeResearchRequested).Scan(&outbox); err != nil {
+		t.Fatalf("query observe outbox: %v", err)
+	}
+	if outbox != 0 {
+		t.Fatalf("observe outbox count = %d, want 0", outbox)
+	}
+
+	liveInfo := researchTestAlert("alt_live_info", "live-info", pluginID)
+	liveInfo.Severity = model.SeverityInfo
+	liveInfo.Mode = model.RuleModeLive
+	if err := engine.HandleTrigger(ctx, liveInfo); err != nil {
+		t.Fatalf("HandleTrigger live info: %v", err)
+	}
+	var notificationCount, researchCount int
+	if err := db.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE event_type = $1),
+			COUNT(*) FILTER (WHERE event_type = $2 AND dedup_key = $3)
+		FROM event_outbox
+	`, alert.EventTypeAlertTriggered, coreevent.TypeResearchRequested, liveInfo.ID).
+		Scan(&notificationCount, &researchCount); err != nil {
+		t.Fatalf("query live info events: %v", err)
+	}
+	if notificationCount != 1 || researchCount != 1 {
+		t.Fatalf("live+info outbox notification/research = %d/%d, want 1/1", notificationCount, researchCount)
+	}
+}
+
 func researchTestAlert(id, dedupKey, pluginID string) model.Alert {
 	now := time.Now().UTC()
 	return model.Alert{

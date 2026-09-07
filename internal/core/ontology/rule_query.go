@@ -51,7 +51,8 @@ func (s *Store) GetMetricFrequency(ctx context.Context, metricID string) (string
 func (s *Store) GetActiveRules(ctx context.Context) ([]model.Rule, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT id, name, metric_id, detector_name, severity, config, description,
-		       enabled, source, is_override, version, effective_from, effective_to
+		       enabled, source, is_override, version, effective_from, effective_to,
+		       COALESCE(mode, 'live')
 		FROM rules
 		WHERE effective_to IS NULL AND enabled = TRUE
 	`)
@@ -70,10 +71,11 @@ func (s *Store) GetActiveRules(ctx context.Context) ([]model.Rule, error) {
 		if err := rows.Scan(
 			&r.ID, &r.Name, &r.MetricID, &r.DetectorName, &r.Severity,
 			&configBytes, &r.Description, &r.Enabled, &r.Source,
-			&r.IsOverride, &r.Version, &r.EffectiveFrom, &effTo,
+			&r.IsOverride, &r.Version, &r.EffectiveFrom, &effTo, &r.Mode,
 		); err != nil {
 			return nil, fmt.Errorf("scan rule: %w", err)
 		}
+		r.Mode = model.NormalizeRuleMode(r.Mode)
 		r.EffectiveTo = effTo
 		if len(configBytes) > 0 {
 			r.Config = configBytes
