@@ -45,6 +45,23 @@ function esc(value) {
     })[c]);
 }
 
+// Old plugins omit display_name; empty/missing falls back to the slug.
+function ruleDisplayName(rule) {
+    if (!rule) return '—';
+    return rule.display_name || rule.name || '—';
+}
+
+function metricDisplayName(metricId) {
+    if (!metricId) return '—';
+    const metrics = (statusData && statusData.metrics) || [];
+    for (let i = 0; i < metrics.length; i++) {
+        if (metrics[i].metric_id === metricId && metrics[i].name) {
+            return metrics[i].name;
+        }
+    }
+    return metricId;
+}
+
 // ── Token Management (localStorage persistence) ──────────────────────
 const TOKEN_STORAGE_KEY = 'sonde_api_token';
 

@@ -129,6 +129,7 @@ const (
 type Rule struct {
 	ID            int             `json:"id"`
 	Name          string          `json:"name"`
+	DisplayName   string          `json:"display_name,omitempty"`
 	MetricID      string          `json:"metric_id"`
 	DetectorName  string          `json:"detector_name"`
 	Severity      Severity        `json:"severity"`

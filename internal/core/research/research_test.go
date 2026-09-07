@@ -12,9 +12,11 @@ import (
 // mockResearchStore is an in-memory ResearchStore for unit tests.
 type mockResearchStore struct {
 	observations   []model.Observation
+	metric         *model.MetricDefinition
 	entity         *model.Entity
 	relations      []model.Relation
 	observationErr error
+	metricErr      error
 	entityErr      error
 	relationErr    error
 	saveErr        error
@@ -27,6 +29,10 @@ type mockResearchStore struct {
 func (m *mockResearchStore) GetObservations(_ context.Context, metricUID string, _, _ time.Time, _ int) ([]model.Observation, error) {
 	m.queriedUID = metricUID
 	return m.observations, m.observationErr
+}
+
+func (m *mockResearchStore) GetMetricByID(_ context.Context, _ string) (*model.MetricDefinition, error) {
+	return m.metric, m.metricErr
 }
 
 func (m *mockResearchStore) GetEntityByID(_ context.Context, _ string) (*model.Entity, error) {
@@ -127,6 +133,10 @@ func TestAssembler_Assemble_BuildsContext(t *testing.T) {
 			{Time: now.Add(-1 * time.Hour), MetricID: "gld_flow", MetricUID: "mtr_gld", Value: 100.0},
 			{Time: now, MetricID: "gld_flow", MetricUID: "mtr_gld", Value: 600.0},
 		},
+		metric: &model.MetricDefinition{
+			ID:   "gld_flow",
+			Name: "GLD 价格（美元）",
+		},
 		entity: &model.Entity{
 			ID:         "GLD",
 			Name:       "GLD",
@@ -169,8 +179,11 @@ func TestAssembler_Assemble_BuildsContext(t *testing.T) {
 	if rc.CurrentValue != 500 {
 		t.Errorf("CurrentValue = %f, want 500", rc.CurrentValue)
 	}
-	if rc.MetricName != "GLD" {
-		t.Errorf("MetricName = %q, want GLD (from entity)", rc.MetricName)
+	if rc.MetricName != "GLD 价格（美元）" {
+		t.Errorf("MetricName = %q, want metric definition name, not entity name", rc.MetricName)
+	}
+	if rc.EntityName != "GLD" {
+		t.Errorf("EntityName = %q, want GLD (from entity)", rc.EntityName)
 	}
 	if len(rc.RelatedEntities) != 1 {
 		t.Errorf("RelatedEntities = %d, want 1", len(rc.RelatedEntities))
@@ -202,7 +215,10 @@ func TestAssembler_Assemble_NoEntityInEvidence(t *testing.T) {
 		t.Fatalf("Assemble failed: %v", err)
 	}
 	if rc.MetricName != "" {
-		t.Errorf("expected empty MetricName without entity_id, got %q", rc.MetricName)
+		t.Errorf("expected empty MetricName without metric definition, got %q", rc.MetricName)
+	}
+	if rc.EntityName != "" {
+		t.Errorf("expected empty EntityName without entity_id, got %q", rc.EntityName)
 	}
 	if len(rc.RecentTrend) != 0 {
 		t.Errorf("expected empty trend, got %d points", len(rc.RecentTrend))

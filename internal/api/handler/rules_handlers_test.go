@@ -12,6 +12,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"sonde/pkg/model"
 )
 
 type rulesFakeDB struct {
@@ -100,7 +102,7 @@ func restoreRequest(id, version string) *http.Request {
 func TestRulesRestoreCreatesNewPhysicalRowAtomically(t *testing.T) {
 	tx := &rulesFakeTx{
 		rows: []pgx.Row{
-			txRow("rule", "metric", "threshold", "warning", []byte(`{"limit": 2}`), "desc", "user_override", true, false),
+			txRow("rule", "metric", "threshold", "warning", []byte(`{"limit": 2}`), "desc", "", "user_override", true, false),
 			txRow(4),
 			txRow(22),
 		},
@@ -143,7 +145,7 @@ func TestRulesRestoreCreatesNewPhysicalRowAtomically(t *testing.T) {
 func TestRulesRestoreRollsBackWhenInsertFails(t *testing.T) {
 	tx := &rulesFakeTx{
 		rows: []pgx.Row{
-			txRow("rule", "metric", "threshold", "warning", []byte(`{}`), "", "system_default", false, true),
+			txRow("rule", "metric", "threshold", "warning", []byte(`{}`), "", "", "system_default", false, true),
 			txRow(3),
 			errRow{err: errors.New("insert failed")},
 		},
@@ -203,7 +205,7 @@ func TestRulesPatchRejectsHistoricalVersion(t *testing.T) {
 func TestRulesPatchCreatesVersionAndAuditAtomically(t *testing.T) {
 	tx := &rulesFakeTx{
 		rows: []pgx.Row{
-			txRow("rule", "metric", "threshold", "warning", []byte(`{"limit":2}`), nil,
+			txRow("rule", "metric", "threshold", "warning", []byte(`{"limit":2}`), nil, "",
 				true, "system_default", false, 4),
 			txRow(23),
 		},
@@ -227,7 +229,7 @@ func TestRulesPatchCreatesVersionAndAuditAtomically(t *testing.T) {
 	if !tx.committed {
 		t.Fatal("patch transaction was not committed")
 	}
-	if len(tx.queryArgs) != 2 || tx.queryArgs[1][9] != 5 {
+	if len(tx.queryArgs) != 2 || tx.queryArgs[1][10] != 5 {
 		t.Fatalf("query args = %#v, want inserted version 5", tx.queryArgs)
 	}
 	if len(tx.execArgs) != 2 || tx.execArgs[0][0] != 17 || tx.execArgs[1][0] != 23 {
@@ -238,7 +240,7 @@ func TestRulesPatchCreatesVersionAndAuditAtomically(t *testing.T) {
 func TestRulesPatchAuditActorNeverContainsBearer(t *testing.T) {
 	tx := &rulesFakeTx{
 		rows: []pgx.Row{
-			txRow("rule", "metric", "threshold", "warning", []byte(`{"limit":2}`), nil,
+			txRow("rule", "metric", "threshold", "warning", []byte(`{"limit":2}`), nil, "",
 				true, "system_default", false, 4),
 			txRow(23),
 		},
@@ -313,7 +315,7 @@ func TestRulesHistoryIncludesVersion(t *testing.T) {
 func TestRulesPatchUpdatesConfigAndSeverity(t *testing.T) {
 	tx := &rulesFakeTx{
 		rows: []pgx.Row{
-			txRow("rule", "metric", "threshold", "warning", []byte(`{"operator":"gt","value":5.0}`), nil,
+			txRow("rule", "metric", "threshold", "warning", []byte(`{"operator":"gt","value":5.0}`), nil, "",
 				true, "system_default", false, 4),
 			txRow(24),
 		},
@@ -377,5 +379,69 @@ func TestRulesPatchRejectsInvalidPayloads(t *testing.T) {
 	store.patchHandler(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 for empty config", rec.Code)
+	}
+}
+
+func TestRulesListSerializesDisplayName(t *testing.T) {
+	now := time.Now()
+	store := &rulesStore{
+		db: &rulesFakeDB{
+			query: newFakeRows([]any{
+				1, "fed_balance_drop", "fed.ins.balance_sheet", "trend", model.SeverityInfo,
+				[]byte(`{}`), nil, "美联储资产负债表连续 4 周收缩",
+				true, model.RuleSourcePluginSuggested, false, 1, now, nil,
+			}),
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/rules/", nil)
+	rec := httptest.NewRecorder()
+	store.listHandler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var rules []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &rules); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("len = %d, want 1", len(rules))
+	}
+	if rules[0]["name"] != "fed_balance_drop" {
+		t.Fatalf("name = %#v, slug must stay", rules[0]["name"])
+	}
+	if rules[0]["display_name"] != "美联储资产负债表连续 4 周收缩" {
+		t.Fatalf("display_name = %#v", rules[0]["display_name"])
+	}
+}
+
+func TestRulesListEmptyDisplayNameOmitsField(t *testing.T) {
+	now := time.Now()
+	store := &rulesStore{
+		db: &rulesFakeDB{
+			query: newFakeRows([]any{
+				1, "legacy_slug", "metric", "threshold", model.SeverityInfo,
+				[]byte(`{}`), nil, "",
+				true, model.RuleSourcePluginSuggested, false, 1, now, nil,
+			}),
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/rules/", nil)
+	rec := httptest.NewRecorder()
+	store.listHandler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var rules []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &rules); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("len = %d, want 1", len(rules))
+	}
+	if _, ok := rules[0]["display_name"]; ok {
+		t.Fatalf("empty display_name should omit so frontend falls back to name, got %#v", rules[0]["display_name"])
+	}
+	if rules[0]["name"] != "legacy_slug" {
+		t.Fatalf("name = %#v", rules[0]["name"])
 	}
 }

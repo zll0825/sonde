@@ -84,13 +84,13 @@ func reviewAndAcceptRelations(ctx context.Context, tx pgx.Tx, pluginID string, s
 func reviewAndAcceptRules(ctx context.Context, tx pgx.Tx, pluginID string, suggestions []*pb.RuleSuggestion) (accepted, skipped, pendingConflict int, err error) {
 	for _, rule := range suggestions {
 		// Look up the current rule by (name, metric_id, detector_name).
-		var currentSource string
+		var currentSource, currentDisplayName string
 		var currentConfig []byte
 		queryErr := tx.QueryRow(ctx, `
-			SELECT source, config FROM rules
+			SELECT source, config, COALESCE(display_name, '') FROM rules
 			WHERE name = $1 AND metric_id = $2 AND detector_name = $3 AND effective_to IS NULL
 			ORDER BY version DESC LIMIT 1
-		`, rule.GetName(), rule.GetMetricId(), rule.GetDetectorName()).Scan(&currentSource, &currentConfig)
+		`, rule.GetName(), rule.GetMetricId(), rule.GetDetectorName()).Scan(&currentSource, &currentConfig, &currentDisplayName)
 
 		if errors.Is(queryErr, pgx.ErrNoRows) {
 			// No existing rule → accept unconditionally (it's new).
@@ -109,6 +109,17 @@ func reviewAndAcceptRules(ctx context.Context, tx pgx.Tx, pluginID string, sugge
 		outcome := rulemgr.Review(rulemgr.Source(currentSource), currentConfig, rule.GetConfig())
 		switch outcome.Action {
 		case "skip":
+			// Review only compares config. A catalog-only display_name change
+			// on a plugin_suggested row must still version, otherwise soak
+			// rules keep an empty label and the UI falls back to the slug.
+			// user_override stays skipped: acceptRule would rewrite source.
+			if rulemgr.NeedsVersionForDisplayName(rulemgr.Source(currentSource), currentDisplayName, rule.GetDisplayName()) {
+				if err := acceptRule(ctx, tx, rule); err != nil {
+					return accepted, skipped, pendingConflict, fmt.Errorf("accept rule %q: %w", rule.GetName(), err)
+				}
+				accepted++
+				continue
+			}
 			skipped++
 		case "accept":
 			if err := acceptRule(ctx, tx, rule); err != nil {
@@ -229,11 +240,11 @@ func acceptRule(ctx context.Context, tx pgx.Tx, rule *pb.RuleSuggestion) error {
 
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO rules (name, metric_id, detector_name, severity, config,
-			description, enabled, source, is_override, version, effective_from
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, 'plugin_suggested', FALSE, $8, NOW())
+			description, display_name, enabled, source, is_override, version, effective_from
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'plugin_suggested', FALSE, $9, NOW())
 	`, rule.GetName(), rule.GetMetricId(), rule.GetDetectorName(),
 		severityToString(rule.GetSeverity()), rule.GetConfig(),
-		rule.GetDescription(), enabled, maxVersion+1); err != nil {
+		rule.GetDescription(), rule.GetDisplayName(), enabled, maxVersion+1); err != nil {
 		return fmt.Errorf("insert rule: %w", err)
 	}
 	return nil

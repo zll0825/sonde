@@ -60,6 +60,7 @@ type ruleFile struct {
 	Severity    string `yaml:"severity"`
 	Config      string `yaml:"config"`
 	Description string `yaml:"description"`
+	DisplayName string `yaml:"display_name"`
 }
 
 // LoadRegistration compiles a plugin manifest.yaml into RegisterPluginRequest.
@@ -108,6 +109,7 @@ func LoadRegistration(manifestYAML []byte) (*pb.RegisterPluginRequest, error) {
 		rules = append(rules, &pb.RuleSuggestion{
 			Name: r.Name, MetricId: r.Metric, DetectorName: r.Detector,
 			Severity: sev, Config: []byte(r.Config), Description: r.Description,
+			DisplayName: r.DisplayName,
 		})
 	}
 	return &pb.RegisterPluginRequest{

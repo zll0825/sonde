@@ -32,6 +32,7 @@ type TimelinePoint struct {
 type MetricOverlay struct {
 	MetricID   string            `json:"metric_id"`
 	MetricName string            `json:"metric_name"`
+	EntityName string            `json:"entity_name,omitempty"`
 	Unit       string            `json:"unit"`
 	Points     []OverlayPoint    `json:"points"`
 	SeriesMeta map[string]string `json:"series_meta,omitempty"`

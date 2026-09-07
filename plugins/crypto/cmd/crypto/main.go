@@ -50,7 +50,7 @@ func buildRegistration() *pb.RegisterPluginRequest {
 		Entities: []*pb.EntityDeclaration{
 			{
 				Id:         "BTC",
-				Name:       "Bitcoin",
+				Name:       "比特币",
 				Namespace:  "btc",
 				EntityType: pb.EntityType_ENTITY_TYPE_ASSET,
 				Tags:       []string{"crypto", "bitcoin"},
@@ -59,24 +59,24 @@ func buildRegistration() *pb.RegisterPluginRequest {
 		Metrics: []*pb.MetricDeclaration{
 			{
 				Id:          "btc.ass.price",
-				Name:        "BTC Price (USD)",
-				Description: "Current BTC spot price in USD",
+				Name:        "比特币现货价（美元）",
+				Description: "比特币兑美元现货价格",
 				Unit:        "USD",
 				Frequency:   "hourly",
 				EntityId:    "BTC",
 			},
 			{
 				Id:          "btc.ass.hash_rate",
-				Name:        "BTC Network Hash Rate (EH/s)",
-				Description: "Bitcoin network hash rate in exahashes per second",
+				Name:        "比特币全网算力（EH/s）",
+				Description: "比特币网络算力，单位 EH/s",
 				Unit:        "EH/s",
 				Frequency:   "hourly",
 				EntityId:    "BTC",
 			},
 			{
 				Id:          "btc.ass.tx_count",
-				Name:        "BTC Daily Transaction Count",
-				Description: "Number of Bitcoin transactions per day; on-chain activity proxy for network usage",
+				Name:        "比特币日交易笔数",
+				Description: "比特币链上每日交易笔数，网络使用活跃度的代理",
 				Unit:        "transactions",
 				Frequency:   "daily",
 				EntityId:    "BTC",
@@ -98,6 +98,7 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				DetectorName: "trend",
 				Severity:     pb.Severity_SEVERITY_WARNING,
 				Config:       []byte(`{"direction":"up","consecutive":4,"tolerance":0.002,"min_observations":10}`),
+				DisplayName:  "比特币连续 4 个采集周期上涨且每次涨幅 ≥0.2%",
 				Description:  "BTC 连续 4 个采集周期上涨且每次涨幅 ≥0.2%——持续走高而非某个价位",
 			},
 			{
@@ -106,7 +107,8 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				DetectorName: "trend",
 				Severity:     pb.Severity_SEVERITY_WARNING,
 				Config:       []byte(`{"direction":"down","consecutive":3}`),
-				Description:  "BTC hash rate declining for 3+ consecutive observations (network security concern)",
+				DisplayName:  "比特币全网算力连续 3 期下降",
+				Description:  "比特币全网算力连续 3 期下降（网络安全关注）",
 			},
 			{
 				Name:         "btc_tx_surge",
@@ -114,7 +116,8 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				DetectorName: "percentile",
 				Severity:     pb.Severity_SEVERITY_INFO,
 				Config:       []byte(`{"percentile":90,"consecutive":1}`),
-				Description:  "BTC daily transaction count above 90th percentile (high network activity)",
+				DisplayName:  "比特币日交易笔数处于 90 分位以上",
+				Description:  "比特币日交易笔数处于 90 分位以上（链上活跃度偏高）",
 			},
 		},
 		ChangeLog: "Retired btc.ass.exchange_balance (no free source) and btc.ass.flow_proxy (duplicate of btc.ass.tx_count: it was that series' 7d change rate, mislabelled as active addresses), with its flow_proxy_spike rule; added btc.ass.tx_count (blockchain.com real source); rules: btc_hashrate_drop, btc_tx_surge",

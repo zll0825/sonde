@@ -87,3 +87,11 @@ func Review(current Source, currentConfig, suggestedConfig []byte) ReviewOutcome
 		}
 	}
 }
+
+// NeedsVersionForDisplayName is true when Review would skip (identical
+// config) but a plugin_suggested row still needs a new version because the
+// UI label changed. user_override is excluded: acceptRule would rewrite
+// source to plugin_suggested.
+func NeedsVersionForDisplayName(current Source, currentDisplayName, suggestedDisplayName string) bool {
+	return current == SourcePluginSuggested && currentDisplayName != suggestedDisplayName
+}
