@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 // TestBuildRegistrationDeclaresMetrics verifies that the registration declares
 // all expected real-source metrics with correct frequencies.
@@ -77,6 +80,37 @@ func TestDeclaredDetectorsAreRegisteredInCore(t *testing.T) {
 		if !registered[r.GetDetectorName()] {
 			t.Errorf("rule %s declares detector %q, which Core does not register; the rule would be inert",
 				r.GetName(), r.GetDetectorName())
+		}
+	}
+}
+
+// TestNoTrendRuleFiresOnBareNoise 钉住本插件 trend 规则的抗噪下限。
+//
+// 背景：btc_hashrate_drop 曾是 trend{down, consecutive 3, tolerance 0}。在
+// btc.ass.hash_rate 这条序列上，下跌步占 55%，3 连跌的自然发生率约 16.6%，
+// 实测 13.74% 的评估触发、覆盖 36 天里的 30 天——规则测的是采样噪声。
+// tolerance 0 意味着「严格小于前值」即算一步，consecutive 太小时等价于抛硬币；
+// 二者必须至少有一个够紧。这里只拦明确已知会常亮的组合，不替未来的新规则
+// 猜阈值：tolerance 为 0 时要求 consecutive ≥ 4。
+func TestNoTrendRuleFiresOnBareNoise(t *testing.T) {
+	for _, r := range buildRegistration().GetRules() {
+		if r.GetDetectorName() != "trend" {
+			continue
+		}
+		var cfg struct {
+			Consecutive int     `json:"consecutive"`
+			Tolerance   float64 `json:"tolerance"`
+		}
+		if err := json.Unmarshal(r.GetConfig(), &cfg); err != nil {
+			t.Fatalf("rule %s has unparseable config %s: %v", r.GetName(), r.GetConfig(), err)
+		}
+		// consecutive 缺省时 detector 用 3，等同于最松的一档。
+		if cfg.Consecutive == 0 {
+			cfg.Consecutive = 3
+		}
+		if cfg.Tolerance == 0 && cfg.Consecutive < 4 {
+			t.Errorf("rule %s is back on a bare-noise trend (tolerance 0, consecutive %d): %s",
+				r.GetName(), cfg.Consecutive, r.GetConfig())
 		}
 	}
 }
