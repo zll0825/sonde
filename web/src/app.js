@@ -17,6 +17,8 @@ function switchTab(tabName, params = {}) {
         loadOntology();
     } else if (tabName === 'rules') {
         loadRules();
+    } else if (tabName === 'plugins') {
+        if (typeof renderPluginsTab === 'function') renderPluginsTab(statusData);
     } else if (tabName === 'research') {
         if (params.alertId) {
             const input = document.getElementById('research-alert-id');
@@ -121,11 +123,22 @@ document.getElementById('research-alert-id').addEventListener('keydown', (e) => 
 document.getElementById('btn-refresh-clusters').addEventListener('click', loadClusters);
 document.getElementById('btn-discover-candidates').addEventListener('click', discoverCandidates);
 document.getElementById('btn-refresh-rules').addEventListener('click', loadRules);
-document.getElementById('sb-plugins').addEventListener('click', togglePluginDetail);
+const btnRefreshPlugins = document.getElementById('btn-refresh-plugins');
+if (btnRefreshPlugins) {
+    btnRefreshPlugins.addEventListener('click', async () => {
+        btnRefreshPlugins.disabled = true;
+        const origText = btnRefreshPlugins.textContent;
+        btnRefreshPlugins.textContent = t('plugins.refreshing');
+        await fetchStatus();
+        btnRefreshPlugins.disabled = false;
+        btnRefreshPlugins.textContent = origText;
+    });
+}
 
-// Initialize i18n and token state
+// Initialize i18n, ticker and token state
 initLanguage();
 updateTokenUI();
+if (typeof initStatusTicker === 'function') initStatusTicker();
 
 // Initial fetch
 initAlertFilters();

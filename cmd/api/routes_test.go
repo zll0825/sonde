@@ -42,6 +42,12 @@ func TestRegisterStaticRoutes(t *testing.T) {
 	if !strings.Contains(bodyApp, "data-tab=\"alerts\"") {
 		t.Errorf("expected alerts tab in app.html, got: %s", bodyApp[:min(200, len(bodyApp))])
 	}
+	if !strings.Contains(bodyApp, "data-tab=\"plugins\"") {
+		t.Errorf("expected plugins tab in app.html")
+	}
+	if !strings.Contains(bodyApp, "status-ticker") {
+		t.Errorf("expected status-ticker in app.html header")
+	}
 	if !strings.Contains(bodyApp, "btn-nav-home") {
 		t.Errorf("expected btn-nav-home in app.html header")
 	}

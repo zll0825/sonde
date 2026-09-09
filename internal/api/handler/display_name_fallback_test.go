@@ -46,6 +46,23 @@ func TestAlertsRerenderAfterStatusLocksNameLookup(t *testing.T) {
 	}
 }
 
+// TestPulseCardTitleUsesDescription locks first-batch citation-required copy:
+// original providers live in metric description and must surface on the pulse
+// card without a new component.
+func TestPulseCardTitleUsesDescription(t *testing.T) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	src, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "../../../web/src/status.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "if (m.description) name.title = m.description") {
+		t.Fatal("pulse card must set name.title from metric description")
+	}
+}
+
 func TestAlertsDefaultListDoesNotRequestObserve(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {

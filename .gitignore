@@ -34,6 +34,7 @@ node_modules/
 .agent/
 .grok/
 .meituan-catpaw/
+.playwright-mcp/
 AGENTS.md
 CLAUDE.md
 

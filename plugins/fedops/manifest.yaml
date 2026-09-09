@@ -1,0 +1,79 @@
+name: fedops
+version: "0.1.0"
+description: Treasury TGA, NY Fed RRP/SRF/SOFR, and OFR financial stress — no secrets
+capabilities:
+  windowedBackfill: true
+  maxBackfillDays: 3650
+  requiresSecrets: []
+  mockAvailable: true
+entities:
+  - id: FED
+    name: 美联储
+    namespace: fed
+    type: institution
+    tags: [central_bank, us]
+  - id: US
+    name: 美国
+    namespace: us
+    type: market
+    tags: [us]
+metrics:
+  - id: fed.ins.tga_close
+    name: 财政部 TGA 日终余额
+    description: >-
+      美国财政部一般账户（TGA）日终余额，百万美元 ×1e6。
+      数据来源：U.S. Treasury FiscalData operating_cash_balance。
+    unit: USD
+    frequency: daily
+    entity: FED
+  - id: fed.ins.rrp
+    name: 隔夜逆回购未到期余额
+    description: >-
+      纽约联储隔夜逆回购（ON RRP）接受总量，单位美元。
+      数据来源：纽约联邦储备银行 Markets API rp/results。
+    unit: USD
+    frequency: daily
+    entity: FED
+  - id: fed.ins.srf_usage
+    name: 常备回购便利当日使用量
+    description: >-
+      常备回购便利（SRF）当日各窗口接受量之和；无操作日写入 0。
+      数据来源：纽约联邦储备银行 Markets API rp/results。
+    unit: USD
+    frequency: daily
+    entity: FED
+  - id: us.mkt.sofr
+    name: 担保隔夜融资利率 SOFR（%）
+    description: >-
+      担保隔夜融资利率。数据来源：纽约联邦储备银行。
+      原始提供方须署名：纽约联邦储备银行（NY Fed）。
+    unit: "%"
+    frequency: daily
+    entity: US
+  - id: us.mkt.sofr_p99
+    name: SOFR 99 分位利率（%）
+    description: >-
+      SOFR 成交分布 99 分位利率。数据来源：纽约联邦储备银行。
+      原始提供方须署名：纽约联邦储备银行（NY Fed）。
+    unit: "%"
+    frequency: daily
+    entity: US
+  - id: us.mkt.sofr_tail
+    name: SOFR 尾部利差（p99−中位，bp）
+    description: >-
+      SOFR 99 分位与中位利率之差，单位基点（同源计算）。
+      数据来源：纽约联邦储备银行。原始提供方须署名：纽约联邦储备银行（NY Fed）。
+    unit: bp
+    frequency: daily
+    entity: US
+  - id: us.mkt.ofr_fsi
+    name: OFR 金融压力指数
+    description: >-
+      美国财政部金融研究办公室金融压力指数。
+      数据来源：OFR Financial Stress Index。
+    unit: index
+    frequency: daily
+    entity: US
+relations: []
+rules: []
+changeLog: First-batch TGA / RRP / SRF / SOFR / OFR FSI; collect only, no rules

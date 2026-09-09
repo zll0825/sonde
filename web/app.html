@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sonde</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="/src/app.css?v=20260904-p2">
+    <link rel="stylesheet" href="/src/app.css?v=20260908-p1">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 </head>
 <body>
@@ -15,6 +15,28 @@
             <div class="subtitle" data-i18n="header.subtitle">Anomaly Detection for Capital Markets</div>
         </div>
         <div class="header-actions">
+            <!-- ── Top-right Status Bar Ticker: flips Metrics / Alerts / Latest Data every 5s ── -->
+            <div class="status-ticker-wrapper" id="status-ticker-wrapper">
+                <div class="status-ticker" id="status-ticker">
+                    <div class="ticker-slide active" data-index="0" id="ticker-slide-metrics">
+                        <span class="ticker-icon">📊</span>
+                        <span class="ticker-content" id="sb-metrics">—</span>
+                    </div>
+                    <div class="ticker-slide" data-index="1" id="ticker-slide-budget">
+                        <span class="ticker-icon">🔔</span>
+                        <span class="ticker-content" id="sb-budget">—</span>
+                    </div>
+                    <div class="ticker-slide" data-index="2" id="ticker-slide-latest">
+                        <span class="ticker-icon">⏱️</span>
+                        <span class="ticker-content" id="sb-latest">—</span>
+                    </div>
+                </div>
+                <div class="ticker-indicators">
+                    <span class="ticker-dot active" data-dot="0"></span>
+                    <span class="ticker-dot" data-dot="1"></span>
+                    <span class="ticker-dot" data-dot="2"></span>
+                </div>
+            </div>
             <a href="/" class="nav-home-btn" id="btn-nav-home" title="Home" style="display:inline-flex;align-items:center;gap:5px;color:#8892b0;text-decoration:none;font-size:0.8rem;padding:4px 10px;border:1px solid #2a3450;border-radius:16px;background:#131a2e;transition:all 0.2s;">
                 <span>🏠</span>
                 <span data-i18n="header.home_link">Home</span>
@@ -44,17 +66,6 @@
         </div>
     </header>
 
-    <!-- R1: low-contrast ambient status bar; fetch failure flips it to connection interrupted -->
-    <div id="status-bar">
-        <span id="sb-plugins">—</span>
-        <span class="sep">·</span>
-        <span id="sb-metrics">—</span>
-        <span class="sep">·</span>
-        <span id="sb-budget">—</span>
-        <span class="sep">·</span>
-        <span id="sb-latest">—</span>
-    </div>
-    <div id="plugin-detail" class="hidden"></div>
     <!-- Tab bar -->
     <nav class="tab-bar">
         <button class="tab-btn active" data-tab="alerts" data-i18n="tabs.alerts">Alerts</button>
@@ -63,6 +74,7 @@
         <button class="tab-btn" data-tab="ontology" data-i18n="tabs.ontology">Ontology</button>
         <button class="tab-btn" data-tab="signal" data-i18n="tabs.signal">Signal Quality</button>
         <button class="tab-btn" data-tab="rules" data-i18n="tabs.rules">Rules</button>
+        <button class="tab-btn" data-tab="plugins" data-i18n="tabs.plugins">Plugins</button>
     </nav>
 
     <main>
@@ -250,16 +262,30 @@
                 </div>
             </div>
         </div>
+
+        <!-- Plugins tab -->
+        <div id="plugins-tab" class="tab-content">
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem; flex-wrap:wrap; gap:0.5rem;">
+                    <h2 style="margin:0;" data-i18n="plugins.title">Plugin Management</h2>
+                    <button type="button" id="btn-refresh-plugins" style="background:#64ffda; color:#0a0e1a; border:none; padding:0.45rem 1rem; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer;" data-i18n="plugins.refresh">Refresh Status</button>
+                </div>
+                <div id="plugins-summary" class="plugins-summary"></div>
+                <div id="plugins-list" class="plugins-grid">
+                    <div class="empty" data-i18n="plugins.loading">Loading...</div>
+                </div>
+            </div>
+        </div>
     </main>
 
     <div id="toast-container" class="toast-container"></div>
 
-    <script src="/src/i18n.js?v=20260907-dn1"></script>
-    <script src="/src/common.js?v=20260907-dn1"></script>
-    <script src="/src/status.js?v=20260907-dn1"></script>
-    <script src="/src/alerts.js?v=20260907-dn1"></script>
-    <script src="/src/research.js?v=20260907-dn1"></script>
-    <script src="/src/ontology.js?v=20260907-dn1"></script>
-    <script src="/src/app.js?v=20260907-dn1"></script>
+    <script src="/src/i18n.js?v=20260908-p1"></script>
+    <script src="/src/common.js?v=20260908-p1"></script>
+    <script src="/src/status.js?v=20260908-p1"></script>
+    <script src="/src/alerts.js?v=20260908-p1"></script>
+    <script src="/src/research.js?v=20260908-p1"></script>
+    <script src="/src/ontology.js?v=20260908-p1"></script>
+    <script src="/src/app.js?v=20260908-p1"></script>
 </body>
 </html>

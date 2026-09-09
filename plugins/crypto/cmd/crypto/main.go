@@ -101,14 +101,35 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				DisplayName:  "比特币连续 4 个采集周期上涨且每次涨幅 ≥0.2%",
 				Description:  "BTC 连续 4 个采集周期上涨且每次涨幅 ≥0.2%——持续走高而非某个价位",
 			},
+			// 原为 consecutive 3 / tolerance 0：在这条序列上等价于抛硬币。
+			// 716 个真实观测（36 天小时级）里下跌步占 55.0%，3 连跌的自然发生率
+			// (0.55)^3≈16.6%，实测 13.74% 的评估触发、覆盖 30/36 天——它测的是
+			// 采样噪声，不是算力事件。被测序列本身还已经平滑过：采集器读的是
+			// mempool.space /mining/hashrate/3d 的 currentHashrate，一条 3 日滚动
+			// 估计，剩下的波动主要是估计误差。
+			//
+			// 不用 moving_average：它的 margin 是绝对值，而算力 3 年从 358 涨到
+			// 881 EH/s，value-SMA30 的 p5 同期从 -52 漂到 -153 EH/s，固定 margin
+			// 会随算力增长在相对含义上收紧，规则从常亮慢慢变成常哑。
+			// tolerance 是比例，尺度无关，与上面 btc_price_change 同形态、仅方向相反。
+			// consecutive 4 + tolerance 0.002 实测覆盖 5/36 天。
+			//
+			// 样本局限（与其他规则不同，必须记住）：mempool.space 只提供日频
+			// avgHashrate 的历史，那是另一条序列（相邻日可差 ±14%：915/1040/881，
+			// 而同期 currentHashrate 为 926.5），数值对不上，无法用来回标。
+			// 本参数只由 soak 自身 716 点 / 36 天定出，样本比 FRED 系规则薄。
+			//
+			// 不写 min_observations：hourly 指标的回看被 frequencyAwareLookback 的
+			// 7 天下限锁死（internal/core/pluginmgr/pipeline.go），约 168 点，远超
+			// consecutive+1。兄弟规则写 10 是给 daily 指标留余量，这里照抄只会误导。
 			{
 				Name:         "btc_hashrate_drop",
 				MetricId:     "btc.ass.hash_rate",
 				DetectorName: "trend",
 				Severity:     pb.Severity_SEVERITY_WARNING,
-				Config:       []byte(`{"direction":"down","consecutive":3}`),
-				DisplayName:  "比特币全网算力连续 3 期下降",
-				Description:  "比特币全网算力连续 3 期下降（网络安全关注）",
+				Config:       []byte(`{"direction":"down","consecutive":4,"tolerance":0.002}`),
+				DisplayName:  "比特币全网算力连续 4 个采集周期下降且每次跌幅 ≥0.2%",
+				Description:  "比特币全网算力连续 4 个采集周期下降且每次跌幅 ≥0.2%——持续走低而非单点回落",
 			},
 			{
 				Name:         "btc_tx_surge",
@@ -120,6 +141,6 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Description:  "比特币日交易笔数处于 90 分位以上（链上活跃度偏高）",
 			},
 		},
-		ChangeLog: "Retired btc.ass.exchange_balance (no free source) and btc.ass.flow_proxy (duplicate of btc.ass.tx_count: it was that series' 7d change rate, mislabelled as active addresses), with its flow_proxy_spike rule; added btc.ass.tx_count (blockchain.com real source); rules: btc_hashrate_drop, btc_tx_surge",
+		ChangeLog: "Retired btc.ass.exchange_balance (no free source) and btc.ass.flow_proxy (duplicate of btc.ass.tx_count: it was that series' 7d change rate, mislabelled as active addresses), with its flow_proxy_spike rule; added btc.ass.tx_count (blockchain.com real source); rules: btc_hashrate_drop, btc_tx_surge; reshaped btc_hashrate_drop from trend(down, consecutive 3, no tolerance) to trend(down, consecutive 4, tolerance 0.002) — the old shape fired on 13.74% of evaluations across 30 of 36 days, which is sampling noise on an already 3-day-smoothed series, not a hash rate event",
 	}
 }

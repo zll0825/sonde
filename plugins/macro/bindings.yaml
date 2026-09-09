@@ -26,3 +26,27 @@ series:
     scale: 1
     frequency: monthly
     units: pc1
+  - metric: fed.ins.reserves
+    series: WRBWFRBL
+    scale: 1.0e6
+    frequency: weekly
+  - metric: us.mkt.iorb
+    series: IORB
+    scale: 1
+    frequency: daily
+  - metric: us.mkt.effr
+    series: EFFR
+    scale: 1
+    frequency: daily
+  - metric: us.mkt.real_yield_10y
+    series: DFII10
+    scale: 1
+    frequency: daily
+  - metric: us.mkt.term_spread_10y3m
+    series: T10Y3M
+    scale: 1
+    frequency: daily
+  - metric: us.mkt.nfci
+    series: NFCI
+    scale: 1
+    frequency: weekly

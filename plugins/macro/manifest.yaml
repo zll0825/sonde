@@ -57,6 +57,50 @@ metrics:
     unit: "%"
     frequency: monthly
     entity: US
+  - id: fed.ins.reserves
+    name: 美联储准备金余额（周三时点）
+    description: >-
+      美联储准备金余额周三时点（FRED WRBWFRBL，H.4.1 Wednesday Level，百万美元 ×1e6）。
+      不是周平均 WRESBAL。数据来源：FRED（public domain）。
+    unit: USD
+    frequency: weekly
+    entity: FED
+  - id: us.mkt.iorb
+    name: 准备金余额利率（IORB，%）
+    description: 美联储准备金余额利率（IORB）。数据来源：FRED（public domain）。
+    unit: "%"
+    frequency: daily
+    entity: US
+  - id: us.mkt.effr
+    name: 有效联邦基金利率（%）
+    description: >-
+      有效联邦基金利率。数据来源：FRED EFFR。
+      原始提供方须署名：纽约联邦储备银行（NY Fed）。
+    unit: "%"
+    frequency: daily
+    entity: US
+  - id: us.mkt.real_yield_10y
+    name: 10年期 TIPS 实际收益率（%）
+    description: 10年期国债通胀保护证券（TIPS）实际收益率。数据来源：FRED DFII10（public domain）。
+    unit: "%"
+    frequency: daily
+    entity: US
+  - id: us.mkt.term_spread_10y3m
+    name: 10年−3月国债期限利差（百分点）
+    description: >-
+      10年期与3个月期国债收益率之差（百分点）。数据来源：FRED T10Y3M。
+      原始提供方须署名：美国财政部。
+    unit: pp
+    frequency: daily
+    entity: US
+  - id: us.mkt.nfci
+    name: 芝加哥联储全国金融状况指数
+    description: >-
+      芝加哥联邦储备银行全国金融状况指数。数据来源：FRED NFCI。
+      原始提供方须署名：芝加哥联邦储备银行。
+    unit: index
+    frequency: weekly
+    entity: US
 relations:
   - source: FED
     target: US
@@ -100,4 +144,4 @@ rules:
     config: '{"operator":"gt","value":3.0,"consecutive":2}'
     display_name: 美国同比通胀率连续 2 个月高于 3%
     description: 同比通胀率连续 2 个月高于 3%（高于美联储目标）
-changeLog: YAML catalog; CPI (us.mkt.cpi) and YoY inflation (us.mkt.inflation_yoy); inflation_above_target rule
+changeLog: YAML catalog; CPI and YoY inflation; first-batch reserves/IORB/EFFR/TIPS/T10Y3M/NFCI (collect only, no new rules)

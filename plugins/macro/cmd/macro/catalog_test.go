@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -30,6 +31,12 @@ func TestBuildRegistrationFromYAML(t *testing.T) {
 		{"us.mkt.usd_cny", "CNY per USD", "daily", "US"},
 		{"us.mkt.cpi", "index", "monthly", "US"},
 		{"us.mkt.inflation_yoy", "%", "monthly", "US"},
+		{"fed.ins.reserves", "USD", "weekly", "FED"},
+		{"us.mkt.iorb", "%", "daily", "US"},
+		{"us.mkt.effr", "%", "daily", "US"},
+		{"us.mkt.real_yield_10y", "%", "daily", "US"},
+		{"us.mkt.term_spread_10y3m", "pp", "daily", "US"},
+		{"us.mkt.nfci", "index", "weekly", "US"},
 	}
 	if got := len(reg.GetMetrics()); got != len(wantMetrics) {
 		t.Fatalf("metrics=%d, want %d", got, len(wantMetrics))
@@ -142,6 +149,100 @@ func TestNoRuleUsesAnAbsolutePriceThreshold(t *testing.T) {
 		}
 	}
 }
+
+// TestReservesBindsWednesdayLevelNotWeekAverage 锁住 WRBWFRBL（周三时点）。
+// WRESBAL 是 H.4.1 周平均，同周可与周三时点反向，禁绑。
+func TestReservesBindsWednesdayLevelNotWeekAverage(t *testing.T) {
+	bindings := liveBindings(t)
+	if err := assertReservesNotWeekAverage(bindings); err != nil {
+		t.Fatal(err)
+	}
+	var series string
+	for _, b := range bindings {
+		if b.MetricID == "fed.ins.reserves" {
+			series = b.SeriesID
+			if b.UnitScale != 1e6 {
+				t.Errorf("fed.ins.reserves scale = %g, want 1e6", b.UnitScale)
+			}
+		}
+	}
+	if series != "WRBWFRBL" {
+		t.Fatalf("fed.ins.reserves series = %q, want WRBWFRBL (H.4.1 Wednesday Level)", series)
+	}
+}
+
+func TestWRESBALFixtureBindingFails(t *testing.T) {
+	fixture := []byte(`
+provider: fred
+series:
+  - metric: fed.ins.reserves
+    series: WRESBAL
+    scale: 1.0e6
+    frequency: weekly
+`)
+	bindings, err := fredprov.LoadBindings(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := assertReservesNotWeekAverage(bindings); err == nil {
+		t.Fatal("fixture binding WRESBAL must fail")
+	}
+}
+
+func TestCatalogOmitsDerivedMetrics(t *testing.T) {
+	reg := buildRegistration()
+	for _, m := range reg.GetMetrics() {
+		switch m.GetId() {
+		case "us.mkt.sofr_iorb_spread", "fed.ins.net_liquidity":
+			t.Errorf("derived metric %s must not be registered", m.GetId())
+		}
+	}
+	if strings.Contains(string(mustBindingsYAML()), "sofr_iorb_spread") ||
+		strings.Contains(string(mustBindingsYAML()), "net_liquidity") {
+		t.Fatal("derived metrics must not appear in bindings.yaml")
+	}
+}
+
+func TestCitationRequiredDescriptionsNameOriginalProvider(t *testing.T) {
+	want := map[string]string{
+		"us.mkt.effr":              "纽约联邦储备银行",
+		"us.mkt.term_spread_10y3m": "美国财政部",
+		"us.mkt.nfci":              "芝加哥联邦储备银行",
+	}
+	for _, m := range buildRegistration().GetMetrics() {
+		needle, ok := want[m.GetId()]
+		if !ok {
+			continue
+		}
+		delete(want, m.GetId())
+		if !strings.Contains(m.GetDescription(), needle) {
+			t.Errorf("%s description %q must name original provider %q", m.GetId(), m.GetDescription(), needle)
+		}
+	}
+	for id := range want {
+		t.Errorf("missing citation-required metric %s", id)
+	}
+}
+
+func liveBindings(t *testing.T) []fredprov.Binding {
+	t.Helper()
+	bindings, err := fredprov.LoadBindings(mustBindingsYAML())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bindings
+}
+
+func assertReservesNotWeekAverage(bindings []fredprov.Binding) error {
+	for _, b := range bindings {
+		if b.SeriesID == "WRESBAL" {
+			return errWRESBAL
+		}
+	}
+	return nil
+}
+
+var errWRESBAL = errors.New("WRESBAL is H.4.1 Week Average; fed.ins.reserves must bind WRBWFRBL")
 
 // TestDeclaredDetectorsAreRegisteredInCore 钉住插件侧的一半约束。
 //
