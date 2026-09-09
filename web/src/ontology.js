@@ -551,22 +551,24 @@ function formatRuleConfig(cfg) {
         }
         parts.push(op + ' ' + valStr);
     } else if (cfg.percentile !== undefined) {
-        parts.push('P' + cfg.percentile + ' 分位');
+        parts.push(t('rules.cfg_percentile', { p: cfg.percentile }));
     } else if (cfg.direction !== undefined) {
-        const dir = cfg.direction === 'down' ? '↓ 下降' : (cfg.direction === 'up' ? '↑ 上升' : cfg.direction);
+        let dir = cfg.direction;
+        if (cfg.direction === 'down') dir = t('rules.cfg_dir_down');
+        else if (cfg.direction === 'up') dir = t('rules.cfg_dir_up');
         parts.push(dir);
     } else if (cfg.threshold !== undefined) {
-        parts.push('阈值: ' + cfg.threshold);
+        parts.push(t('rules.cfg_threshold', { v: cfg.threshold }));
     }
 
     if (cfg.consecutive && cfg.consecutive > 1) {
-        parts.push('连续 ' + cfg.consecutive + ' 期');
+        parts.push(t('rules.cfg_consecutive', { n: cfg.consecutive }));
     } else if (cfg.consecutive === 1 && parts.length === 1 && cfg.percentile !== undefined) {
-        parts.push('连续 1 期');
+        parts.push(t('rules.cfg_consecutive', { n: 1 }));
     }
 
     if (cfg.window_minutes) {
-        parts.push(cfg.window_minutes + 'm 窗口');
+        parts.push(t('rules.cfg_window', { n: cfg.window_minutes }));
     }
     if (parts.length > 0) return parts.join(' · ');
     return JSON.stringify(cfg);

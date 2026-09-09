@@ -13,14 +13,9 @@ import (
 //   - i18n.js and landing.js are dictionaries: their Chinese IS the zh half of
 //     a zh/en pair, not a hardcoded string. landing.js is a standalone page and
 //     carries its own LANDING_I18N / PIPELINE_DETAILS.
-//   - ontology.js is pre-existing debt, not an exemption on merit: it builds
-//     rule-config summaries inline ("连续 N 期", "P{n} 分位", "阈值: …", "{n}m 窗口"
-//     around ontology.js:554-569), which is the same defect this test exists to
-//     stop. Move those into TRANSLATIONS and delete this line.
 var exemptFromCJKGuard = map[string]bool{
-	"i18n.js":     true,
-	"landing.js":  true,
-	"ontology.js": true,
+	"i18n.js":    true,
+	"landing.js": true,
 }
 
 // TestFrontendJSHasNoHardcodedCJK locks the i18n boundary: every user-visible
