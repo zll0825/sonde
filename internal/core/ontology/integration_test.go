@@ -661,3 +661,80 @@ func TestIntegration_OutboxRetryState_Observable(t *testing.T) {
 		t.Fatalf("terminal retry state = %s/%d, want failed/5", status, attempts)
 	}
 }
+
+// =============================================================================
+// Rule idempotence across reconnects
+// =============================================================================
+
+// TestIntegration_RegisterPlugin_RuleIdempotentAcrossReconnect locks the rules
+// half of idempotence. TestIntegration_RegisterPlugin_IdempotentUpsert declares
+// entities and metrics only, so nothing covered the rule path — and the rule
+// path was the one that leaked: every core restart re-registered all plugins
+// and minted a fresh version of every rule with byte-identical content. The
+// soak rules table grew 9 rows per stack restart and rule versioning stopped
+// meaning "something changed".
+//
+// The config literal below is deliberately written the way plugins write it
+// (compact, declaration order). Postgres hands jsonb back normalized — spaces
+// after colons, its own key order — so a comparison that is not JSON-aware
+// reports "changed" on every reconnect.
+func TestIntegration_RegisterPlugin_RuleIdempotentAcrossReconnect(t *testing.T) {
+	db := dbConn(t)
+	truncateAll(t, db)
+	ctx := context.Background()
+
+	s := NewStore(db)
+
+	regReq := &pb.RegisterPluginRequest{
+		Info: &pb.PluginInfo{Name: "TestRuleIdempotent", Version: "1.0.0"},
+		Entities: []*pb.EntityDeclaration{
+			{Id: "ri_ent", Name: "Entity", Namespace: "us_equity", EntityType: pb.EntityType_ENTITY_TYPE_ASSET},
+		},
+		Metrics: []*pb.MetricDeclaration{
+			{Id: "ri_met", Name: "Hash Rate", Unit: "EH/s", Frequency: "1h", EntityId: "ri_ent"},
+		},
+		Rules: []*pb.RuleSuggestion{
+			{
+				Name:         "ri_rule",
+				MetricId:     "ri_met",
+				DetectorName: "trend",
+				Severity:     pb.Severity_SEVERITY_WARNING,
+				Config:       []byte(`{"direction":"down","consecutive":4,"tolerance":0.002}`),
+				DisplayName:  "Hash rate down 4 periods",
+				Description:  "unchanged across reconnects",
+			},
+		},
+		ChangeLog: "initial registration",
+	}
+
+	if _, _, err := s.RegisterPlugin(ctx, regReq); err != nil {
+		t.Fatalf("first RegisterPlugin: %v", err)
+	}
+
+	// Three more identical registrations, as three core restarts would do.
+	for i := 2; i <= 4; i++ {
+		if _, _, err := s.RegisterPlugin(ctx, regReq); err != nil {
+			t.Fatalf("RegisterPlugin #%d: %v", i, err)
+		}
+	}
+
+	var total, effective, maxVersion int
+	if err := db.QueryRow(ctx, `
+		SELECT count(*),
+		       count(*) FILTER (WHERE effective_to IS NULL),
+		       COALESCE(max(version), 0)
+		FROM rules WHERE name = $1
+	`, "ri_rule").Scan(&total, &effective, &maxVersion); err != nil {
+		t.Fatalf("query rule rows: %v", err)
+	}
+
+	if total != 1 {
+		t.Errorf("rule rows after 4 identical registrations = %d, want 1", total)
+	}
+	if maxVersion != 1 {
+		t.Errorf("rule version after 4 identical registrations = %d, want 1", maxVersion)
+	}
+	if effective != 1 {
+		t.Errorf("effective rule rows = %d, want exactly 1", effective)
+	}
+}
