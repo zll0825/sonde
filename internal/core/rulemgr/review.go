@@ -4,6 +4,8 @@ package rulemgr
 
 import (
 	"bytes"
+	"encoding/json"
+	"reflect"
 
 	"sonde/pkg/model"
 )
@@ -39,7 +41,7 @@ type ReviewOutcome struct {
 //	current=user_override,    different config   → pending_conflict
 //	current=system_default,   any                → accept (auto)
 func Review(current Source, currentConfig, suggestedConfig []byte) ReviewOutcome {
-	sameConfig := bytes.Equal(currentConfig, suggestedConfig)
+	sameConfig := configsEqual(currentConfig, suggestedConfig)
 
 	switch current {
 	case SourcePluginSuggested:
@@ -86,6 +88,55 @@ func Review(current Source, currentConfig, suggestedConfig []byte) ReviewOutcome
 			Reason: "unknown source, accepting plugin suggestion",
 		}
 	}
+}
+
+// configsEqual reports whether two rule configs mean the same thing.
+//
+// Byte equality is not enough. currentConfig comes back from a Postgres jsonb
+// column, which re-renders with its own key order and a space after every
+// colon; suggestedConfig is whatever literal the plugin compiled in. A plugin
+// declaring `{"direction":"down","consecutive":4,"tolerance":0.002}` reads back
+// as `{"direction": "down", "tolerance": 0.002, "consecutive": 4}`. Those
+// differ as bytes on essentially every rule, so bytes.Equal made every core
+// restart look like a config change: each re-registration retired the current
+// row and minted a new version with identical content, 9 rows per stack
+// restart, until "rule version" no longer meant "something changed".
+//
+// Numbers compare by their literal text (json.Decoder.UseNumber), not as
+// float64. That can call two spellings of one number different (2e-3 vs 0.002),
+// which costs one spurious version — the pre-existing behaviour. float64 would
+// do the opposite: call two different integers past 2^53 equal and silently
+// swallow a real config change. Fail toward versioning.
+func configsEqual(current, suggested []byte) bool {
+	if bytes.Equal(current, suggested) {
+		return true
+	}
+	cur, ok := decodeJSONValue(current)
+	if !ok {
+		return false
+	}
+	sug, ok := decodeJSONValue(suggested)
+	if !ok {
+		return false
+	}
+	return reflect.DeepEqual(cur, sug)
+}
+
+// decodeJSONValue decodes exactly one JSON value, keeping numbers as text.
+// Anything unparseable or followed by trailing content is reported as
+// undecodable so the caller falls back to "changed" rather than guessing.
+func decodeJSONValue(raw []byte) (any, bool) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil, false
+	}
+	if dec.More() {
+		return nil, false
+	}
+	return v, true
 }
 
 // NeedsVersionForDisplayName is true when Review would skip (identical
