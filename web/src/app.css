@@ -86,37 +86,262 @@
         #alert-detail { display: none; }
         #alert-detail.active { display: block; }
 
-        /* ── Pulse dashboard: ambient status bar (R1) ── */
-        #status-bar {
-            display: flex;
-            flex-wrap: wrap;
+        /* ── Top-Right Ambient Status Ticker (R1) ── */
+        .status-ticker-wrapper {
+            display: inline-flex;
             align-items: center;
-            gap: 0.25rem 1rem;
-            padding: 0.45rem 2rem;
+            gap: 8px;
+            background: #131a2e;
+            border: 1px solid #2a3450;
+            border-radius: 18px;
+            padding: 0 12px;
+            height: 32px;
+            box-sizing: border-box;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            user-select: none;
+        }
+        .status-ticker-wrapper:hover {
+            border-color: #64ffda;
+            background: #16223e;
+            box-shadow: 0 2px 10px rgba(100, 255, 218, 0.1);
+        }
+        .status-ticker-wrapper.offline {
+            border-color: #e85a5a;
+            background: #231219;
+            color: #e85a5a;
+        }
+        .status-ticker {
+            position: relative;
+            height: 32px;
+            line-height: 32px;
+            overflow: hidden;
+            min-width: 180px;
+        }
+        .ticker-slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
             font-size: 0.78rem;
             color: #8892b0;
-            background: #0d1220;
-            border-bottom: 1px solid #1a2340;
-            opacity: 0.75; /* ambient light, not a focus target */
+            opacity: 0;
+            transform: translateY(100%);
+            transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: none;
+            white-space: nowrap;
         }
-        #status-bar .sep { color: #2a3450; }
-        #status-bar .warn { color: #e8c34a; font-weight: 600; }
-        #status-bar .danger { color: #e85a5a; font-weight: 600; }
-        #status-bar.offline { opacity: 1; color: #e85a5a; }
-        #sb-plugins { cursor: help; }
+        .ticker-slide.active {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+        .ticker-slide.slide-up {
+            opacity: 0;
+            transform: translateY(-100%);
+        }
+        .ticker-slide.slide-down {
+            opacity: 0;
+            transform: translateY(100%);
+        }
+        .ticker-icon {
+            font-size: 0.85rem;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+        .ticker-content {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .ticker-content .warn {
+            color: #e8c34a;
+            font-weight: 600;
+        }
+        .ticker-content .danger {
+            color: #e85a5a;
+            font-weight: 600;
+        }
+        .ticker-indicators {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .ticker-dot {
+            width: 3px;
+            height: 3px;
+            border-radius: 50%;
+            background: #2a3450;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .ticker-dot:hover {
+            background: #8892b0;
+        }
+        .ticker-dot.active {
+            background: #64ffda;
+            height: 7px;
+            border-radius: 2px;
+        }
 
-        /* Per-plugin detail strip, toggled by clicking the plugin segment */
-        #plugin-detail {
-            padding: 0.4rem 2rem;
+        /* ── Plugins Tab & Cards ── */
+        .plugins-summary {
+            font-size: 0.82rem;
+            color: #8892b0;
             background: #0d1220;
-            border-bottom: 1px solid #1a2340;
+            border: 1px solid #1e2a45;
+            border-radius: 6px;
+            padding: 0.6rem 1rem;
+        }
+        .plugins-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+            gap: 1.25rem;
+            margin-top: 1rem;
+        }
+        .plugin-card {
+            background: #1a2340;
+            border: 1px solid #2a3450;
+            border-radius: 10px;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.85rem;
+            transition: border-color 0.2s, transform 0.2s;
+        }
+        .plugin-card:hover {
+            border-color: #3e4e75;
+        }
+        .plugin-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #232f4e;
+            padding-bottom: 0.75rem;
+            gap: 0.5rem;
+        }
+        .plugin-card-title {
+            display: flex;
+            align-items: baseline;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        .plugin-name {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #e0e6f0;
+        }
+        .plugin-id-sub {
+            font-size: 0.7rem;
+            color: #8892b0;
+            font-family: monospace;
+        }
+        .plugin-status-badge {
+            font-size: 0.72rem;
+            font-weight: 500;
+            padding: 2px 8px;
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+        .plugin-status-badge.healthy {
+            background: rgba(45, 212, 167, 0.15);
+            color: #2dd4a7;
+            border: 1px solid rgba(45, 212, 167, 0.3);
+        }
+        .plugin-status-badge.degraded {
+            background: rgba(232, 195, 74, 0.15);
+            color: #e8c34a;
+            border: 1px solid rgba(232, 195, 74, 0.3);
+        }
+        .plugin-status-badge.offline {
+            background: rgba(232, 90, 90, 0.15);
+            color: #e85a5a;
+            border: 1px solid rgba(232, 90, 90, 0.3);
+        }
+        .plugin-status-badge.not-ready {
+            background: rgba(232, 90, 90, 0.15);
+            color: #e85a5a;
+            border: 1px solid rgba(232, 90, 90, 0.3);
+        }
+        .plugin-meta-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem 1rem;
+            background: #131a2e;
+            padding: 0.75rem;
+            border-radius: 6px;
+            font-size: 0.78rem;
+        }
+        .plugin-meta-item {
+            display: flex;
+            flex-direction: column;
+        }
+        .plugin-meta-label {
+            color: #8892b0;
+            font-size: 0.7rem;
+        }
+        .plugin-meta-val {
+            color: #e0e6f0;
+            font-weight: 500;
+            margin-top: 2px;
+        }
+        .plugin-alert-box {
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
             font-size: 0.75rem;
+            line-height: 1.4;
+        }
+        .plugin-alert-box.warn {
+            background: rgba(232, 195, 74, 0.12);
+            border: 1px solid rgba(232, 195, 74, 0.3);
+            color: #e8c34a;
+        }
+        .plugin-alert-box.error {
+            background: rgba(232, 90, 90, 0.12);
+            border: 1px solid rgba(232, 90, 90, 0.3);
+            color: #e85a5a;
+        }
+        .plugin-card-actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-top: auto;
+            padding-top: 0.5rem;
+        }
+        .btn-plugin-action {
+            background: #232f4e;
+            color: #64ffda;
+            border: 1px solid #3b4b75;
+            padding: 0.35rem 0.85rem;
+            border-radius: 6px;
+            font-size: 0.78rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .btn-plugin-action:hover:not(:disabled) {
+            background: #2f3e66;
+            border-color: #64ffda;
+        }
+        .btn-plugin-action:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            border-color: #2a3450;
             color: #8892b0;
         }
-        #plugin-detail.hidden { display: none; }
-        #plugin-detail ul { list-style: none; }
-        #plugin-detail li { padding: 2px 0; }
-        #plugin-detail li .offline { color: #e85a5a; }
 
         /* ── Metric Pulse card grid (R2) ── */
         #pulse-section { margin-top: 2rem; }
@@ -259,9 +484,9 @@
         @media (max-width: 640px) {
             header { padding: 1rem; gap: 0.75rem; }
             main { padding: 1rem; min-width: 0; }
-            .grid { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
-            .card { padding: 1rem; min-width: 0; overflow-x: auto; }
-            #status-bar, #plugin-detail { padding-left: 1rem; padding-right: 1rem; }
+            .header-actions { width: 100%; }
+            .status-ticker-wrapper { width: 100%; justify-content: space-between; }
+            .status-ticker { min-width: 0; }
             .tab-bar {
                 max-width: 100%;
                 overflow-x: auto;
@@ -457,13 +682,6 @@
         .btn-deep-research:hover {
             background: #64ffda;
             color: #0a0e1a;
-        }
-        #sb-plugins {
-            cursor: pointer;
-            transition: color 0.15s;
-        }
-        #sb-plugins:hover {
-            color: #64ffda;
         }
         .backfill-menu {
             display: inline-flex;

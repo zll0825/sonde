@@ -1,3 +1,91 @@
+// ── Top-Right Status Bar Ticker: Auto-flips every 5s ──────────────────
+let tickerIndex = 0;
+let tickerTimer = null;
+let isTickerPaused = false;
+
+function initStatusTicker() {
+    const wrapper = document.getElementById('status-ticker-wrapper');
+    if (!wrapper) return;
+
+    // Hover pauses auto-flip so user can read/click comfortably
+    wrapper.addEventListener('mouseenter', () => { isTickerPaused = true; });
+    wrapper.addEventListener('mouseleave', () => { isTickerPaused = false; });
+
+    // Click cycles immediately to next slide
+    wrapper.addEventListener('click', () => {
+        flipTickerSlide();
+        resetTickerTimer();
+    });
+
+    // Directly clickable indicator dots
+    const dots = wrapper.querySelectorAll('.ticker-dot');
+    dots.forEach(dot => {
+        dot.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const targetIdx = parseInt(dot.dataset.dot, 10);
+            if (!isNaN(targetIdx) && targetIdx !== tickerIndex) {
+                goToTickerSlide(targetIdx);
+                resetTickerTimer();
+            }
+        });
+    });
+
+    startTickerTimer();
+}
+
+function resetTickerTimer() {
+    if (tickerTimer) clearInterval(tickerTimer);
+    startTickerTimer();
+}
+
+function startTickerTimer() {
+    if (tickerTimer) clearInterval(tickerTimer);
+    tickerTimer = setInterval(() => {
+        if (!isTickerPaused) {
+            flipTickerSlide();
+        }
+    }, 5000);
+}
+
+function flipTickerSlide() {
+    const ticker = document.getElementById('status-ticker');
+    const slides = ticker ? ticker.querySelectorAll('.ticker-slide') : [];
+    if (!slides.length) return;
+    const nextIdx = (tickerIndex + 1) % slides.length;
+    goToTickerSlide(nextIdx);
+}
+
+function goToTickerSlide(nextIdx) {
+    const ticker = document.getElementById('status-ticker');
+    const slides = ticker ? ticker.querySelectorAll('.ticker-slide') : [];
+    const wrapper = document.getElementById('status-ticker-wrapper');
+    const dots = wrapper ? wrapper.querySelectorAll('.ticker-dot') : [];
+    if (!slides.length || nextIdx === tickerIndex) return;
+
+    const prevIdx = tickerIndex;
+    tickerIndex = nextIdx;
+
+    const prevSlide = slides[prevIdx];
+    const nextSlide = slides[nextIdx];
+
+    if (prevSlide) {
+        prevSlide.classList.remove('active');
+        prevSlide.classList.add('slide-up');
+        setTimeout(() => {
+            prevSlide.classList.remove('slide-up');
+        }, 500);
+    }
+
+    if (nextSlide) {
+        nextSlide.classList.remove('slide-up', 'slide-down');
+        nextSlide.classList.add('active');
+    }
+
+    dots.forEach((dot, i) => {
+        dot.classList.toggle('active', i === tickerIndex);
+    });
+}
+
 // ── R1/R2: /api/status aggregate ──────────────────────────────────────
 async function fetchStatus() {
     try {
@@ -19,72 +107,66 @@ async function fetchStatus() {
     }
 }
 
-
 function renderStatus(data) {
-    const bar = document.getElementById('status-bar');
-    bar.classList.remove('offline');
+    const tickerWrap = document.getElementById('status-ticker-wrapper');
+    if (tickerWrap) tickerWrap.classList.remove('offline');
 
-    const plugins = data.plugins || [];
-    const expected = data.expected_plugins || [];
-    const connected = plugins.filter(p => p.connected).length;
-    const degraded = plugins.filter(p => p.connected && !p.healthy).length;
-    const notReady = expected.filter(p => p.ready === false).length;
-    const pluginsEl = document.getElementById('sb-plugins');
-    const degradedTxt = degraded ? ' · ' + t('status.plugins_degraded', { n: degraded }) : '';
-    const notReadyTxt = notReady ? ' · ' + t('status.plugins_not_ready', { n: notReady }) : '';
-    pluginsEl.textContent = '⚡ ' + t('status.plugins_online', { n: connected }) + degradedTxt + notReadyTxt + ' ▾';
-    pluginsEl.classList.toggle('danger', notReady > 0);
-    const tooltipHead = t('status.plugins_control_hint');
-    const tooltipBody = plugins.map(p =>
-        t('status.plugin_tooltip', {
-            name: p.name,
-            status: pluginHealthLabel(p),
-            time: p.last_collect_at ? relativeTime(p.last_collect_at) : '—',
-            count: p.last_collect_count,
-            err: p.last_collect_error ? ' · ' + p.last_collect_error : ''
-        })
-    ).join('\n');
-    pluginsEl.title = tooltipHead + '\n\n' + tooltipBody;
-
-
-
+    // 1. 指标 (Metrics)
+    const metricsCount = (data.metrics || []).length;
     const metricsEl = document.getElementById('sb-metrics');
-    metricsEl.textContent = t('status.metrics_count', { n: (data.metrics || []).length });
+    if (metricsEl) {
+        metricsEl.textContent = t('status.metrics_count', { n: metricsCount });
+    }
 
+    // 2. 告警数量 (Alert budget)
     const budget = data.budget || {};
     const today = Number.isFinite(budget.real_today) ? budget.real_today : (budget.today || 0);
     const limit = Number.isFinite(budget.real_limit) ? budget.real_limit : (budget.limit || 10);
     const hasDetailedBudget = Number.isFinite(budget.real_today);
     const budgetEl = document.getElementById('sb-budget');
-    budgetEl.textContent = hasDetailedBudget
-        ? t('status.budget_detailed', {
-            today: today,
-            limit: limit,
-            mock: budget.mock_today || 0,
-            test: budget.test_today || 0,
-            unknown: budget.unknown_today || 0
-        })
-        : t('status.budget_simple', { today: today, limit: limit });
-    budgetEl.classList.toggle('warn', today >= 8 && today <= limit);
-    budgetEl.classList.toggle('danger', budget.real_over_budget === true || today > limit);
+    if (budgetEl) {
+        budgetEl.textContent = hasDetailedBudget
+            ? t('status.budget_detailed', {
+                today: today,
+                limit: limit,
+                mock: budget.mock_today || 0,
+                test: budget.test_today || 0,
+                unknown: budget.unknown_today || 0
+            })
+            : t('status.budget_simple', { today: today, limit: limit });
+        budgetEl.classList.toggle('warn', today >= 8 && today <= limit);
+        budgetEl.classList.toggle('danger', budget.real_over_budget === true || today > limit);
+    }
 
+    // 3. 最新数据 (Latest data)
     const rel = relativeTime(data.latest_data_at);
-    document.getElementById('sb-latest').textContent =
-        rel ? t('status.latest_data', { time: rel }) : t('status.no_data');
+    const latestEl = document.getElementById('sb-latest');
+    if (latestEl) {
+        latestEl.textContent = rel ? t('status.latest_data', { time: rel }) : t('status.no_data');
+    }
 
-    renderPluginDetail(data);
+    // Comprehensive tooltip on top-right ticker
+    if (tickerWrap) {
+        const mTxt = '📊 ' + t('status.ticker_metrics_title') + ': ' + t('status.metrics_count', { n: metricsCount });
+        const bTxt = '🔔 ' + t('status.ticker_budget_title') + ': ' + (budgetEl ? budgetEl.textContent : '—');
+        const lTxt = '⏱️ ' + t('status.ticker_latest_title') + ': ' + (rel ? t('status.latest_data', { time: rel }) : t('status.no_data'));
+        tickerWrap.title = mTxt + '\n' + bTxt + '\n' + lTxt + '\n\n' + t('status.ticker_tooltip');
+    }
+
+    renderPluginsTab(data);
     renderPulseGrid(data.metrics || []);
 }
 
 function renderStatusBarError() {
-    const bar = document.getElementById('status-bar');
-    bar.classList.add('offline');
-    const pluginsEl = document.getElementById('sb-plugins');
-    pluginsEl.textContent = t('status.interrupted');
-    pluginsEl.classList.remove('danger');
-    document.getElementById('sb-metrics').textContent = '';
-    document.getElementById('sb-budget').textContent = '';
-    document.getElementById('sb-latest').textContent = '';
+    const tickerWrap = document.getElementById('status-ticker-wrapper');
+    if (tickerWrap) tickerWrap.classList.add('offline');
+
+    for (const id of ['sb-metrics', 'sb-budget', 'sb-latest']) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = t('status.interrupted');
+    }
+
+    renderPluginsTabError();
 }
 
 function pluginHealthLabel(plugin) {
@@ -92,64 +174,207 @@ function pluginHealthLabel(plugin) {
     return plugin.healthy ? t('status.plugin_healthy') : t('status.plugin_unhealthy');
 }
 
-function renderPluginDetail(data) {
-    const wrap = document.getElementById('plugin-detail');
-    if (wrap.classList.contains('hidden')) return;
-    wrap.textContent = '';
-    const views = mergePluginViews(data || {});
-    const ul = document.createElement('ul');
-    for (const view of views) {
-        const live = view.live || {};
-        const exp = view.expected || {};
-        const li = document.createElement('li');
-        const name = document.createElement('strong');
-        name.textContent = live.name || exp.name || view.id;
-        li.appendChild(name);
-        const ready = exp.ready !== false;
-        const meta = document.createElement('span');
-        meta.className = (live.healthy && ready) ? '' : 'offline';
-        const readyLabel = ready ? pluginHealthLabel(live) : t('status.plugin_not_ready');
-        meta.textContent = ' · ' + readyLabel + ' · ' + (live.last_collect_at ? relativeTime(live.last_collect_at) : '—') + ' · ' + (live.last_collect_count || 0);
-        li.appendChild(meta);
-        if (!ready) {
-            const missing = Object.keys(exp.secrets_present || {}).filter(k => !exp.secrets_present[k]);
-            const warn = document.createElement('div');
-            warn.className = 'offline';
-            warn.textContent = t('status.missing_secrets', { keys: missing.join(', ') || '—' });
-            li.appendChild(warn);
-        }
-        if (live.last_collect_error) {
-            const error = document.createElement('div');
-            error.className = 'offline';
-            error.textContent = t('status.plugin_error', {
-                err: live.last_collect_error,
-                count: live.consecutive_errors || 0,
-                duration: live.last_collect_duration_ms || 0
-            });
-            li.appendChild(error);
-        }
-        const actions = document.createElement('div');
-        actions.style.cssText = 'margin-top:0.35rem; display:flex; gap:0.4rem; flex-wrap:wrap;';
-        const pluginID = live.id || exp.id;
-        const syncBtn = document.createElement('button');
-        syncBtn.textContent = t('status.btn_sync');
-        syncBtn.style.cssText = 'background:#2a3450; color:#64ffda; border:1px solid #64ffda; padding:0.15rem 0.45rem; border-radius:4px; font-size:0.72rem; cursor:pointer;';
-        syncBtn.disabled = !live.connected;
-        syncBtn.title = live.connected ? '' : t('status.sync_need_online');
-        syncBtn.addEventListener('click', () => postControl('sync', pluginID, syncBtn));
-        actions.appendChild(syncBtn);
-        const backfillBtn = document.createElement('button');
-        const canBackfill = !!(exp.capabilities && exp.capabilities.windowed_backfill);
-        backfillBtn.textContent = t('status.btn_backfill');
-        backfillBtn.style.cssText = 'background:#2a3450; color:#64ffda; border:1px solid #64ffda; padding:0.15rem 0.45rem; border-radius:4px; font-size:0.72rem; cursor:pointer;';
-        backfillBtn.disabled = !canBackfill;
-        backfillBtn.title = canBackfill ? '' : t('status.backfill_disabled');
-        backfillBtn.addEventListener('click', () => openBackfillMenu(pluginID, actions, backfillBtn));
-        actions.appendChild(backfillBtn);
-        li.appendChild(actions);
-        ul.appendChild(li);
+function renderPluginsTab(data) {
+    const list = document.getElementById('plugins-list');
+    const summary = document.getElementById('plugins-summary');
+    if (!list) return;
+
+    data = data || statusData || {};
+    const plugins = data.plugins || [];
+    const expected = data.expected_plugins || [];
+    const views = mergePluginViews(data);
+
+    if (summary) {
+        const connected = plugins.filter(p => p.connected).length;
+        const degraded = plugins.filter(p => p.connected && !p.healthy).length;
+        const notReady = expected.filter(p => p.ready === false).length;
+        summary.textContent = t('plugins.summary', {
+            total: views.length,
+            connected: connected,
+            degraded: degraded,
+            notReady: notReady
+        });
     }
-    wrap.appendChild(ul);
+
+    if (!views.length) {
+        list.textContent = '';
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = t('plugins.empty');
+        list.appendChild(empty);
+        return;
+    }
+
+    list.textContent = '';
+    for (const view of views) {
+        list.appendChild(buildPluginCard(view));
+    }
+}
+
+function renderPluginsTabError() {
+    const list = document.getElementById('plugins-list');
+    const summary = document.getElementById('plugins-summary');
+    if (summary) summary.textContent = t('status.interrupted');
+    if (list && !list.children.length) {
+        list.textContent = '';
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = t('status.interrupted');
+        list.appendChild(empty);
+    }
+}
+
+function buildPluginCard(view) {
+    const live = view.live || {};
+    const exp = view.expected || {};
+    const pluginID = live.id || exp.id || view.id;
+    const nameStr = live.name || exp.name || pluginID;
+    const ready = exp.ready !== false;
+
+    const card = document.createElement('div');
+    card.className = 'plugin-card';
+
+    // Header: title + status badge
+    const header = document.createElement('div');
+    header.className = 'plugin-card-header';
+
+    const titleBox = document.createElement('div');
+    titleBox.className = 'plugin-card-title';
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'plugin-name';
+    nameEl.textContent = nameStr;
+    titleBox.appendChild(nameEl);
+
+    const idEl = document.createElement('span');
+    idEl.className = 'plugin-id-sub';
+    idEl.textContent = pluginID;
+    titleBox.appendChild(idEl);
+    header.appendChild(titleBox);
+
+    const badge = document.createElement('span');
+    badge.className = 'plugin-status-badge';
+    if (!ready) {
+        badge.classList.add('not-ready');
+        badge.textContent = '● ' + t('status.plugin_not_ready');
+    } else if (!live.connected) {
+        badge.classList.add('offline');
+        badge.textContent = '● ' + t('status.plugin_offline');
+    } else if (!live.healthy) {
+        badge.classList.add('degraded');
+        badge.textContent = '● ' + t('status.plugin_unhealthy');
+    } else {
+        badge.classList.add('healthy');
+        badge.textContent = '● ' + t('status.plugin_healthy');
+    }
+    header.appendChild(badge);
+    card.appendChild(header);
+
+    // Meta grid: last collect, count, duration, consecutive errors
+    const metaGrid = document.createElement('div');
+    metaGrid.className = 'plugin-meta-grid';
+
+    // 1. Last collect
+    const colLast = document.createElement('div');
+    colLast.className = 'plugin-meta-item';
+    const lblLast = document.createElement('span');
+    lblLast.className = 'plugin-meta-label';
+    lblLast.textContent = t('plugins.last_collect');
+    const valLast = document.createElement('span');
+    valLast.className = 'plugin-meta-val';
+    valLast.textContent = live.last_collect_at ? relativeTime(live.last_collect_at) : '—';
+    colLast.appendChild(lblLast);
+    colLast.appendChild(valLast);
+    metaGrid.appendChild(colLast);
+
+    // 2. Count
+    const colCount = document.createElement('div');
+    colCount.className = 'plugin-meta-item';
+    const lblCount = document.createElement('span');
+    lblCount.className = 'plugin-meta-label';
+    lblCount.textContent = t('plugins.collect_count');
+    const valCount = document.createElement('span');
+    valCount.className = 'plugin-meta-val';
+    valCount.textContent = t('plugins.val_count', { n: live.last_collect_count != null ? live.last_collect_count : 0 });
+    colCount.appendChild(lblCount);
+    colCount.appendChild(valCount);
+    metaGrid.appendChild(colCount);
+
+    // 3. Duration
+    const colDur = document.createElement('div');
+    colDur.className = 'plugin-meta-item';
+    const lblDur = document.createElement('span');
+    lblDur.className = 'plugin-meta-label';
+    lblDur.textContent = t('plugins.duration');
+    const valDur = document.createElement('span');
+    valDur.className = 'plugin-meta-val';
+    valDur.textContent = t('plugins.val_duration', { n: live.last_collect_duration_ms != null ? live.last_collect_duration_ms : 0 });
+    colDur.appendChild(lblDur);
+    colDur.appendChild(valDur);
+    metaGrid.appendChild(colDur);
+
+    // 4. Consecutive errors
+    const colErr = document.createElement('div');
+    colErr.className = 'plugin-meta-item';
+    const lblErr = document.createElement('span');
+    lblErr.className = 'plugin-meta-label';
+    lblErr.textContent = t('plugins.consecutive_errors');
+    const valErr = document.createElement('span');
+    valErr.className = 'plugin-meta-val';
+    valErr.textContent = t('plugins.val_errors', { n: live.consecutive_errors || 0 });
+    if (live.consecutive_errors > 0) valErr.style.color = '#e85a5a';
+    colErr.appendChild(lblErr);
+    colErr.appendChild(valErr);
+    metaGrid.appendChild(colErr);
+
+    card.appendChild(metaGrid);
+
+    // Missing secrets warning
+    if (!ready) {
+        const missing = Object.keys(exp.secrets_present || {}).filter(k => !exp.secrets_present[k]);
+        const warnBox = document.createElement('div');
+        warnBox.className = 'plugin-alert-box warn';
+        warnBox.textContent = t('status.missing_secrets', { keys: missing.join(', ') || '—' });
+        card.appendChild(warnBox);
+    }
+
+    // Error alert box
+    if (live.last_collect_error) {
+        const errorBox = document.createElement('div');
+        errorBox.className = 'plugin-alert-box error';
+        errorBox.textContent = t('status.plugin_error', {
+            err: live.last_collect_error,
+            count: live.consecutive_errors || 0,
+            duration: live.last_collect_duration_ms || 0
+        });
+        card.appendChild(errorBox);
+    }
+
+    // Operational actions
+    const actions = document.createElement('div');
+    actions.className = 'plugin-card-actions';
+
+    const syncBtn = document.createElement('button');
+    syncBtn.type = 'button';
+    syncBtn.className = 'btn-plugin-action';
+    syncBtn.textContent = '⚡ ' + t('status.btn_sync');
+    syncBtn.disabled = !live.connected;
+    syncBtn.title = live.connected ? '' : t('status.sync_need_online');
+    syncBtn.addEventListener('click', () => postControl('sync', pluginID, syncBtn));
+    actions.appendChild(syncBtn);
+
+    const backfillBtn = document.createElement('button');
+    backfillBtn.type = 'button';
+    backfillBtn.className = 'btn-plugin-action';
+    const canBackfill = !!(exp.capabilities && exp.capabilities.windowed_backfill);
+    backfillBtn.textContent = '⏱️ ' + t('status.btn_backfill');
+    backfillBtn.disabled = !canBackfill;
+    backfillBtn.title = canBackfill ? '' : t('status.backfill_disabled');
+    backfillBtn.addEventListener('click', () => openBackfillMenu(pluginID, actions, backfillBtn));
+    actions.appendChild(backfillBtn);
+
+    card.appendChild(actions);
+    return card;
 }
 
 function openBackfillMenu(pluginID, parentEl, backfillBtn) {
@@ -239,12 +464,6 @@ async function postControl(kind, pluginID, btn, options = {}) {
             btn.disabled = !live.connected;
         }
     }
-}
-
-function togglePluginDetail() {
-    const wrap = document.getElementById('plugin-detail');
-    wrap.classList.toggle('hidden');
-    if (!wrap.classList.contains('hidden')) renderPluginDetail(statusData || {});
 }
 
 // ── R2: Metric Pulse cards ───────────────────────────────────────────
