@@ -50,7 +50,7 @@ func TestFrontendJSHasNoHardcodedCJK(t *testing.T) {
 			t.Fatal(err)
 		}
 		for i, line := range strings.Split(stripJSComments(string(raw)), "\n") {
-			if col := strings.IndexFunc(line, isCJK); col >= 0 {
+			if strings.ContainsFunc(line, isCJK) {
 				t.Errorf("web/src/%s:%d has hardcoded CJK outside i18n.js: %q\n"+
 					"\tmove the text into TRANSLATIONS and render it with t('<key>', {...})",
 					e.Name(), i+1, strings.TrimSpace(line))
@@ -60,8 +60,10 @@ func TestFrontendJSHasNoHardcodedCJK(t *testing.T) {
 }
 
 // stripJSComments blanks out // and /* */ comments while preserving line count.
-// It is deliberately naive — a "//" inside a string literal truncates the rest
-// of that line, which can only ever hide a violation, never invent one.
+// It is deliberately naive about string literals: a "//" inside one truncates
+// the rest of that line, and a "/*" inside one (e.g. '*/*') blanks everything
+// up to the next "*/", possibly many lines. Both can only ever hide a
+// violation, never invent one.
 func stripJSComments(src string) string {
 	var b strings.Builder
 	b.Grow(len(src))
@@ -76,22 +78,44 @@ func stripJSComments(src string) string {
 				out = ""
 			}
 		}
-		if !inBlock {
-			if idx := strings.Index(out, "/*"); idx >= 0 {
-				if end := strings.Index(out[idx:], "*/"); end >= 0 {
-					out = out[:idx] + out[idx+end+2:]
-				} else {
-					out, inBlock = out[:idx], true
-				}
+		// Loop: a line can carry more than one block comment, and stripping
+		// only the first would leave CJK inside the second looking like code.
+		// Whichever opener comes first wins, so a "/*" inside a // comment
+		// does not open a block that swallows the following lines.
+		for !inBlock {
+			blk := strings.Index(out, "/*")
+			if lc := strings.Index(out, "//"); lc >= 0 && (blk < 0 || lc < blk) {
+				out = out[:lc]
+				break
 			}
-			if idx := strings.Index(out, "//"); idx >= 0 {
-				out = out[:idx]
+			if blk < 0 {
+				break
 			}
+			// Search past the opener: in "/*/" the middle "*" is not a closer.
+			if end := strings.Index(out[blk+2:], "*/"); end >= 0 {
+				out = out[:blk] + out[blk+2+end+2:]
+				continue
+			}
+			out, inBlock = out[:blk], true
 		}
 		b.WriteString(out)
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+func TestStripJSComments(t *testing.T) {
+	for _, tc := range []struct{ name, in, want string }{
+		{"two block comments on one line", "a /* 一 */ b /* 二 */ c", "a  b  c\n"},
+		{"slash after opener is not a closer", "x /*/ 三 */ y", "x  y\n"},
+		{"block opener inside line comment", "x // see /* 四\nconst s = '五'", "x \nconst s = '五'\n"},
+		{"line comment after block comment", "a /* 一 */ b // 二", "a  b \n"},
+		{"multi-line block then more on closing line", "/* open\n 八 */ z /* 九 */ w", "\n z  w\n"},
+	} {
+		if got := stripJSComments(tc.in); got != tc.want {
+			t.Errorf("%s: stripJSComments(%q) = %q, want %q", tc.name, tc.in, got, tc.want)
+		}
+	}
 }
 
 func isCJK(r rune) bool {
