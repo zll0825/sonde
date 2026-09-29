@@ -32,7 +32,7 @@ jobs:
       - name: go vet
         run: |
           go vet ./...
-          for m in plugins/etf plugins/crypto plugins/macro plugins/commodities plugins/fedops; do (cd "$m" && go vet ./...); done
+          for m in plugins/etf plugins/crypto plugins/macro plugins/commodities plugins/fedops plugins/cnmacro plugins/positioning; do (cd "$m" && go vet ./...); done
 
       - name: buf lint
         uses: bufbuild/buf-setup-action@v1
@@ -56,7 +56,7 @@ jobs:
           # NOTE: `go build ./...` only matches the root module — plugin
           # modules must be built explicitly or they escape CI entirely.
           go build ./...
-          for m in plugins/etf plugins/crypto plugins/macro plugins/commodities plugins/fedops; do (cd "$m" && go build ./...); done
+          for m in plugins/etf plugins/crypto plugins/macro plugins/commodities plugins/fedops plugins/cnmacro plugins/positioning; do (cd "$m" && go build ./...); done
 
   test:
     name: Test
@@ -105,4 +105,4 @@ jobs:
       - name: Run full tests and race gates
         run: |
           go test -v -race -count=1 ./...
-          for m in plugins/etf plugins/crypto plugins/macro plugins/commodities plugins/fedops; do (cd "$m" && go test -v -race -count=1 ./...); done
+          for m in plugins/etf plugins/crypto plugins/macro plugins/commodities plugins/fedops plugins/cnmacro plugins/positioning; do (cd "$m" && go test -v -race -count=1 ./...); done

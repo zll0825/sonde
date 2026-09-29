@@ -151,7 +151,7 @@ API command_log → CommandDispatcher → Sync/BackfillCommand → Plugin → �
 | commodities | `oil.energy.wti` | FRED | ✅ 真实 (WTI 原油) |
 | commodities | `metal.industrial.copper` | FRED | ✅ 真实 (铜现货价格) |
  
-上表指标均已切换为真实或基于真实数据的代理源（fedops 插件的 TGA / RRP / SRF / SOFR / OFR FSI 见其 manifest），合成 Mock 指标已彻底淘汰。
+上表指标均已切换为真实或基于真实数据的代理源（fedops 插件的 TGA / 国债拍卖 / RRP / SRF / SOFR / OFR FSI、cnmacro 插件的中国流动性指标、positioning 插件的 CFTC 持仓与 FINRA 融资余额见各自 manifest），合成 Mock 指标已彻底淘汰。
  
 ## 测试
  
