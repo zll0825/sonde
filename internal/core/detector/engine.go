@@ -3,7 +3,7 @@
 // 同向变动）、volatility（变异系数越界）、moving_average（穿越自身均线）。
 // 触发不等于告警——去重与生命周期由 alert 包负责。
 //
-// 实际生效的注册面在 cmd/core/main.go 的 newDetectorEngine；插件申报了未注册
+// 实际生效的注册面是 NewDefaultEngine（cmd/core 与 E2E 测试共用）；插件申报了未注册
 // 的检测器名，规则会每轮打 WARN 且永不触发，不会报错。
 package detector
 
@@ -63,6 +63,18 @@ func NewEngine(detectors ...Detector) *Engine {
 		d[det.Name()] = det
 	}
 	return &Engine{detectors: d}
+}
+
+// NewDefaultEngine registers every built-in detector. It is the single
+// registration surface shared by cmd/core and the end-to-end harness.
+func NewDefaultEngine() *Engine {
+	return NewEngine(
+		ThresholdDetector{},
+		PercentileDetector{},
+		TrendDetector{},
+		VolatilityDetector{},
+		MovingAverageDetector{},
+	)
 }
 
 // Names returns the registered detector names in sorted order.
