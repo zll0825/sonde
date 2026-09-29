@@ -1,5 +1,5 @@
 // Package collector 提供 crypto 插件的数据采集器：CoinGecko / mempool.space /
-// blockchain.com / DefiLlama 真实源与离线 mock。使用 SafeHTTPClient 进行 API 保护。
+// blockchain.com / DefiLlama / TFTC / OKX / Deribit 真实源与离线 mock。使用 SafeHTTPClient 进行 API 保护。
 package collector
 
 import (
@@ -49,6 +49,9 @@ type RealCollector struct {
 	mempoolClient   *provider.SafeHTTPClient
 	blockchainInfo  *BlockchainInfoCollector
 	stablecoins     *StablecoinCollector
+	etfFlows        *TFTCCollector
+	okx             *OKXCollector
+	deribit         *DeribitCollector
 }
 
 // NewRealCollector creates a crypto collector with safe HTTP clients.
@@ -58,6 +61,9 @@ func NewRealCollector() *RealCollector {
 		mempoolClient:   provider.NewSafeHTTPClient(provider.MempoolConfig()),
 		blockchainInfo:  NewBlockchainInfoCollector(),
 		stablecoins:     NewStablecoinCollector(),
+		etfFlows:        NewTFTCCollector(),
+		okx:             NewOKXCollector(),
+		deribit:         NewDeribitCollector(),
 	}
 }
 
@@ -146,8 +152,10 @@ func (r *RealCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 		snaps = append(snaps, formatStablecoinSnapshots([]time.Time{supplyTime}, []float64{supply}, time.Now())...)
 	}
 
+	snaps = append(snaps, r.latestPositioning(ctx)...)
+
 	if len(snaps) == 0 {
-		return nil, fmt.Errorf("all crypto sources (CoinGecko, mempool, blockchain.com, DefiLlama) failed")
+		return nil, fmt.Errorf("all crypto sources (CoinGecko, mempool, blockchain.com, DefiLlama, TFTC, OKX, Deribit) failed")
 	}
 	return snaps, nil
 }
@@ -246,6 +254,8 @@ func (r *RealCollector) GetSnapshotsForWindow(ctx context.Context, start, end ti
 		snaps = append(snaps, stSnaps...)
 	}
 
+	snaps = append(snaps, r.historyPositioning(ctx, start, end)...)
+
 	if len(snaps) == 0 {
 		return nil, fmt.Errorf("all crypto history sources failed for window [%s, %s]",
 			start.Format("2006-01-02"), end.Format("2006-01-02"))
@@ -270,7 +280,7 @@ func (r *RealCollector) fetchHistoricalPrices(ctx context.Context, coinID string
 		if err != nil {
 			return all, fmt.Errorf("window %s..%s: %w", cur.Format("2006-01-02"), end.Format("2006-01-02"), err)
 		}
-		all = append(snaps, snaps...)
+		all = append(all, snaps...)
 		cur = end
 
 		// Rate-limit-friendly delay — respects ctx cancellation

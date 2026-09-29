@@ -1,0 +1,106 @@
+name: cnmacro
+version: "0.1.0"
+description: China liquidity — M1/M2 growth, AFRE flow, DR007, PBoC 7-day reverse repo rate, LPR — no secrets
+capabilities:
+  windowedBackfill: true
+  maxBackfillDays: 3650
+  requiresSecrets: []
+  mockAvailable: true
+entities:
+  - id: CN
+    name: 中国
+    namespace: cn
+    type: market
+    tags: [cn]
+metrics:
+  - id: cn.mkt.m2_yoy
+    name: M2 同比增速（%）
+    description: >-
+      广义货币供应量 M2 期末余额同比增速（货币供应量，非基础货币），取人民银行公布的官方同比。
+      数据来源：东方财富数据中心 RPT_ECONOMY_CURRENCY_SUPPLY（转载人民银行金融统计数据，
+      M2 余额已与人民银行 2026 年货币供应量表逐月核对一致）；东方财富为备源，官方渠道为人民银行调查统计司。
+      观测期为当月，时间戳取当月 1 日；通常于次月中旬发布。
+    unit: "%"
+    frequency: monthly
+    entity: CN
+  - id: cn.mkt.m1_yoy
+    name: M1 同比增速（%）
+    description: >-
+      狭义货币供应量 M1 期末余额同比增速，取人民银行公布的官方同比。
+      口径断裂：自 2025 年 1 月起 M1 纳入个人活期存款与非银行支付机构客户备付金，
+      2025 年前后数值口径不同、不可直接拼接或放在同一分位数样本中比较。
+      数据来源：东方财富数据中心 RPT_ECONOMY_CURRENCY_SUPPLY（转载人民银行）。时间戳取当月 1 日。
+    unit: "%"
+    frequency: monthly
+    entity: CN
+  - id: cn.mkt.m1_m2_gap
+    name: M1−M2 同比剪刀差（百分点）
+    description: >-
+      M1 同比减 M2 同比，单位百分点（插件内由同一行数据计算，非余额相减；M1 含于 M2，余额差恒负）。
+      受 2025 年 1 月 M1 口径调整影响，2025 年前后的历史分位数不可比。
+      数据来源：东方财富数据中心 RPT_ECONOMY_CURRENCY_SUPPLY（转载人民银行）。
+    unit: pp
+    frequency: monthly
+    entity: CN
+  - id: cn.mkt.social_financing
+    name: 社会融资规模增量（人民币元）
+    description: >-
+      当月社会融资规模增量（流量），人民银行原表单位亿元，此处 ×1e8 换算为元。
+      数据来源：中国人民银行调查统计司「社会融资规模增量统计表」（各年度统计数据页）。
+      含政府债券发行节奏，并非纯实体融资需求；统计口径曾多次扩充（如纳入地方政府专项债券、
+      国债与地方政府一般债券），跨年比较需谨慎。每个年份取该年度页表格中本年各月的首次出现值，
+      之后年度的修订不回写。时间戳取当月 1 日；通常于次月中旬发布。
+    unit: CNY
+    frequency: monthly
+    entity: CN
+  - id: cn.mkt.dr007
+    name: DR007 存款类机构 7 天质押式回购加权利率（%）
+    description: >-
+      银行间市场存款类机构以利率债为质押的 7 天期回购加权平均利率。这是市场利率，不是政策利率；
+      衡量政策松紧应看其与 7 天逆回购操作利率的利差（cn.mkt.dr007_omo_spread）。
+      数据来源：中国外汇交易中心（CFETS）中国货币网 prr-md.json（当日盘中数据，每约 15 分钟更新）
+      与 prr-chrt.csv（近约 3 个月历史）。当日值在收盘确认前以 preliminary 等级上报，
+      次日由历史文件的终值覆盖；历史回填深度受 CSV 仅约 3 个月所限。
+    unit: "%"
+    frequency: daily
+    entity: CN
+  - id: cn.mkt.omo_7d_rate
+    name: 央行 7 天期逆回购操作利率（%）
+    description: >-
+      中国人民银行公开市场 7 天期逆回购操作的中标/固定利率，仅在有 7 天期操作且公告给出利率的日子产生观测；
+      操作量为零或不开展的日子不产生观测。
+      数据来源：中国人民银行货币政策司「公开市场业务交易公告」逐篇解析。为控制请求量，
+      每次采集最多读取约 10–20 篇公告，窗口回填深度因此有限。
+    unit: "%"
+    frequency: daily
+    entity: CN
+  - id: cn.mkt.dr007_omo_spread
+    name: DR007 − 7 天逆回购利率（bp）
+    description: >-
+      DR007 减去截至同日（含）最近一次公告的 7 天期逆回购操作利率，单位基点；两者都有时才产生观测，
+      逆回购利率向前延用不超过 31 天。受缴税、跨季、跨年等时点扰动。
+      数据来源：跨来源派生，DR007 来自中国外汇交易中心（CFETS），逆回购利率来自中国人民银行公开市场业务交易公告。
+    unit: bp
+    frequency: daily
+    entity: CN
+  - id: cn.mkt.lpr_1y
+    name: 1 年期 LPR（%）
+    description: >-
+      1 年期贷款市场报价利率。这是报价利率，不是市场成交利率；按月公布（通常每月 20 日），调整离散。
+      仅采集 2019 年 8 月 20 日 LPR 形成机制改革之后的报价，改革前的旧 LPR 口径不同，已剔除。
+      数据来源：东方财富数据中心 RPTA_WEB_RATE（转载全国银行间同业拆借中心公布值）。
+    unit: "%"
+    frequency: monthly
+    entity: CN
+  - id: cn.mkt.lpr_5y
+    name: 5 年期以上 LPR（%）
+    description: >-
+      5 年期以上贷款市场报价利率。这是报价利率，不是市场成交利率；按月公布（通常每月 20 日），调整离散。
+      自 2019 年 8 月 20 日 LPR 改革起才有该期限报价。
+      数据来源：东方财富数据中心 RPTA_WEB_RATE（转载全国银行间同业拆借中心公布值）。
+    unit: "%"
+    frequency: monthly
+    entity: CN
+relations: []
+rules: []
+changeLog: China liquidity subsystem — M1/M2 growth, AFRE flow, DR007, OMO 7d rate, DR007−OMO spread, LPR; collect only, no rules

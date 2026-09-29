@@ -82,3 +82,23 @@ series:
     series: GDP
     scale: 1.0e9
     frequency: quarterly
+  - metric: us.mkt.bank_credit
+    series: TOTBKCR
+    scale: 1.0e9
+    frequency: weekly
+  - metric: us.mkt.bank_deposits
+    series: DPSACBW027SBOG
+    scale: 1.0e9
+    frequency: weekly
+  - metric: us.mkt.bank_cash_assets
+    series: CASACBW027SBOG
+    scale: 1.0e9
+    frequency: weekly
+  - metric: us.mkt.usd_jpy
+    series: DEXJPUS
+    scale: 1
+    frequency: daily
+  - metric: us.mkt.vix3m
+    series: VXVCLS
+    scale: 1
+    frequency: daily

@@ -69,3 +69,7 @@ func MatchIORB(sofrDate time.Time, iorbs []RatePoint) (RatePoint, bool) {
 func SpreadBP(sofr, iorb float64) float64 {
 	return (sofr - iorb) * 100
 }
+
+func errNonPositive(name string, v float64) error {
+	return fmt.Errorf("%s must be positive, got %v", name, v)
+}

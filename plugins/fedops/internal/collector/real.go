@@ -12,20 +12,22 @@ type windowedProvider interface {
 	pluginrunner.WindowedProvider
 }
 
-// RealCollector composes FiscalData, NY Fed, and OFR. It must not require
+// RealCollector composes FiscalData (TGA, auctions), NY Fed, and OFR. It must not require
 // FRED_API_KEY — a missing FRED key must not fail this plugin.
 type RealCollector struct {
-	tga   windowedProvider
-	nyfed windowedProvider
-	ofr   windowedProvider
+	tga      windowedProvider
+	auctions windowedProvider
+	nyfed    windowedProvider
+	ofr      windowedProvider
 }
 
-// NewRealCollector wires the three public-data collectors.
+// NewRealCollector wires the public-data collectors.
 func NewRealCollector() *RealCollector {
 	return &RealCollector{
-		tga:   NewFiscalDataCollector(),
-		nyfed: NewNYFedCollector(),
-		ofr:   NewOFRCollector(),
+		tga:      NewFiscalDataCollector(),
+		auctions: NewAuctionsCollector(),
+		nyfed:    NewNYFedCollector(),
+		ofr:      NewOFRCollector(),
 	}
 }
 
@@ -49,6 +51,7 @@ func (r *RealCollector) merge(fn func(windowedProvider) ([]pluginrunner.Snapshot
 		p    windowedProvider
 	}{
 		{providerFiscal, r.tga},
+		{providerFiscal + "_auctions", r.auctions},
 		{providerNYFed, r.nyfed},
 		{providerOFR, r.ofr},
 	} {

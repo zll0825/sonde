@@ -16,7 +16,9 @@
 #   - macro-plugin        Fed balance, US yields, USD index, USD/CNY, CPI, inflation (FRED real data)
 #   - crypto-plugin       BTC price (CoinGecko), hash rate (mempool), tx count (blockchain.com)
 #   - commodities-plugin  WTI/copper (FRED)
-#   - fedops-plugin       TGA / RRP / SRF / SOFR / OFR FSI (no API key)
+#   - fedops-plugin       TGA / auctions / RRP / SRF / SOFR / OFR FSI (no API key)
+#   - cnmacro-plugin      China M1/M2, AFRE, DR007, 7d OMO, LPR (no API key)
+#   - positioning-plugin  CFTC COT net positions, FINRA margin debt (no API key)
 #
 # To observe the live pipeline:
 #   SELECT * FROM observations ORDER BY ingested_at DESC;
@@ -193,6 +195,41 @@ services:
       PLUGIN_ID: "fedops"
       COLLECTION_INTERVAL: "1h"
       PROVIDER: "real"
+
+  # cnmacro Plugin: PBoC / CFETS / East Money China liquidity series. No API key.
+  cnmacro-plugin:
+    build:
+      context: ../
+      dockerfile: deployments/Dockerfile.plugin
+      args:
+        PLUGIN_DIR: cnmacro
+    container_name: sonde-cnmacro
+    restart: unless-stopped
+    depends_on:
+      - core
+    environment:
+      CORE_ADDR: "core:50051"
+      PLUGIN_ID: "cnmacro"
+      COLLECTION_INTERVAL: "1h"
+      PROVIDER: "real"
+
+  # Positioning Plugin: CFTC COT (optional CFTC_APP_TOKEN) and FINRA margin debt.
+  positioning-plugin:
+    build:
+      context: ../
+      dockerfile: deployments/Dockerfile.plugin
+      args:
+        PLUGIN_DIR: positioning
+    container_name: sonde-positioning
+    restart: unless-stopped
+    depends_on:
+      - core
+    environment:
+      CORE_ADDR: "core:50051"
+      PLUGIN_ID: "positioning"
+      COLLECTION_INTERVAL: "1h"
+      PROVIDER: "real"
+      CFTC_APP_TOKEN: "${CFTC_APP_TOKEN:-}"
 
 volumes:
   tsdb_data:
