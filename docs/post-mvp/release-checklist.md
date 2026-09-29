@@ -93,6 +93,7 @@ Phase 3 acceptance criteria for the domain-complete real-data coverage release.
 - [x] Source IDs (idempotency keys) unchanged for retained metrics
 - [x] FRED collector hard-fails on missing FRED_API_KEY (no silent mock)
 - [ ] End-to-end pipeline test with real data (manual, see below)
+  - Automated offline counterpart: `TestE2E_MacroFREDReplay` (plugins/macro) replays FRED-format fixtures through the real collector, gRPC, ingestion, detection, alerts, research and notification outbox. It runs in CI; it does not replace the manual run against live FRED.
 - [ ] Soak qualification for sub-MVP stability gate (72h recommended)
 
 ## Known Limitations

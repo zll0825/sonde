@@ -434,17 +434,12 @@ func signalContext() context.Context {
 	return ctx
 }
 
-// newDetectorEngine 是检测器注册的唯一入口。
+// newDetectorEngine 是 core 进程的检测器注册入口；注册面本身在
+// detector.NewDefaultEngine，E2E 测试装配 core 时复用同一份。
 //
 // 提成函数是为了让它可被测试钉住：插件 catalog 里写了一个这里没注册的检测器
 // 名，规则会每轮打 WARN 且永不触发——静默失效，不报错。注册面一旦收缩，
 // TestDetectorRegistrationCoversEveryPluginDetector 会先红。
 func newDetectorEngine() *detector.Engine {
-	return detector.NewEngine(
-		detector.ThresholdDetector{},
-		detector.PercentileDetector{},
-		detector.TrendDetector{},
-		detector.VolatilityDetector{},
-		detector.MovingAverageDetector{},
-	)
+	return detector.NewDefaultEngine()
 }
