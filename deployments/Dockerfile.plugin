@@ -18,6 +18,8 @@ COPY plugins/macro/go.mod ./plugins/macro/go.mod
 COPY plugins/crypto/go.mod ./plugins/crypto/go.mod
 COPY plugins/commodities/go.mod ./plugins/commodities/go.mod
 COPY plugins/fedops/go.mod ./plugins/fedops/go.mod
+COPY plugins/cnmacro/go.mod ./plugins/cnmacro/go.mod
+COPY plugins/positioning/go.mod ./plugins/positioning/go.mod
 
 # Shared root-module packages the plugins import (pluginrunner, proto stubs).
 COPY pkg/ ./pkg/

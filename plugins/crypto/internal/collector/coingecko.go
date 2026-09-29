@@ -1,5 +1,5 @@
 // Package collector 提供 crypto 插件的数据采集器：CoinGecko / mempool.space /
-// blockchain.com 真实源与离线 mock。使用 SafeHTTPClient 进行 API 保护。
+// blockchain.com / DefiLlama / TFTC / OKX / Deribit 真实源与离线 mock。使用 SafeHTTPClient 进行 API 保护。
 package collector
 
 import (
@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"time"
 
@@ -22,6 +23,12 @@ const (
 	providerMempool        = "mempool_space"
 	providerBlockchainInfo = "blockchain_com"
 )
+
+// coingeckoDemoKeyEnv names the optional CoinGecko Demo API key. With a key,
+// requests carry the x-cg-demo-api-key header, which gets past the CloudFront
+// 403 that keyless calls hit from datacenter egress IPs. Without it the
+// collector falls back to keyless calls.
+const coingeckoDemoKeyEnv = "COINGECKO_DEMO_API_KEY"
 
 // priceURLCoinGecko is the /simple/price endpoint.
 const priceURLCoinGecko = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
@@ -46,16 +53,26 @@ const interWindowDelay = 1500 * time.Millisecond
 // sources with rate limiting and circuit breaker protection.
 type RealCollector struct {
 	coingeckoClient *provider.SafeHTTPClient
+	coingeckoKey    string
 	mempoolClient   *provider.SafeHTTPClient
 	blockchainInfo  *BlockchainInfoCollector
+	stablecoins     *StablecoinCollector
+	etfFlows        *TFTCCollector
+	okx             *OKXCollector
+	deribit         *DeribitCollector
 }
 
 // NewRealCollector creates a crypto collector with safe HTTP clients.
 func NewRealCollector() *RealCollector {
 	return &RealCollector{
 		coingeckoClient: provider.NewSafeHTTPClient(provider.CoinGeckoConfig()),
+		coingeckoKey:    os.Getenv(coingeckoDemoKeyEnv),
 		mempoolClient:   provider.NewSafeHTTPClient(provider.MempoolConfig()),
 		blockchainInfo:  NewBlockchainInfoCollector(),
+		stablecoins:     NewStablecoinCollector(),
+		etfFlows:        NewTFTCCollector(),
+		okx:             NewOKXCollector(),
+		deribit:         NewDeribitCollector(),
 	}
 }
 
@@ -85,7 +102,7 @@ type mempoolHashrateHistoryResponse struct {
 	} `json:"hashrates"`
 }
 
-// GetSnapshots fetches real price + hash rate + transaction count.
+// GetSnapshots fetches real price + hash rate + transaction count + stablecoin supply.
 func (r *RealCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 	snaps := make([]pluginrunner.Snapshot, 0, 3)
 
@@ -137,8 +154,17 @@ func (r *RealCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 		})
 	}
 
+	// USD stablecoin supply from DefiLlama
+	if supply, supplyTime, err := r.stablecoins.GetLatestSupply(ctx); err != nil {
+		log.Warn().Err(err).Msg("DefiLlama stablecoin fetch failed; dropping " + MetricStablecoinSupply)
+	} else {
+		snaps = append(snaps, formatStablecoinSnapshots([]time.Time{supplyTime}, []float64{supply}, time.Now())...)
+	}
+
+	snaps = append(snaps, r.latestPositioning(ctx)...)
+
 	if len(snaps) == 0 {
-		return nil, fmt.Errorf("all crypto sources (CoinGecko, mempool, blockchain.com) failed")
+		return nil, fmt.Errorf("all crypto sources (CoinGecko, mempool, blockchain.com, DefiLlama, TFTC, OKX, Deribit) failed")
 	}
 	return snaps, nil
 }
@@ -227,6 +253,18 @@ func (r *RealCollector) GetSnapshotsForWindow(ctx context.Context, start, end ti
 		snaps = append(snaps, txSnaps...)
 	}
 
+	// USD stablecoin supply history from DefiLlama (one document holds all days)
+	stTimes, stValues, err := r.stablecoins.GetSupplyHistory(ctx, start, end)
+	if err != nil {
+		log.Warn().Err(err).Msg("DefiLlama stablecoin history failed")
+	} else {
+		stSnaps := formatStablecoinSnapshots(stTimes, stValues, time.Now())
+		detectGaps(MetricStablecoinSupply, stSnaps, start, end, 48*time.Hour)
+		snaps = append(snaps, stSnaps...)
+	}
+
+	snaps = append(snaps, r.historyPositioning(ctx, start, end)...)
+
 	if len(snaps) == 0 {
 		return nil, fmt.Errorf("all crypto history sources failed for window [%s, %s]",
 			start.Format("2006-01-02"), end.Format("2006-01-02"))
@@ -251,7 +289,7 @@ func (r *RealCollector) fetchHistoricalPrices(ctx context.Context, coinID string
 		if err != nil {
 			return all, fmt.Errorf("window %s..%s: %w", cur.Format("2006-01-02"), end.Format("2006-01-02"), err)
 		}
-		all = append(snaps, snaps...)
+		all = append(all, snaps...)
 		cur = end
 
 		// Rate-limit-friendly delay — respects ctx cancellation
@@ -284,6 +322,7 @@ func (r *RealCollector) fetchSingleWindow(ctx context.Context, coinID string, st
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
+	r.setCoinGeckoKey(req)
 
 	resp, err := r.coingeckoClient.Do(req)
 	if err != nil {
@@ -404,6 +443,13 @@ func detectGaps(metricID string, snaps []pluginrunner.Snapshot, reqStart, reqEnd
 	}
 }
 
+// setCoinGeckoKey attaches the Demo API key header when one is configured.
+func (r *RealCollector) setCoinGeckoKey(req *http.Request) {
+	if r.coingeckoKey != "" {
+		req.Header.Set("x-cg-demo-api-key", r.coingeckoKey)
+	}
+}
+
 // fetchPrice queries CoinGecko /simple/price for the current BTC/USD spot.
 func (r *RealCollector) fetchPrice(ctx context.Context) (float64, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, priceURLCoinGecko, nil)
@@ -411,6 +457,7 @@ func (r *RealCollector) fetchPrice(ctx context.Context) (float64, error) {
 		return 0, err
 	}
 	req.Header.Set("Accept", "application/json")
+	r.setCoinGeckoKey(req)
 
 	resp, err := r.coingeckoClient.Do(req)
 	if err != nil {

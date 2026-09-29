@@ -1,6 +1,6 @@
 name: fedops
-version: "0.1.0"
-description: Treasury TGA, NY Fed RRP/SRF/SOFR, and OFR financial stress — no secrets
+version: "0.2.0"
+description: Treasury TGA & auction settlements, NY Fed RRP/SRF/SOFR, and OFR financial stress — no secrets
 capabilities:
   windowedBackfill: true
   maxBackfillDays: 3650
@@ -26,6 +26,16 @@ metrics:
     unit: USD
     frequency: daily
     entity: FED
+  - id: us.mkt.treasury_settlement
+    name: 国债拍卖结算额（公众部分，毛额）
+    description: >-
+      按结算日（issue_date）汇总的国债拍卖中标额，扣除美联储 SOMA 滚动部分
+      （total_accepted − soma_accepted），单位美元。用于解释 TGA 的结算日流入；
+      未扣到期偿还，是毛发行而非净发行。当日仍有拍卖未出结果时整天不报。
+      数据来源：U.S. Treasury FiscalData auctions_query。
+    unit: USD
+    frequency: daily
+    entity: US
   - id: fed.ins.rrp
     name: 隔夜逆回购未到期余额
     description: >-
@@ -76,4 +86,4 @@ metrics:
     entity: US
 relations: []
 rules: []
-changeLog: First-batch TGA / RRP / SRF / SOFR / OFR FSI; collect only, no rules
+changeLog: Liquidity batch 2 adds Treasury auction settlements (public, gross); collect only, no rules

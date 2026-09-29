@@ -9,7 +9,7 @@ import (
 
 func TestBuildRegistrationFromYAML(t *testing.T) {
 	reg := buildRegistration()
-	if reg.GetInfo().GetName() != "fedops" || reg.GetInfo().GetVersion() != "0.1.0" {
+	if reg.GetInfo().GetName() != "fedops" || reg.GetInfo().GetVersion() != "0.2.0" {
 		t.Fatalf("info=%+v", reg.GetInfo())
 	}
 	if !reg.GetCapabilities().GetWindowedBackfill() || reg.GetCapabilities().GetMaxBackfillDays() != 3650 {
@@ -24,6 +24,7 @@ func TestBuildRegistrationFromYAML(t *testing.T) {
 
 	wantMetrics := []struct{ id, unit, freq, entity string }{
 		{"fed.ins.tga_close", "USD", "daily", "FED"},
+		{"us.mkt.treasury_settlement", "USD", "daily", "US"},
 		{"fed.ins.rrp", "USD", "daily", "FED"},
 		{"fed.ins.srf_usage", "USD", "daily", "FED"},
 		{"us.mkt.sofr", "%", "daily", "US"},

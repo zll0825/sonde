@@ -1,0 +1,95 @@
+{
+ "name": "US Spot Bitcoin ETF Daily Flows",
+ "description": "Daily net flows for US spot Bitcoin ETFs since launch (2024-01-11): aggregate net flow, per-fund breakdown where available, total net assets, and a daily BTC/USD reference price.",
+ "url": "https://www.tftc.io/bitcoin-etf-flows",
+ "license": "https://creativecommons.org/licenses/by/4.0/",
+ "attribution": "TFTC \u2014 tftc.io/bitcoin-etf-flows",
+ "sources": "SoSoValue (daily aggregates and per-fund flows); issuer disclosures as tabulated by Farside Investors (per-fund history through mid-2026); mempool.space (BTC price, ~21:00 UTC mark).",
+ "units": "USD",
+ "updatedThrough": "2026-09-25",
+ "days": [
+  {
+   "date": "2024-01-12",
+   "netFlowUsd": 203000000,
+   "totalNetAssetsUsd": null,
+   "btcCloseUsd": 43645,
+   "perEtfUsd": {
+    "ARKB": 39800000,
+    "BITB": 17400000,
+    "BRRR": 20200000,
+    "BTCO": 28400000,
+    "BTCW": 0,
+    "EZBC": 0,
+    "FBTC": 195300000,
+    "GBTC": -484100000,
+    "HODL": 0,
+    "IBIT": 386000000
+   }
+  },
+  {
+   "date": "2024-01-15",
+   "netFlowUsd": 0,
+   "totalNetAssetsUsd": null,
+   "btcCloseUsd": 42922,
+   "perEtfUsd": null
+  },
+  {
+   "date": "2024-01-16",
+   "netFlowUsd": -52700000,
+   "totalNetAssetsUsd": null,
+   "btcCloseUsd": 43174,
+   "perEtfUsd": {
+    "ARKB": 122300000,
+    "BITB": 50200000,
+    "BRRR": 15300000,
+    "BTCO": 31900000,
+    "BTCW": 0,
+    "EZBC": 0,
+    "FBTC": 102000000,
+    "GBTC": -594400000,
+    "HODL": 7300000,
+    "IBIT": 212700000
+   }
+  },
+  {
+   "date": "2026-09-24",
+   "netFlowUsd": 190646110.255,
+   "totalNetAssetsUsd": 108915022342.80003,
+   "btcCloseUsd": 84359,
+   "perEtfUsd": {
+    "BTC": 0,
+    "ARKB": 0,
+    "BITB": 4126007.88,
+    "BRRR": 0,
+    "BTCO": 0,
+    "BTCW": -4016066.4899999998,
+    "EZBC": 4880497.2,
+    "FBTC": 12862014.025,
+    "GBTC": 0,
+    "HODL": 0,
+    "IBIT": 162628800,
+    "MSBT": 10164857.639999999
+   }
+  },
+  {
+   "date": "2026-09-25",
+   "netFlowUsd": 134465169.155,
+   "totalNetAssetsUsd": 108422523880.82455,
+   "btcCloseUsd": 83873,
+   "perEtfUsd": {
+    "BTC": 0,
+    "ARKB": 0,
+    "BITB": -11847798.82,
+    "BRRR": 0,
+    "BTCO": 0,
+    "BTCW": 0,
+    "EZBC": 0,
+    "FBTC": 49321167.975,
+    "GBTC": 0,
+    "HODL": 0,
+    "IBIT": 96991800,
+    "MSBT": 0
+   }
+  }
+ ]
+}

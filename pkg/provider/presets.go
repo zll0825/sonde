@@ -187,3 +187,23 @@ func BlockchainInfoConfig() Config {
 		},
 	}
 }
+
+// DefiLlamaConfig returns config for the DefiLlama stablecoins API.
+// Free, keyless; one full-history document per poll, so poll conservatively.
+func DefiLlamaConfig() Config {
+	return Config{
+		ProviderName: "defillama",
+		Timeout:      20 * time.Second,
+		RPS:          0.2,
+		Burst:        1,
+		MaxRetries:   3,
+		BaseDelay:    3 * time.Second,
+		MaxDelay:     60 * time.Second,
+		JitterRatio:  0.25,
+		Circuit: CircuitBreakerConfig{
+			FailureThreshold:    5,
+			OpenDuration:        60 * time.Second,
+			HalfOpenMaxRequests: 1,
+		},
+	}
+}

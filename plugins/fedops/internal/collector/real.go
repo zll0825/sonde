@@ -9,8 +9,8 @@ import (
 )
 
 // sourceFrequency is the publication frequency shared by every fedops
-// source (see manifest.yaml): TGA, RRP/SRF, SOFR and the OFR index are all
-// daily, so none of them needs polling on every hourly tick.
+// source (see manifest.yaml): TGA, auctions, RRP/SRF, SOFR and the OFR index are
+// all daily, so none of them needs polling on every hourly tick.
 const sourceFrequency = provider.FrequencyDaily
 
 type windowedProvider interface {
@@ -18,24 +18,26 @@ type windowedProvider interface {
 	pluginrunner.WindowedProvider
 }
 
-// RealCollector composes FiscalData, NY Fed, and OFR. It must not require
+// RealCollector composes FiscalData (TGA, auctions), NY Fed, and OFR. It must not require
 // FRED_API_KEY — a missing FRED key must not fail this plugin.
 type RealCollector struct {
-	tga   windowedProvider
-	nyfed windowedProvider
-	ofr   windowedProvider
+	tga      windowedProvider
+	auctions windowedProvider
+	nyfed    windowedProvider
+	ofr      windowedProvider
 
 	schedule provider.PollSchedule
 	now      func() time.Time
 }
 
-// NewRealCollector wires the three public-data collectors.
+// NewRealCollector wires the public-data collectors.
 func NewRealCollector() *RealCollector {
 	return &RealCollector{
-		tga:   NewFiscalDataCollector(),
-		nyfed: NewNYFedCollector(),
-		ofr:   NewOFRCollector(),
-		now:   time.Now,
+		tga:      NewFiscalDataCollector(),
+		auctions: NewAuctionsCollector(),
+		nyfed:    NewNYFedCollector(),
+		ofr:      NewOFRCollector(),
+		now:      time.Now,
 	}
 }
 
@@ -70,6 +72,7 @@ func (r *RealCollector) merge(fn func(string, windowedProvider) ([]pluginrunner.
 		p    windowedProvider
 	}{
 		{providerFiscal, r.tga},
+		{providerFiscal + "_auctions", r.auctions},
 		{providerNYFed, r.nyfed},
 		{providerOFR, r.ofr},
 	} {
