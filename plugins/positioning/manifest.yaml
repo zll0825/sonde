@@ -1,0 +1,78 @@
+name: positioning
+version: "0.1.0"
+description: CFTC COT legacy futures-only non-commercial net positions and FINRA margin debt — no required secrets
+capabilities:
+  windowedBackfill: true
+  maxBackfillDays: 3650
+  requiresSecrets: []
+  mockAvailable: true
+entities:
+  - id: COT
+    name: CFTC 持仓报告（传统版·仅期货）
+    namespace: cot
+    type: indicator
+    tags: [positioning, cftc, us]
+  - id: US
+    name: 美国
+    namespace: us
+    type: market
+    tags: [us]
+metrics:
+  - id: cot.es.noncomm_net
+    name: CFTC 非商业净持仓 · E-mini 标普 500（合约张数）
+    description: >-
+      CFTC 持仓报告（Legacy，仅期货）E-MINI S&P 500 - CHICAGO MERCANTILE EXCHANGE
+      （cftc_contract_market_code 13874A）非商业多头 − 非商业空头，单位：合约张数。
+      时间戳为周二持仓日；CFTC 于同周周五 15:30 ET 发布，回测不得在发布前使用。
+      「非商业」是 CFTC 的报告分类，不等于投机者。
+      数据来源：CFTC Public Reporting（Socrata 6dca-aqww），美国政府公开数据。
+    unit: contracts
+    frequency: weekly
+    entity: COT
+  - id: cot.zn.noncomm_net
+    name: CFTC 非商业净持仓 · 10 年期美国国债期货（合约张数）
+    description: >-
+      CFTC 持仓报告（Legacy，仅期货）UST 10Y NOTE - CHICAGO BOARD OF TRADE
+      （cftc_contract_market_code 043602）非商业多头 − 非商业空头，单位：合约张数。
+      时间戳为周二持仓日；CFTC 于同周周五 15:30 ET 发布，回测不得在发布前使用。
+      「非商业」不等于投机者；国债期货的非商业头寸常含基差交易，净空不代表看空利率。
+      数据来源：CFTC Public Reporting（Socrata 6dca-aqww），美国政府公开数据。
+    unit: contracts
+    frequency: weekly
+    entity: COT
+  - id: cot.gc.noncomm_net
+    name: CFTC 非商业净持仓 · COMEX 黄金（合约张数）
+    description: >-
+      CFTC 持仓报告（Legacy，仅期货）GOLD - COMMODITY EXCHANGE INC.
+      （cftc_contract_market_code 088691，不含 Micro Gold）非商业多头 − 非商业空头，单位：合约张数。
+      时间戳为周二持仓日；CFTC 于同周周五 15:30 ET 发布，回测不得在发布前使用。
+      「非商业」不等于投机者。
+      数据来源：CFTC Public Reporting（Socrata 6dca-aqww），美国政府公开数据。
+    unit: contracts
+    frequency: weekly
+    entity: COT
+  - id: cot.btc.noncomm_net
+    name: CFTC 非商业净持仓 · CME 比特币期货（合约张数）
+    description: >-
+      CFTC 持仓报告（Legacy，仅期货）BITCOIN - CHICAGO MERCANTILE EXCHANGE
+      （cftc_contract_market_code 133741，5 BTC/张，不含 Micro Bitcoin）非商业多头 − 非商业空头，单位：合约张数。
+      时间戳为周二持仓日；CFTC 于同周周五 15:30 ET 发布，回测不得在发布前使用。
+      「非商业」不等于投机者；CME 比特币期货的非商业头寸含大量现货-期货基差交易。
+      数据来源：CFTC Public Reporting（Socrata 6dca-aqww），美国政府公开数据。
+    unit: contracts
+    frequency: weekly
+    entity: COT
+  - id: us.mkt.margin_debt
+    name: FINRA 客户证券保证金账户借方余额（美元）
+    description: >-
+      FINRA Margin Statistics「Debit Balances in Customers' Securities Margin Accounts」，
+      原表单位百万美元，此处 ×1e6 为美元。时间戳为所属月份的 1 日（UTC）；
+      FINRA 通常在次月第三周发布，回测须按发布时点滞后使用。
+      仅为 FINRA 会员券商申报的汇总，口径随会员计算方法变化可能漂移；分母（市值）同步增长时杠杆未必上升。
+      数据来源：FINRA（finra.org Margin Statistics 页面的 XLSX 下载）。
+    unit: USD
+    frequency: monthly
+    entity: US
+relations: []
+rules: []
+changeLog: First release — CFTC COT non-commercial net (ES, ZN, GC, CME BTC) and FINRA margin debt; collect only, no rules

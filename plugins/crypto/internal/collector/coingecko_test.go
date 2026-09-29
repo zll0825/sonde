@@ -36,6 +36,9 @@ func newTestRealCollector(coingeckoRT, mempoolRT, blockchainRT roundTripFunc) *R
 		mempoolClient:   provider.NewSafeHTTPClientWithHTTPClient(testProviderConfig("mempool-test"), &http.Client{Transport: mempoolRT}),
 		blockchainInfo:  &BlockchainInfoCollector{client: provider.NewSafeHTTPClientWithHTTPClient(testProviderConfig("blockchain-test"), &http.Client{Transport: blockchainRT})},
 		stablecoins:     newTestStablecoinCollector(notFoundRT),
+		etfFlows:        &TFTCCollector{client: testSafeClient("tftc-test", notFoundRT), url: "https://tftc.test/data.json"},
+		okx:             &OKXCollector{client: testSafeClient("okx-test", notFoundRT), base: "https://okx.test", now: time.Now},
+		deribit:         &DeribitCollector{client: testSafeClient("deribit-test", notFoundRT), base: "https://deribit.test", now: time.Now},
 	}
 	return r
 }

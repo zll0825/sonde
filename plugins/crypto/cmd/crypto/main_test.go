@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -23,10 +24,14 @@ func TestBuildRegistrationDeclaresMetrics(t *testing.T) {
 
 	// Verify expected metrics are present
 	expectedIDs := map[string]bool{
-		"btc.ass.price":           false,
-		"btc.ass.hash_rate":       false,
-		"btc.ass.tx_count":        false,
-		"stable.ass.total_supply": false,
+		"btc.ass.price":             false,
+		"btc.ass.hash_rate":         false,
+		"btc.ass.tx_count":          false,
+		"stable.ass.total_supply":   false,
+		"btc.ass.etf_net_flow":      false,
+		"btc.ass.okx_open_interest": false,
+		"btc.ass.okx_funding_rate":  false,
+		"btc.ass.dvol":              false,
 	}
 	for _, metric := range metrics {
 		if _, ok := expectedIDs[metric.GetId()]; ok {
@@ -112,6 +117,38 @@ func TestNoTrendRuleFiresOnBareNoise(t *testing.T) {
 		if cfg.Tolerance == 0 && cfg.Consecutive < 4 {
 			t.Errorf("rule %s is back on a bare-noise trend (tolerance 0, consecutive %d): %s",
 				r.GetName(), cfg.Consecutive, r.GetConfig())
+		}
+	}
+}
+
+// 仓位/衍生品/ETF 流量四项只采集、不挂规则，且描述须写明来源与口径边界。
+func TestPositioningMetricsAreCollectOnlyWithCaveats(t *testing.T) {
+	reg := buildRegistration()
+	must := map[string][]string{
+		"btc.ass.etf_net_flow":      {"TFTC", "CC BY 4.0", "SoSoValue", "Farside"},
+		"btc.ass.okx_open_interest": {"OKX", "BTC-USDT-SWAP", "不是全市场杠杆", "oiCcy"},
+		"btc.ass.okx_funding_rate":  {"OKX", "BTC-USDT-SWAP", "不是全市场杠杆", "8 小时"},
+		"btc.ass.dvol":              {"Deribit"},
+	}
+	found := 0
+	for _, m := range reg.GetMetrics() {
+		words, ok := must[m.GetId()]
+		if !ok {
+			continue
+		}
+		found++
+		for _, w := range words {
+			if !strings.Contains(m.GetDescription(), w) {
+				t.Errorf("%s description missing %q", m.GetId(), w)
+			}
+		}
+	}
+	if found != len(must) {
+		t.Fatalf("found %d of %d positioning metrics", found, len(must))
+	}
+	for _, r := range reg.GetRules() {
+		if _, ok := must[r.GetMetricId()]; ok {
+			t.Errorf("rule %s targets collect-only metric %s", r.GetName(), r.GetMetricId())
 		}
 	}
 }

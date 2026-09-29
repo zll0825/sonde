@@ -1,5 +1,7 @@
 // crypto 插件：BTC 价格（CoinGecko）、全网算力（mempool.space）、
-// 链上交易数（blockchain.com）、美元稳定币总流通市值（DefiLlama），小时级轮询。
+// 链上交易数（blockchain.com）、美元稳定币总流通市值（DefiLlama）、
+// 美国现货 BTC ETF 净流入（TFTC）、OKX BTC-USDT-SWAP 未平仓量与资金费率、
+// Deribit BTC DVOL，小时级轮询。后四项只采集、不挂规则。
 // 退役指标: btc.ass.exchange_balance (无免费可信数据源)
 // 退役指标: btc.ass.flow_proxy (与 btc.ass.tx_count 同源，是该序列的 7 日变化率；
 // 名字写着「活跃地址」，测的也不是资金流)
@@ -18,7 +20,7 @@ import (
 )
 
 const (
-	pluginVersion = "0.3.0"
+	pluginVersion = "0.4.0"
 )
 
 func main() {
@@ -45,7 +47,7 @@ func buildRegistration() *pb.RegisterPluginRequest {
 		Info: &pb.PluginInfo{
 			Name:        "crypto",
 			Version:     pluginVersion,
-			Description: "BTC price, network hash rate, on-chain activity, and USD stablecoin supply tracker",
+			Description: "BTC price, network hash rate, on-chain activity, USD stablecoin supply, spot ETF flows, and OKX/Deribit derivatives positioning",
 		},
 		Entities: []*pb.EntityDeclaration{
 			{
@@ -95,6 +97,48 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Unit:        "USD",
 				Frequency:   "daily",
 				EntityId:    "STABLE",
+			},
+			{
+				Id:   collector.MetricETFNetFlow,
+				Name: "美国现货比特币 ETF 日净流入（美元）",
+				Description: "美国现货比特币 ETF 当日合计净申赎（正为净流入），单位美元（非百万美元），按交易日记录；" +
+					"美股休市日源数据为 0 占位，已跳过。T+1 更新。" +
+					"数据来源：TFTC（tftc.io/bitcoin-etf-flows），CC BY 4.0，展示须署名「TFTC — tftc.io/bitcoin-etf-flows」。" +
+					"注意：TFTC 混合 SoSoValue 日度汇总与 Farside Investors 整理的发行人披露，不是 Farside 镜像，两者口径可能不同。",
+				Unit:      "USD",
+				Frequency: "daily",
+				EntityId:  "BTC",
+			},
+			{
+				Id:   collector.MetricOKXOpenInterest,
+				Name: "OKX BTC-USDT 永续未平仓量（BTC）",
+				Description: "OKX 单交易所、单一合约 BTC-USDT-SWAP 的未平仓量，以 BTC 计（接口字段 oiCcy），剔除了价格效应；" +
+					"不是全市场杠杆，也不含币本位合约、其他交易所与 CME。" +
+					"最新值为采集时刻快照（public/open-interest），回填为 OKX rubik 日线（UTC+8 零点，即 16:00 UTC）。" +
+					"数据来源：OKX v5 公共接口。",
+				Unit:      "BTC",
+				Frequency: "hourly",
+				EntityId:  "BTC",
+			},
+			{
+				Id:   collector.MetricOKXFundingRate,
+				Name: "OKX BTC-USDT 永续资金费率（%/8 小时）",
+				Description: "OKX 单交易所、单一合约 BTC-USDT-SWAP 的已结算资金费率，百分比/结算期（当前每 8 小时结算一次；OKX 若改变结算间隔，数值仍按期计）。" +
+					"时间戳为结算时刻；不采用尚未结算的当期预估值。正值表示多头付费给空头。" +
+					"不是全市场杠杆指标。OKX 仅提供约最近 3 个月的资金费率历史，更早无法回填。" +
+					"频率登记为 daily 以免 hourly 的 6 小时陈旧阈值在两次结算之间误报。数据来源：OKX v5 公共接口。",
+				Unit:      "%",
+				Frequency: "daily",
+				EntityId:  "BTC",
+			},
+			{
+				Id:   collector.MetricDVOL,
+				Name: "Deribit 比特币波动率指数 DVOL",
+				Description: "Deribit DVOL（BTC），由 Deribit 自家 BTC 期权推算的 30 天年化隐含波动率指数；取已完成 UTC 日线的收盘值，时间戳为该日 00:00 UTC。" +
+					"仅反映 Deribit 单一交易所期权市场。数据来源：Deribit 公共接口 get_volatility_index_data。",
+				Unit:      "index",
+				Frequency: "daily",
+				EntityId:  "BTC",
 			},
 		},
 		Relations: []*pb.RelationSuggestion{},
@@ -156,6 +200,6 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Description:  "比特币日交易笔数处于 90 分位以上（链上活跃度偏高）",
 			},
 		},
-		ChangeLog: "Added stable.ass.total_supply (DefiLlama USD-pegged stablecoin supply, collect only, no rule). Earlier: retired btc.ass.exchange_balance (no free source) and btc.ass.flow_proxy (duplicate of btc.ass.tx_count: it was that series' 7d change rate, mislabelled as active addresses), with its flow_proxy_spike rule; added btc.ass.tx_count (blockchain.com real source); rules: btc_hashrate_drop, btc_tx_surge; reshaped btc_hashrate_drop from trend(down, consecutive 3, no tolerance) to trend(down, consecutive 4, tolerance 0.002) — the old shape fired on 13.74% of evaluations across 30 of 36 days, which is sampling noise on an already 3-day-smoothed series, not a hash rate event",
+		ChangeLog: "Added btc.ass.etf_net_flow (TFTC, CC BY 4.0), btc.ass.okx_open_interest and btc.ass.okx_funding_rate (OKX BTC-USDT-SWAP only), btc.ass.dvol (Deribit); collect only, no rules. Earlier: added stable.ass.total_supply (DefiLlama USD-pegged stablecoin supply, collect only, no rule). Earlier: retired btc.ass.exchange_balance (no free source) and btc.ass.flow_proxy (duplicate of btc.ass.tx_count: it was that series' 7d change rate, mislabelled as active addresses), with its flow_proxy_spike rule; added btc.ass.tx_count (blockchain.com real source); rules: btc_hashrate_drop, btc_tx_surge; reshaped btc_hashrate_drop from trend(down, consecutive 3, no tolerance) to trend(down, consecutive 4, tolerance 0.002) — the old shape fired on 13.74% of evaluations across 30 of 36 days, which is sampling noise on an already 3-day-smoothed series, not a hash rate event",
 	}
 }
