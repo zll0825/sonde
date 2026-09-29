@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sonde · 跨市场资本异动与宏观流动性观测雷达</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="/src/landing.css?v=20260904-l1">
+    <link rel="stylesheet" href="/src/landing.css?v=20260929-cases">
 </head>
 <body>
     <div class="bg-grid-overlay"></div>
@@ -20,6 +20,7 @@
             
             <ul class="nav-links">
                 <li><a href="#pillars" data-i18n="nav.pillars">核心支柱</a></li>
+                <li><a href="#cases" data-i18n="nav.cases">十个问题</a></li>
                 <li><a href="#pipeline" data-i18n="nav.pipeline">架构链路</a></li>
                 <li><a href="#showcase" data-i18n="nav.showcase">功能矩阵</a></li>
                 <li><a href="#quickstart" data-i18n="nav.quickstart">快速上手</a></li>
@@ -200,6 +201,123 @@
                     </div>
                     <div class="detail-tag" id="pipeline-detail-tag">gRPC Protocol</div>
                 </div>
+            </div>
+        </section>
+
+        <!-- ── 10 Questions Section ── -->
+        <section class="section-wrapper" id="cases">
+            <div class="section-header">
+                <span class="section-tag" data-i18n="cases.tag">10 QUESTIONS</span>
+                <h2 class="section-heading" data-i18n="cases.heading">10 个问题，Sonde 怎么回答</h2>
+                <p class="section-desc" data-i18n="cases.desc">从宏观、固收、外汇、黄金和加密交易者的日常问题出发，每题拆成 Sonde 指标，再用规则判定。以下是 2026-09-29 的一次快照：7 题可以完整回答，3 题还有子问题缺数据。</p>
+            </div>
+
+            <div class="cases-grid">
+                <article class="case-card">
+                    <div class="case-card-top">
+                        <span class="case-num">Q1</span>
+                        <span class="case-domain" data-i18n="case1.domain">流动性</span>
+                        <span class="case-verdict answered" data-i18n="cases.answered">已解答</span>
+                    </div>
+                    <h3 class="case-question" data-i18n="case1.q">美元净流动性在扩张还是收缩？</h3>
+                    <div class="case-metrics"><span class="case-look" data-i18n="cases.look">看什么</span><code class="case-metric">fed.ins.balance_sheet</code><code class="case-metric">fed.ins.tga_close</code><code class="case-metric">fed.ins.rrp</code></div>
+                    <p class="case-answer" data-i18n="case1.a">收缩：TGA 回升抽走准备金，逆回购缓冲已接近零。</p>
+                </article>
+                <article class="case-card">
+                    <div class="case-card-top">
+                        <span class="case-num">Q2</span>
+                        <span class="case-domain" data-i18n="case2.domain">回购</span>
+                        <span class="case-verdict answered" data-i18n="cases.answered">已解答</span>
+                    </div>
+                    <h3 class="case-question" data-i18n="case2.q">回购市场有没有出现资金紧张？</h3>
+                    <div class="case-metrics"><span class="case-look" data-i18n="cases.look">看什么</span><code class="case-metric">us.mkt.sofr</code><code class="case-metric">us.mkt.iorb</code><code class="case-metric">us.mkt.sofr_p99</code><code class="case-metric">fed.ins.srf_usage</code></div>
+                    <p class="case-answer" data-i18n="case2.a">轻度偏紧，没有压力：SOFR 贴着 IORB，常备回购几乎没人用。</p>
+                </article>
+                <article class="case-card">
+                    <div class="case-card-top">
+                        <span class="case-num">Q3</span>
+                        <span class="case-domain" data-i18n="case3.domain">准备金</span>
+                        <span class="case-verdict partial" data-i18n="cases.partial">部分解答</span>
+                    </div>
+                    <h3 class="case-question" data-i18n="case3.q">准备金离“充裕”下限还有多远？</h3>
+                    <div class="case-metrics"><span class="case-look" data-i18n="cases.look">看什么</span><code class="case-metric">fed.ins.reserves</code><code class="case-metric">us.mkt.effr</code><code class="case-metric">us.mkt.iorb</code><code class="case-metric">us.mkt.gdp_nominal</code></div>
+                    <p class="case-answer" data-i18n="case3.a">还有距离：准备金/GDP 约 9%，EFFR 仍低于 IORB；缩表节奏暂无数据。</p>
+                </article>
+                <article class="case-card">
+                    <div class="case-card-top">
+                        <span class="case-num">Q4</span>
+                        <span class="case-domain" data-i18n="case4.domain">财政</span>
+                        <span class="case-verdict partial" data-i18n="cases.partial">部分解答</span>
+                    </div>
+                    <h3 class="case-question" data-i18n="case4.q">财政部 TGA 会抽走多少流动性？</h3>
+                    <div class="case-metrics"><span class="case-look" data-i18n="cases.look">看什么</span><code class="case-metric">fed.ins.tga_close</code><code class="case-metric">fed.ins.rrp</code></div>
+                    <p class="case-answer" data-i18n="case4.a">先抽后放：10 月下旬前再升一段，年底前回落；逐周发行节奏还缺数据。</p>
+                </article>
+                <article class="case-card">
+                    <div class="case-card-top">
+                        <span class="case-num">Q5</span>
+                        <span class="case-domain" data-i18n="case5.domain">金融条件</span>
+                        <span class="case-verdict answered" data-i18n="cases.answered">已解答</span>
+                    </div>
+                    <h3 class="case-question" data-i18n="case5.q">整体金融条件在收紧还是放松？</h3>
+                    <div class="case-metrics"><span class="case-look" data-i18n="cases.look">看什么</span><code class="case-metric">us.mkt.nfci</code><code class="case-metric">us.mkt.ofr_fsi</code><code class="case-metric">us.mkt.hy_oas</code><code class="case-metric">us.mkt.vix</code></div>
+                    <p class="case-answer" data-i18n="case5.a">整体仍宽松，但信用利差和债市波动率先行收紧。</p>
+                </article>
+                <article class="case-card">
+                    <div class="case-card-top">
+                        <span class="case-num">Q6</span>
+                        <span class="case-domain" data-i18n="case6.domain">衰退</span>
+                        <span class="case-verdict answered" data-i18n="cases.answered">已解答</span>
+                    </div>
+                    <h3 class="case-question" data-i18n="case6.q">衰退信号在增强还是减弱？</h3>
+                    <div class="case-metrics"><span class="case-look" data-i18n="cases.look">看什么</span><code class="case-metric">us.mkt.term_spread_10y3m</code><code class="case-metric">us.mkt.term_spread_10y2y</code><code class="case-metric">us.mkt.sahm_realtime</code><code class="case-metric">us.mkt.initial_claims_4wk</code></div>
+                    <p class="case-answer" data-i18n="case6.a">在减弱：两条期限利差为正，就业平稳；这次变陡来自长端上行。</p>
+                </article>
+                <article class="case-card">
+                    <div class="case-card-top">
+                        <span class="case-num">Q7</span>
+                        <span class="case-domain" data-i18n="case7.domain">汇率</span>
+                        <span class="case-verdict answered" data-i18n="cases.answered">已解答</span>
+                    </div>
+                    <h3 class="case-question" data-i18n="case7.q">美元走强时人民币是否承压？</h3>
+                    <div class="case-metrics"><span class="case-look" data-i18n="cases.look">看什么</span><code class="case-metric">us.mkt.dollar_index</code><code class="case-metric">us.mkt.usd_cny</code><code class="case-metric">cn.mkt.dr007</code><code class="case-metric">cn.mkt.omo_7d_rate</code></div>
+                    <p class="case-answer" data-i18n="case7.a">不承压：美元反弹时人民币依旧偏强，国内资金面宽松。</p>
+                </article>
+                <article class="case-card">
+                    <div class="case-card-top">
+                        <span class="case-num">Q8</span>
+                        <span class="case-domain" data-i18n="case8.domain">黄金</span>
+                        <span class="case-verdict answered" data-i18n="cases.answered">已解答</span>
+                    </div>
+                    <h3 class="case-question" data-i18n="case8.q">实际利率能否解释金价走势？</h3>
+                    <div class="case-metrics"><span class="case-look" data-i18n="cases.look">看什么</span><code class="case-metric">us.mkt.real_yield_10y</code><code class="case-metric">us.mkt.breakeven_10y</code><code class="case-metric">gld.ass.price</code><code class="case-metric">cot.gc.noncomm_net</code></div>
+                    <p class="case-answer" data-i18n="case8.a">能：实际利率三周升约 40 bp，同期金价回落；投机多头与央行买盘仍在。</p>
+                </article>
+                <article class="case-card">
+                    <div class="case-card-top">
+                        <span class="case-num">Q9</span>
+                        <span class="case-domain" data-i18n="case9.domain">加密</span>
+                        <span class="case-verdict partial" data-i18n="cases.partial">部分解答</span>
+                    </div>
+                    <h3 class="case-question" data-i18n="case9.q">比特币由流动性驱动，还是由资金流驱动？</h3>
+                    <div class="case-metrics"><span class="case-look" data-i18n="cases.look">看什么</span><code class="case-metric">btc.ass.price</code><code class="case-metric">btc.ass.etf_net_flow</code><code class="case-metric">stable.ass.total_supply</code><code class="case-metric">btc.ass.okx_funding_rate</code><code class="case-metric">btc.ass.dvol</code></div>
+                    <p class="case-answer" data-i18n="case9.a">更像现货资金流：净流动性收缩时 BTC 仍涨，杠杆指标平静。</p>
+                </article>
+                <article class="case-card">
+                    <div class="case-card-top">
+                        <span class="case-num">Q10</span>
+                        <span class="case-domain" data-i18n="case10.domain">大宗</span>
+                        <span class="case-verdict answered" data-i18n="cases.answered">已解答</span>
+                    </div>
+                    <h3 class="case-question" data-i18n="case10.q">铜金比、油价与长端利率在讲同一个故事吗？</h3>
+                    <div class="case-metrics"><span class="case-look" data-i18n="cases.look">看什么</span><code class="case-metric">metal.industrial.copper</code><code class="case-metric">gld.ass.price</code><code class="case-metric">oil.energy.wti</code><code class="case-metric">us.mkt.ten_year_yield</code></div>
+                    <p class="case-answer" data-i18n="case10.a">是：三者同步上行，市场在定价“增长 + 通胀”。</p>
+                </article>
+            </div>
+
+            <div class="cases-footer">
+                <p class="cases-note" data-i18n="cases.note">快照结论仅用于展示方法，判定阈值尚未回测，不构成投资建议。</p>
+                <a href="https://github.com/zll0825/sonde/blob/main/docs/showcase/ten-questions.md" target="_blank" rel="noopener" class="showcase-link" data-i18n="cases.link">阅读完整案例 →</a>
             </div>
         </section>
 
@@ -394,6 +512,6 @@
         </footer>
     </div>
 
-    <script src="/src/landing.js?v=20260904-l1"></script>
+    <script src="/src/landing.js?v=20260929-cases"></script>
 </body>
 </html>

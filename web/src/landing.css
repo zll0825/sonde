@@ -902,6 +902,117 @@ body {
   gap: 1rem;
 }
 
+/* ── 10 Questions Section ───────────────────────────────────────────── */
+.cases-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+.case-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 1.25rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-width: 0;
+  transition: border-color 0.3s ease;
+}
+
+.case-card:hover {
+  border-color: rgba(100, 255, 218, 0.35);
+}
+
+.case-card-top {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.case-num {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--primary-teal);
+}
+
+.case-domain {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.case-verdict {
+  margin-left: auto;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.case-verdict.answered {
+  color: var(--primary-teal);
+  border: 1px solid rgba(45, 212, 167, 0.4);
+}
+
+.case-verdict.partial {
+  color: var(--accent-gold);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+}
+
+.case-question {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-main);
+  line-height: 1.45;
+}
+
+.case-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.case-look {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-right: 0.2rem;
+}
+
+.case-metric {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--accent-blue);
+  background: rgba(56, 189, 248, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+}
+
+.case-answer {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  border-top: 1px dashed var(--border-color);
+  padding-top: 0.7rem;
+}
+
+.cases-footer {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.cases-note {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
 /* ── Responsive Media Queries ───────────────────────────────────────── */
 @media (max-width: 1024px) {
   .hero-title { font-size: 2.75rem; }
@@ -909,6 +1020,7 @@ body {
   .pillars-grid { grid-template-columns: 1fr; }
   .pipeline-steps { grid-template-columns: repeat(3, 1fr); row-gap: 1rem; }
   .showcase-grid { grid-template-columns: 1fr; }
+  .cases-grid { grid-template-columns: 1fr; }
   .quickstart-specs-row { grid-template-columns: repeat(2, 1fr); }
 }
 
