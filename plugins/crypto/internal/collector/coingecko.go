@@ -280,7 +280,7 @@ func (r *RealCollector) fetchHistoricalPrices(ctx context.Context, coinID string
 		if err != nil {
 			return all, fmt.Errorf("window %s..%s: %w", cur.Format("2006-01-02"), end.Format("2006-01-02"), err)
 		}
-		all = append(snaps, snaps...)
+		all = append(all, snaps...)
 		cur = end
 
 		// Rate-limit-friendly delay — respects ctx cancellation
