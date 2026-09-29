@@ -20,6 +20,7 @@ for H.4.1 series, first-of-month for CPI).
 | CPIAUCSL (pc1) | us.mkt.inflation_yoy | 2.5–2.9, last two months 3.2 / 3.4 | `inflation_above_target` fires |
 | CPIAUCSL | us.mkt.cpi | steady climb | no rule |
 | DEXCHUS, IORB, EFFR, DFII10, T10Y3M, WRBWFRBL, NFCI | collect-only metrics | flat or gentle wiggle | no rule |
+| T10Y2Y, T10YIE, BAMLH0A0HYM2, VIXCLS, VXVCLS, DEXJPUS (daily); IC4WSA, TOTBKCR, DPSACBW027SBOG, CASACBW027SBOG (weekly); UNRATE, SAHMREALTIME (monthly); GDP (quarterly) | collect-only metrics | gentle wiggle around a realistic level | no rule |
 
 To change a scenario, edit the values and update the expected alert list in
 `plugins/macro/e2e_test.go`.
