@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"time"
 
@@ -22,6 +23,12 @@ const (
 	providerMempool        = "mempool_space"
 	providerBlockchainInfo = "blockchain_com"
 )
+
+// coingeckoDemoKeyEnv names the optional CoinGecko Demo API key. With a key,
+// requests carry the x-cg-demo-api-key header, which gets past the CloudFront
+// 403 that keyless calls hit from datacenter egress IPs. Without it the
+// collector falls back to keyless calls.
+const coingeckoDemoKeyEnv = "COINGECKO_DEMO_API_KEY"
 
 // priceURLCoinGecko is the /simple/price endpoint.
 const priceURLCoinGecko = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
@@ -46,6 +53,7 @@ const interWindowDelay = 1500 * time.Millisecond
 // sources with rate limiting and circuit breaker protection.
 type RealCollector struct {
 	coingeckoClient *provider.SafeHTTPClient
+	coingeckoKey    string
 	mempoolClient   *provider.SafeHTTPClient
 	blockchainInfo  *BlockchainInfoCollector
 }
@@ -54,6 +62,7 @@ type RealCollector struct {
 func NewRealCollector() *RealCollector {
 	return &RealCollector{
 		coingeckoClient: provider.NewSafeHTTPClient(provider.CoinGeckoConfig()),
+		coingeckoKey:    os.Getenv(coingeckoDemoKeyEnv),
 		mempoolClient:   provider.NewSafeHTTPClient(provider.MempoolConfig()),
 		blockchainInfo:  NewBlockchainInfoCollector(),
 	}
@@ -284,6 +293,7 @@ func (r *RealCollector) fetchSingleWindow(ctx context.Context, coinID string, st
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
+	r.setCoinGeckoKey(req)
 
 	resp, err := r.coingeckoClient.Do(req)
 	if err != nil {
@@ -404,6 +414,13 @@ func detectGaps(metricID string, snaps []pluginrunner.Snapshot, reqStart, reqEnd
 	}
 }
 
+// setCoinGeckoKey attaches the Demo API key header when one is configured.
+func (r *RealCollector) setCoinGeckoKey(req *http.Request) {
+	if r.coingeckoKey != "" {
+		req.Header.Set("x-cg-demo-api-key", r.coingeckoKey)
+	}
+}
+
 // fetchPrice queries CoinGecko /simple/price for the current BTC/USD spot.
 func (r *RealCollector) fetchPrice(ctx context.Context) (float64, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, priceURLCoinGecko, nil)
@@ -411,6 +428,7 @@ func (r *RealCollector) fetchPrice(ctx context.Context) (float64, error) {
 		return 0, err
 	}
 	req.Header.Set("Accept", "application/json")
+	r.setCoinGeckoKey(req)
 
 	resp, err := r.coingeckoClient.Do(req)
 	if err != nil {
