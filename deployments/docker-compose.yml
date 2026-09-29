@@ -158,6 +158,13 @@ services:
       COLLECTION_INTERVAL: "1h"           # public APIs are low-rate-limit
       PROVIDER: "real"                    # "real" = CoinGecko+mempool; "mock" = synthetic
       COINGECKO_DEMO_API_KEY: "${COINGECKO_DEMO_API_KEY:-}"
+      # Optional egress proxy (e.g. http://host.docker.internal:10808) for hosts
+      # the container can't reach directly — OKX resolves to an unroutable
+      # address from some networks. Empty = direct. gRPC to core also honours
+      # HTTPS_PROXY and dials the resolved IP, so NO_PROXY must list the private
+      # ranges the compose network uses, not just the service name.
+      HTTPS_PROXY: "${CRYPTO_HTTPS_PROXY:-}"
+      NO_PROXY: "core,localhost,127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
   # Commodities Plugin: WTI/copper from FRED.
   # FRED_API_KEY is required in real mode; a missing credential fails setup loudly.
