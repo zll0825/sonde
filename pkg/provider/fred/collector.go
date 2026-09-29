@@ -33,6 +33,11 @@ type Collector struct {
 	// lastObserved 记录每个 metric 最近一次成功取到的观测日期，用来区分
 	// 「还没到发布期」与「真的停更了」。参照 lastCoverage 的同类结构。
 	lastObserved map[string]time.Time
+
+	// schedule 按每条 series 的发布频率节流：日频、周频、月频不再随小时
+	// ticker 每轮都拉。now 可被测试替换。
+	schedule provider.PollSchedule
+	now      func() time.Time
 }
 
 // errNoObservations 标记「窗口内没有观测」。它本身不代表失败——月频序列在
@@ -76,6 +81,7 @@ func NewCollector(opts Options) (*Collector, error) {
 		latestLookback: lookback,
 		coverages:      make(map[string]provider.BackfillCoverage),
 		lastObserved:   make(map[string]time.Time),
+		now:            time.Now,
 	}, nil
 }
 
@@ -113,13 +119,19 @@ type fredObservationsResponse struct {
 func (c *Collector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 	time.Sleep(time.Duration(rand.Int63n(100)) * time.Millisecond)
 
-	now := time.Now()
+	now := c.now()
 	end := now
+	forced := pluginrunner.IsForcedCollection(ctx)
 
 	snaps := make([]pluginrunner.Snapshot, 0, len(c.bindings))
 	failures := make([]pluginrunner.CollectionFailure, 0)
+	skipped := 0
 
 	for _, entry := range c.bindings {
+		if !forced && !c.schedule.Due(entry.MetricID, entry.Frequency, now) {
+			skipped++
+			continue
+		}
 		// 窗口按每条 series 自己的频率推导，不再全表共用一个值：月频序列
 		// 的观测日期是月初、发布滞后约六周，30 天窗口对它必然落空。
 		start := end.Add(-c.lookbackFor(entry.MetricID, entry.Frequency))
@@ -129,6 +141,7 @@ func (c *Collector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, 
 				log.Debug().Str("metric", entry.MetricID).Str("series", entry.SeriesID).
 					Str("frequency", entry.Frequency).
 					Msg("FRED series has no new observation yet; within normal release interval")
+				c.schedule.MarkPolled(entry.MetricID, now)
 				continue
 			}
 			logFetchSkip(entry.MetricID, entry.SeriesID, err)
@@ -142,6 +155,7 @@ func (c *Collector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, 
 			ts = now
 		}
 		c.recordObserved(entry.MetricID, ts)
+		c.schedule.MarkPolled(entry.MetricID, now)
 		snaps = append(snaps, pluginrunner.Snapshot{
 			MetricID:    entry.MetricID,
 			Value:       *val,
@@ -153,6 +167,10 @@ func (c *Collector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, 
 		})
 	}
 
+	if skipped > 0 {
+		log.Debug().Int("skipped", skipped).Int("total", len(c.bindings)).
+			Msg("FRED series not due for polling yet; skipped this tick")
+	}
 	if len(snaps) == 0 {
 		return nil, pluginrunner.SummarizeCollectionFailures(failures)
 	}

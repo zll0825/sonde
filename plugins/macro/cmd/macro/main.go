@@ -1,5 +1,5 @@
 // macro 插件：美联储资产负债表、美债十年期收益率、美元指数、美元兑人民币、
-// CPI指数、同比通胀率，数据源为 FRED（需 FRED_API_KEY），小时级轮询。
+// CPI指数、同比通胀率，数据源为 FRED（需 FRED_API_KEY），按各序列发布频率节流轮询（日频 6h、周频与月频 1 天）。
 // 领域目录在 plugins/macro/{manifest,bindings}.yaml；新增 FRED 序列改 YAML。
 package main
 

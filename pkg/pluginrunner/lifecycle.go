@@ -28,7 +28,9 @@ type Config struct {
 	Version string
 
 	// DefaultInterval is the ticker cadence when neither --interval nor
-	// COLLECTION_INTERVAL is set.
+	// COLLECTION_INTERVAL is set. It is the scheduling granularity, not a
+	// per-series cadence: providers may skip series whose publication
+	// frequency means they are not due yet.
 	DefaultInterval time.Duration
 
 	// BuildRegistration returns the full RegisterPluginRequest for this plugin.
@@ -173,9 +175,15 @@ func (l *Lifecycle) runSession(ctx context.Context, coreAddr string, interval ti
 		submitAndAck(runner, pluginID, commandID, result)
 	}
 
+	// Scheduled ticks let the provider skip series that are not due yet (see
+	// provider.PollSchedule); an explicit Sync command always fetches all.
 	collectOnce := func(commandID string) {
+		collectCtx := ctx
+		if commandID != "" {
+			collectCtx = WithForcedCollection(ctx)
+		}
 		executeCommand(commandID, func() ([]Snapshot, error) {
-			return collector.GetSnapshots(ctx)
+			return collector.GetSnapshots(collectCtx)
 		})
 	}
 
