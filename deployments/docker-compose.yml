@@ -140,7 +140,8 @@ services:
       PROVIDER_QUOTA_DB_URL: "postgres://sonde:sonde_dev@timescaledb:5432/sonde?sslmode=disable"
 
   # Crypto Plugin: BTC price (CoinGecko), hash rate (mempool.space), tx count (blockchain.com).
-  # No API key required for the free public endpoints.
+  # COINGECKO_DEMO_API_KEY is optional; without it CoinGecko calls go keyless,
+  # which returns 403 from datacenter egress IPs.
   crypto-plugin:
     build:
       context: ../
@@ -156,6 +157,7 @@ services:
       PLUGIN_ID: "crypto"
       COLLECTION_INTERVAL: "1h"           # public APIs are low-rate-limit
       PROVIDER: "real"                    # "real" = CoinGecko+mempool; "mock" = synthetic
+      COINGECKO_DEMO_API_KEY: "${COINGECKO_DEMO_API_KEY:-}"
 
   # Commodities Plugin: WTI/copper from FRED.
   # FRED_API_KEY is required in real mode; a missing credential fails setup loudly.

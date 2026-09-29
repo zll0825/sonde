@@ -279,3 +279,31 @@ func TestFetchHistoricalPrices_ContextCancel(t *testing.T) {
 	_, _ = r.GetSnapshotsForWindow(ctx, start, end)
 	// Just verifying no infinite hang — test passes if we get here
 }
+
+func TestRealCollector_CoinGeckoDemoKeyHeader(t *testing.T) {
+	for _, tc := range []struct {
+		name, key string
+	}{
+		{"with key", "demo-key"},
+		{"keyless", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []string
+			r := newTestRealCollector(
+				roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					got = append(got, req.Header.Get("x-cg-demo-api-key"))
+					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"bitcoin":{"usd":70000}}`)), Header: make(http.Header)}, nil
+				}),
+				nil, nil,
+			)
+			r.coingeckoKey = tc.key
+
+			if _, err := r.fetchPrice(context.Background()); err != nil {
+				t.Fatalf("fetchPrice: %v", err)
+			}
+			if len(got) != 1 || got[0] != tc.key {
+				t.Fatalf("x-cg-demo-api-key = %q, want %q", got, tc.key)
+			}
+		})
+	}
+}
