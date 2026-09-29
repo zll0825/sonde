@@ -2,9 +2,11 @@ go 1.22
 
 use (
 	.
+	./plugins/cnmacro
 	./plugins/commodities
 	./plugins/crypto
 	./plugins/etf
 	./plugins/fedops
 	./plugins/macro
+	./plugins/positioning
 )

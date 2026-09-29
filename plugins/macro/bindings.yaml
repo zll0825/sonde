@@ -50,3 +50,55 @@ series:
     series: NFCI
     scale: 1
     frequency: weekly
+  - metric: us.mkt.term_spread_10y2y
+    series: T10Y2Y
+    scale: 1
+    frequency: daily
+  - metric: us.mkt.breakeven_10y
+    series: T10YIE
+    scale: 1
+    frequency: daily
+  - metric: us.mkt.hy_oas
+    series: BAMLH0A0HYM2
+    scale: 1
+    frequency: daily
+  - metric: us.mkt.vix
+    series: VIXCLS
+    scale: 1
+    frequency: daily
+  - metric: us.mkt.unemployment_rate
+    series: UNRATE
+    scale: 1
+    frequency: monthly
+  - metric: us.mkt.sahm_realtime
+    series: SAHMREALTIME
+    scale: 1
+    frequency: monthly
+  - metric: us.mkt.initial_claims_4wk
+    series: IC4WSA
+    scale: 1
+    frequency: weekly
+  - metric: us.mkt.gdp_nominal
+    series: GDP
+    scale: 1.0e9
+    frequency: quarterly
+  - metric: us.mkt.bank_credit
+    series: TOTBKCR
+    scale: 1.0e9
+    frequency: weekly
+  - metric: us.mkt.bank_deposits
+    series: DPSACBW027SBOG
+    scale: 1.0e9
+    frequency: weekly
+  - metric: us.mkt.bank_cash_assets
+    series: CASACBW027SBOG
+    scale: 1.0e9
+    frequency: weekly
+  - metric: us.mkt.usd_jpy
+    series: DEXJPUS
+    scale: 1
+    frequency: daily
+  - metric: us.mkt.vix3m
+    series: VXVCLS
+    scale: 1
+    frequency: daily

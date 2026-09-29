@@ -116,7 +116,7 @@ if (btnAlertToResearch) {
 }
 
 // ── Wire up button handlers & polling ────────────────────────────────
-document.getElementById('btn-load-research').addEventListener('click', loadResearch);
+document.getElementById('btn-load-research').addEventListener('click', () => loadResearch());
 document.getElementById('research-alert-id').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') loadResearch();
 });

@@ -1,6 +1,6 @@
 name: macro
-version: "0.2.0"
-description: Fed balance sheet, US yields, USD index, USDCNY, CPI & inflation tracker
+version: "0.4.0"
+description: Fed balance sheet, US yields, USD index, USDCNY, CPI & inflation, credit/volatility, labour-market and H.8 bank balance-sheet tracker
 capabilities:
   windowedBackfill: true
   maxBackfillDays: 3650
@@ -101,6 +101,116 @@ metrics:
     unit: index
     frequency: weekly
     entity: US
+  - id: us.mkt.term_spread_10y2y
+    name: 10年−2年国债期限利差（百分点）
+    description: >-
+      10年期与2年期国债收益率之差（百分点），与 10y−3m 互为衰退信号的两种口径。
+      数据来源：FRED T10Y2Y。原始提供方须署名：美国财政部。
+    unit: pp
+    frequency: daily
+    entity: US
+  - id: us.mkt.breakeven_10y
+    name: 10年期盈亏平衡通胀率（%）
+    description: >-
+      10年期名义国债与 TIPS 收益率之差，市场隐含的 10 年平均通胀预期。
+      数据来源：FRED T10YIE（圣路易斯联储据美国财政部数据计算）。
+    unit: "%"
+    frequency: daily
+    entity: US
+  - id: us.mkt.hy_oas
+    name: 美国高收益债期权调整利差（%）
+    description: >-
+      ICE BofA 美国高收益债指数期权调整利差（OAS），信用风险偏好指标。
+      数据来源：FRED BAMLH0A0HYM2。原始提供方须署名：ICE Data Indices；
+      版权归 ICE，仅限个人、内部非商业使用，FRED 只提供近三年数据。
+    unit: "%"
+    frequency: daily
+    entity: US
+  - id: us.mkt.vix
+    name: CBOE 波动率指数 VIX
+    description: >-
+      标普 500 期权隐含的 30 日波动率。数据来源：FRED VIXCLS。
+      原始提供方须署名：芝加哥期权交易所（CBOE）；版权归 CBOE，商用需另行授权。
+    unit: index
+    frequency: daily
+    entity: US
+  - id: us.mkt.unemployment_rate
+    name: 美国失业率（%）
+    description: >-
+      美国 U-3 失业率，季调。数据来源：FRED UNRATE。
+      原始提供方须署名：美国劳工统计局（BLS）。
+    unit: "%"
+    frequency: monthly
+    entity: US
+  - id: us.mkt.sahm_realtime
+    name: Sahm 规则实时衰退指标（百分点）
+    description: >-
+      失业率 3 个月均值相对前 12 个月最低点的升幅，≥0.5 历史上对应衰退开始。
+      数据来源：FRED SAHMREALTIME（按当期发布数据计算，不回溯修订）。
+      原始提供方须署名：Claudia Sahm。
+    unit: pp
+    frequency: monthly
+    entity: US
+  - id: us.mkt.initial_claims_4wk
+    name: 首次申领失业救济人数（4 周均值）
+    description: >-
+      首次申领失业救济人数 4 周移动平均，季调。数据来源：FRED IC4WSA。
+      原始提供方须署名：美国劳工部就业与培训管理局。
+    unit: persons
+    frequency: weekly
+    entity: US
+  - id: us.mkt.gdp_nominal
+    name: 美国名义 GDP（年化，美元）
+    description: >-
+      美国名义国内生产总值，季调年化，十亿美元 ×1e9；用作准备金/GDP 等比值的分母。
+      数据来源：FRED GDP。原始提供方须署名：美国经济分析局（BEA）。
+    unit: USD
+    frequency: quarterly
+    entity: US
+  - id: us.mkt.bank_credit
+    name: 美国商业银行信贷总额（美元）
+    description: >-
+      全部商业银行银行信贷（证券 + 贷款），季调，周三时点，十亿美元 ×1e9。
+      数据来源：FRED TOTBKCR（美联储 H.8）。H.8 周数据按季末 Call Report 回溯基准修正，
+      历史值会被改写。原始提供方须署名：美联储理事会（public domain）。
+    unit: USD
+    frequency: weekly
+    entity: US
+  - id: us.mkt.bank_deposits
+    name: 美国商业银行存款总额（美元）
+    description: >-
+      全部商业银行存款，季调，周三时点，十亿美元 ×1e9。
+      数据来源：FRED DPSACBW027SBOG（美联储 H.8），同样受基准修正影响。
+      原始提供方须署名：美联储理事会（public domain）。
+    unit: USD
+    frequency: weekly
+    entity: US
+  - id: us.mkt.bank_cash_assets
+    name: 美国商业银行现金资产（美元）
+    description: >-
+      全部商业银行现金资产（含在美联储的准备金），季调，周三时点，十亿美元 ×1e9。
+      数据来源：FRED CASACBW027SBOG（美联储 H.8）。与 fed.ins.reserves 口径不同（后者为全部存款机构、非季调）。
+      原始提供方须署名：美联储理事会（public domain）。
+    unit: USD
+    frequency: weekly
+    entity: US
+  - id: us.mkt.usd_jpy
+    name: 美元兑日元（日元/美元）
+    description: >-
+      美元兑日元即期汇率（纽约午间买入价）。数据来源：FRED DEXJPUS（美联储 H.10）。
+      套息交易规模无法从汇率反推。原始提供方须署名：美联储理事会（public domain）。
+    unit: JPY per USD
+    frequency: daily
+    entity: US
+  - id: us.mkt.vix3m
+    name: CBOE 3 个月波动率指数 VIX3M
+    description: >-
+      标普 500 期权隐含的 3 个月波动率。数据来源：FRED VXVCLS。
+      与 us.mkt.vix 之比即 VIX 期限结构，比值 < 1 常见于事件日，非必然压力。
+      原始提供方须署名：芝加哥期权交易所（CBOE）；版权归 CBOE，商用需另行授权。
+    unit: index
+    frequency: daily
+    entity: US
 relations:
   - source: FED
     target: US
@@ -144,4 +254,4 @@ rules:
     config: '{"operator":"gt","value":3.0,"consecutive":2}'
     display_name: 美国同比通胀率连续 2 个月高于 3%
     description: 同比通胀率连续 2 个月高于 3%（高于美联储目标）
-changeLog: YAML catalog; CPI and YoY inflation; first-batch reserves/IORB/EFFR/TIPS/T10Y3M/NFCI (collect only, no new rules)
+changeLog: "Liquidity batch 2 (collect only, no new rules): H.8 bank credit / deposits / cash assets, USDJPY, VIX3M"

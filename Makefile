@@ -8,7 +8,7 @@ API_PORT ?= 8080
 # Workspace modules with Go code. NOTE: `go build ./...` from the repo root
 # only matches the ROOT module — plugin modules are invisible to it. Add new
 # plugin modules here or they silently escape every gate.
-GO_MODULES ?= . ./plugins/etf ./plugins/crypto ./plugins/macro ./plugins/commodities ./plugins/fedops
+GO_MODULES ?= . ./plugins/etf ./plugins/crypto ./plugins/macro ./plugins/commodities ./plugins/fedops ./plugins/cnmacro ./plugins/positioning
 
 # ---- Help ----
 help: ## Show this help
@@ -132,6 +132,18 @@ run-fedops: ## Run fedops (FiscalData / NY Fed / OFR — no API key)
 run-fedops-mock: ## Run fedops with PROVIDER=mock (offline dev)
 	cd plugins/fedops && CORE_ADDR=localhost:50051 PROVIDER=mock go run ./cmd/fedops
 
+run-cnmacro: ## Run cnmacro (PBoC / CFETS / East Money — no API key)
+	cd plugins/cnmacro && CORE_ADDR=localhost:50051 go run ./cmd/cnmacro
+
+run-cnmacro-mock: ## Run cnmacro with PROVIDER=mock (offline dev)
+	cd plugins/cnmacro && CORE_ADDR=localhost:50051 PROVIDER=mock go run ./cmd/cnmacro
+
+run-positioning: ## Run positioning (CFTC COT / FINRA margin — no API key)
+	cd plugins/positioning && CORE_ADDR=localhost:50051 go run ./cmd/positioning
+
+run-positioning-mock: ## Run positioning with PROVIDER=mock (offline dev)
+	cd plugins/positioning && CORE_ADDR=localhost:50051 PROVIDER=mock go run ./cmd/positioning
+
 # ---- CI ----
 lint: ## Run gofmt + go vet + buf lint (all workspace modules)
 	gofmt -l .
@@ -175,4 +187,4 @@ clean-data: ## DESTRUCTIVE: stop stack AND delete database volumes
 #   - crypto: no key required (CoinGecko / mempool.space free tiers)
 #   - ETF: no key required (Yahoo Finance public API)
 #   - Telegram: set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID on core env to enable
-.PHONY: help install-tools proto migrate-up migrate-down migrate-status migrate-force dev dev-up dev-down dev-logs lint test build build-mcp clean clean-data run-core run-api run-etf run-crypto run-crypto-mock run-macro run-macro-mock run-commodities run-commodities-mock run-fedops run-fedops-mock
+.PHONY: help install-tools proto migrate-up migrate-down migrate-status migrate-force dev dev-up dev-down dev-logs lint test build build-mcp clean clean-data run-core run-api run-etf run-crypto run-crypto-mock run-macro run-macro-mock run-commodities run-commodities-mock run-fedops run-fedops-mock run-cnmacro run-cnmacro-mock run-positioning run-positioning-mock
