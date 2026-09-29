@@ -1,5 +1,5 @@
 // crypto 插件：BTC 价格（CoinGecko）、全网算力（mempool.space）、
-// 链上交易数（blockchain.com），小时级轮询。
+// 链上交易数（blockchain.com）、美元稳定币总流通市值（DefiLlama），小时级轮询。
 // 退役指标: btc.ass.exchange_balance (无免费可信数据源)
 // 退役指标: btc.ass.flow_proxy (与 btc.ass.tx_count 同源，是该序列的 7 日变化率；
 // 名字写着「活跃地址」，测的也不是资金流)
@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	pluginVersion = "0.2.0"
+	pluginVersion = "0.3.0"
 )
 
 func main() {
@@ -45,7 +45,7 @@ func buildRegistration() *pb.RegisterPluginRequest {
 		Info: &pb.PluginInfo{
 			Name:        "crypto",
 			Version:     pluginVersion,
-			Description: "BTC price, network hash rate, and on-chain activity tracker",
+			Description: "BTC price, network hash rate, on-chain activity, and USD stablecoin supply tracker",
 		},
 		Entities: []*pb.EntityDeclaration{
 			{
@@ -54,6 +54,13 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Namespace:  "btc",
 				EntityType: pb.EntityType_ENTITY_TYPE_ASSET,
 				Tags:       []string{"crypto", "bitcoin"},
+			},
+			{
+				Id:         "STABLE",
+				Name:       "美元稳定币",
+				Namespace:  "stable",
+				EntityType: pb.EntityType_ENTITY_TYPE_ASSET,
+				Tags:       []string{"crypto", "stablecoin", "usd"},
 			},
 		},
 		Metrics: []*pb.MetricDeclaration{
@@ -80,6 +87,14 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Unit:        "transactions",
 				Frequency:   "daily",
 				EntityId:    "BTC",
+			},
+			{
+				Id:          collector.MetricStablecoinSupply,
+				Name:        "美元稳定币总流通市值（美元）",
+				Description: "所有锚定美元的稳定币流通总市值，链上美元流动性的代理。数据来源：DefiLlama stablecoins API（免费、无需密钥）。",
+				Unit:        "USD",
+				Frequency:   "daily",
+				EntityId:    "STABLE",
 			},
 		},
 		Relations: []*pb.RelationSuggestion{},
@@ -141,6 +156,6 @@ func buildRegistration() *pb.RegisterPluginRequest {
 				Description:  "比特币日交易笔数处于 90 分位以上（链上活跃度偏高）",
 			},
 		},
-		ChangeLog: "Retired btc.ass.exchange_balance (no free source) and btc.ass.flow_proxy (duplicate of btc.ass.tx_count: it was that series' 7d change rate, mislabelled as active addresses), with its flow_proxy_spike rule; added btc.ass.tx_count (blockchain.com real source); rules: btc_hashrate_drop, btc_tx_surge; reshaped btc_hashrate_drop from trend(down, consecutive 3, no tolerance) to trend(down, consecutive 4, tolerance 0.002) — the old shape fired on 13.74% of evaluations across 30 of 36 days, which is sampling noise on an already 3-day-smoothed series, not a hash rate event",
+		ChangeLog: "Added stable.ass.total_supply (DefiLlama USD-pegged stablecoin supply, collect only, no rule). Earlier: retired btc.ass.exchange_balance (no free source) and btc.ass.flow_proxy (duplicate of btc.ass.tx_count: it was that series' 7d change rate, mislabelled as active addresses), with its flow_proxy_spike rule; added btc.ass.tx_count (blockchain.com real source); rules: btc_hashrate_drop, btc_tx_surge; reshaped btc_hashrate_drop from trend(down, consecutive 3, no tolerance) to trend(down, consecutive 4, tolerance 0.002) — the old shape fired on 13.74% of evaluations across 30 of 36 days, which is sampling noise on an already 3-day-smoothed series, not a hash rate event",
 	}
 }

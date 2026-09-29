@@ -12,7 +12,7 @@ import (
 
 func TestBuildRegistrationFromYAML(t *testing.T) {
 	reg := buildRegistration()
-	if reg.GetInfo().GetName() != "macro" || reg.GetInfo().GetVersion() != "0.2.0" {
+	if reg.GetInfo().GetName() != "macro" || reg.GetInfo().GetVersion() != "0.3.0" {
 		t.Fatalf("info=%+v", reg.GetInfo())
 	}
 	if !reg.GetCapabilities().GetWindowedBackfill() || reg.GetCapabilities().GetMaxBackfillDays() != 3650 {
@@ -37,6 +37,14 @@ func TestBuildRegistrationFromYAML(t *testing.T) {
 		{"us.mkt.real_yield_10y", "%", "daily", "US"},
 		{"us.mkt.term_spread_10y3m", "pp", "daily", "US"},
 		{"us.mkt.nfci", "index", "weekly", "US"},
+		{"us.mkt.term_spread_10y2y", "pp", "daily", "US"},
+		{"us.mkt.breakeven_10y", "%", "daily", "US"},
+		{"us.mkt.hy_oas", "%", "daily", "US"},
+		{"us.mkt.vix", "index", "daily", "US"},
+		{"us.mkt.unemployment_rate", "%", "monthly", "US"},
+		{"us.mkt.sahm_realtime", "pp", "monthly", "US"},
+		{"us.mkt.initial_claims_4wk", "persons", "weekly", "US"},
+		{"us.mkt.gdp_nominal", "USD", "quarterly", "US"},
 	}
 	if got := len(reg.GetMetrics()); got != len(wantMetrics) {
 		t.Fatalf("metrics=%d, want %d", got, len(wantMetrics))
@@ -205,9 +213,16 @@ func TestCatalogOmitsDerivedMetrics(t *testing.T) {
 
 func TestCitationRequiredDescriptionsNameOriginalProvider(t *testing.T) {
 	want := map[string]string{
-		"us.mkt.effr":              "纽约联邦储备银行",
-		"us.mkt.term_spread_10y3m": "美国财政部",
-		"us.mkt.nfci":              "芝加哥联邦储备银行",
+		"us.mkt.effr":               "纽约联邦储备银行",
+		"us.mkt.term_spread_10y3m":  "美国财政部",
+		"us.mkt.nfci":               "芝加哥联邦储备银行",
+		"us.mkt.term_spread_10y2y":  "美国财政部",
+		"us.mkt.hy_oas":             "ICE Data Indices",
+		"us.mkt.vix":                "芝加哥期权交易所",
+		"us.mkt.unemployment_rate":  "美国劳工统计局",
+		"us.mkt.sahm_realtime":      "Claudia Sahm",
+		"us.mkt.initial_claims_4wk": "美国劳工部",
+		"us.mkt.gdp_nominal":        "美国经济分析局",
 	}
 	for _, m := range buildRegistration().GetMetrics() {
 		needle, ok := want[m.GetId()]

@@ -136,13 +136,22 @@ API command_log → CommandDispatcher → Sync/BackfillCommand → Plugin → �
 | macro | `us.mkt.usd_cny` (DEXCHUS) | FRED | ✅ 真实（日频） |
 | macro | `us.mkt.cpi` (CPIAUCSL) | FRED | ✅ 真实（月频 CPI） |
 | macro | `us.mkt.inflation_yoy` (CPIAUCSL_PCH) | FRED | ✅ 真实（月频通胀率） |
+| macro | `us.mkt.term_spread_10y2y` (T10Y2Y) | FRED | ✅ 真实（日频） |
+| macro | `us.mkt.breakeven_10y` (T10YIE) | FRED | ✅ 真实（日频） |
+| macro | `us.mkt.hy_oas` (BAMLH0A0HYM2) | FRED / ICE | ✅ 真实（日频；ICE 版权，限非商用） |
+| macro | `us.mkt.vix` (VIXCLS) | FRED / CBOE | ✅ 真实（日频；CBOE 版权） |
+| macro | `us.mkt.unemployment_rate` (UNRATE) | FRED / BLS | ✅ 真实（月频） |
+| macro | `us.mkt.sahm_realtime` (SAHMREALTIME) | FRED | ✅ 真实（月频） |
+| macro | `us.mkt.initial_claims_4wk` (IC4WSA) | FRED / 劳工部 | ✅ 真实（周频） |
+| macro | `us.mkt.gdp_nominal` (GDP) | FRED / BEA | ✅ 真实（季频） |
 | crypto | `btc.ass.price` | CoinGecko | ✅ 真实 (现货价格) |
 | crypto | `btc.ass.hash_rate` | mempool.space | ✅ 真实 (全网算力) |
 | crypto | `btc.ass.tx_count` | blockchain.com | ✅ 真实 (每日交易数) |
+| crypto | `stable.ass.total_supply` | DefiLlama | ✅ 真实 (美元稳定币总流通市值，日频) |
 | commodities | `oil.energy.wti` | FRED | ✅ 真实 (WTI 原油) |
 | commodities | `metal.industrial.copper` | FRED | ✅ 真实 (铜现货价格) |
  
-全系统共 13 项指标，已全部切换为真实或基于真实数据的代理源，合成 Mock 指标已彻底淘汰。
+上表指标均已切换为真实或基于真实数据的代理源（fedops 插件的 TGA / RRP / SRF / SOFR / OFR FSI 见其 manifest），合成 Mock 指标已彻底淘汰。
  
 ## 测试
  

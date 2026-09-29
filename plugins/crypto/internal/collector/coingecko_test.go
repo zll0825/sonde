@@ -35,6 +35,7 @@ func newTestRealCollector(coingeckoRT, mempoolRT, blockchainRT roundTripFunc) *R
 		coingeckoClient: provider.NewSafeHTTPClientWithHTTPClient(testProviderConfig("coingecko-test"), &http.Client{Transport: coingeckoRT}),
 		mempoolClient:   provider.NewSafeHTTPClientWithHTTPClient(testProviderConfig("mempool-test"), &http.Client{Transport: mempoolRT}),
 		blockchainInfo:  &BlockchainInfoCollector{client: provider.NewSafeHTTPClientWithHTTPClient(testProviderConfig("blockchain-test"), &http.Client{Transport: blockchainRT})},
+		stablecoins:     newTestStablecoinCollector(notFoundRT),
 	}
 	return r
 }
