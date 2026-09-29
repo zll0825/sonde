@@ -124,6 +124,10 @@ Plugin (gRPC stream)
 API command_log → CommandDispatcher → Sync/BackfillCommand → Plugin → 采集 → Push → Ack → command_log completed/resolved
 ```
 
+## 能回答什么
+
+[10 个问题：Sonde 能帮你回答什么](docs/showcase/ten-questions.md)——从交易者的日常问题出发，演示每个问题该看哪些指标、怎么判定，以及目前还缺什么。
+
 ## 数据源真实性
  
 | 插件 | 指标 | 来源 | 真实性 |
