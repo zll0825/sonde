@@ -12,7 +12,7 @@ import (
 
 func TestBuildRegistrationFromYAML(t *testing.T) {
 	reg := buildRegistration()
-	if reg.GetInfo().GetName() != "macro" || reg.GetInfo().GetVersion() != "0.3.0" {
+	if reg.GetInfo().GetName() != "macro" || reg.GetInfo().GetVersion() != "0.4.0" {
 		t.Fatalf("info=%+v", reg.GetInfo())
 	}
 	if !reg.GetCapabilities().GetWindowedBackfill() || reg.GetCapabilities().GetMaxBackfillDays() != 3650 {
@@ -45,6 +45,11 @@ func TestBuildRegistrationFromYAML(t *testing.T) {
 		{"us.mkt.sahm_realtime", "pp", "monthly", "US"},
 		{"us.mkt.initial_claims_4wk", "persons", "weekly", "US"},
 		{"us.mkt.gdp_nominal", "USD", "quarterly", "US"},
+		{"us.mkt.bank_credit", "USD", "weekly", "US"},
+		{"us.mkt.bank_deposits", "USD", "weekly", "US"},
+		{"us.mkt.bank_cash_assets", "USD", "weekly", "US"},
+		{"us.mkt.usd_jpy", "JPY per USD", "daily", "US"},
+		{"us.mkt.vix3m", "index", "daily", "US"},
 	}
 	if got := len(reg.GetMetrics()); got != len(wantMetrics) {
 		t.Fatalf("metrics=%d, want %d", got, len(wantMetrics))
