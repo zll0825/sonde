@@ -16,6 +16,7 @@ var mockMetrics = []struct {
 	value float64
 }{
 	{metricTGA, 700_000_000_000},
+	{metricAuctionSettle, 150_000_000_000},
 	{metricRRP, 675_000_000},
 	{metricSRF, 0},
 	{metricSOFR, 4.29},

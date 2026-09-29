@@ -10,7 +10,7 @@ import (
 
 func TestMockCoversAllRegisteredMetrics(t *testing.T) {
 	want := []string{
-		metricTGA, metricRRP, metricSRF,
+		metricTGA, metricAuctionSettle, metricRRP, metricSRF,
 		metricSOFR, metricSOFRP99, metricSOFRTail, metricOFRFSI,
 	}
 	snaps, err := Mock{}.GetSnapshots(context.Background())
