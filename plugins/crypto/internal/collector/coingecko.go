@@ -1,5 +1,5 @@
 // Package collector 提供 crypto 插件的数据采集器：CoinGecko / mempool.space /
-// blockchain.com 真实源与离线 mock。使用 SafeHTTPClient 进行 API 保护。
+// blockchain.com / DefiLlama 真实源与离线 mock。使用 SafeHTTPClient 进行 API 保护。
 package collector
 
 import (
@@ -48,6 +48,7 @@ type RealCollector struct {
 	coingeckoClient *provider.SafeHTTPClient
 	mempoolClient   *provider.SafeHTTPClient
 	blockchainInfo  *BlockchainInfoCollector
+	stablecoins     *StablecoinCollector
 }
 
 // NewRealCollector creates a crypto collector with safe HTTP clients.
@@ -56,6 +57,7 @@ func NewRealCollector() *RealCollector {
 		coingeckoClient: provider.NewSafeHTTPClient(provider.CoinGeckoConfig()),
 		mempoolClient:   provider.NewSafeHTTPClient(provider.MempoolConfig()),
 		blockchainInfo:  NewBlockchainInfoCollector(),
+		stablecoins:     NewStablecoinCollector(),
 	}
 }
 
@@ -85,7 +87,7 @@ type mempoolHashrateHistoryResponse struct {
 	} `json:"hashrates"`
 }
 
-// GetSnapshots fetches real price + hash rate + transaction count.
+// GetSnapshots fetches real price + hash rate + transaction count + stablecoin supply.
 func (r *RealCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapshot, error) {
 	snaps := make([]pluginrunner.Snapshot, 0, 3)
 
@@ -137,8 +139,15 @@ func (r *RealCollector) GetSnapshots(ctx context.Context) ([]pluginrunner.Snapsh
 		})
 	}
 
+	// USD stablecoin supply from DefiLlama
+	if supply, supplyTime, err := r.stablecoins.GetLatestSupply(ctx); err != nil {
+		log.Warn().Err(err).Msg("DefiLlama stablecoin fetch failed; dropping " + MetricStablecoinSupply)
+	} else {
+		snaps = append(snaps, formatStablecoinSnapshots([]time.Time{supplyTime}, []float64{supply}, time.Now())...)
+	}
+
 	if len(snaps) == 0 {
-		return nil, fmt.Errorf("all crypto sources (CoinGecko, mempool, blockchain.com) failed")
+		return nil, fmt.Errorf("all crypto sources (CoinGecko, mempool, blockchain.com, DefiLlama) failed")
 	}
 	return snaps, nil
 }
@@ -225,6 +234,16 @@ func (r *RealCollector) GetSnapshotsForWindow(ctx context.Context, start, end ti
 		}
 		detectGaps("btc.ass.tx_count", txSnaps, start, end, 48*time.Hour)
 		snaps = append(snaps, txSnaps...)
+	}
+
+	// USD stablecoin supply history from DefiLlama (one document holds all days)
+	stTimes, stValues, err := r.stablecoins.GetSupplyHistory(ctx, start, end)
+	if err != nil {
+		log.Warn().Err(err).Msg("DefiLlama stablecoin history failed")
+	} else {
+		stSnaps := formatStablecoinSnapshots(stTimes, stValues, time.Now())
+		detectGaps(MetricStablecoinSupply, stSnaps, start, end, 48*time.Hour)
+		snaps = append(snaps, stSnaps...)
 	}
 
 	if len(snaps) == 0 {
