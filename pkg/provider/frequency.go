@@ -94,3 +94,28 @@ func StaleThreshold(freq string) (limit time.Duration, known bool) {
 		return 200 * 24 * time.Hour, false
 	}
 }
+
+// PollInterval 返回该频率下两次拉取之间的最短间隔（"多久去问一次上游"）。
+//
+// 插件的 ticker 仍按 DefaultInterval（约一小时）跳动，它只是调度的最小粒度；
+// 每条 series 是否真的去拉，由 PollSchedule 按本函数的结果判定。日频序列一天
+// 只发布一次，每小时拉一次纯属浪费配额。间隔取得比观测周期短，是为了把「上游
+// 已发布 → 本地可见」的延迟压在可接受范围：日频 ≤6h，周频与月频 ≤1 天。
+//
+// 频率不认识时返回一小时——与改造前的行为一致，宁可多拉也不漏拉。
+func PollInterval(freq string) (interval time.Duration, known bool) {
+	switch freq {
+	case FrequencyRealtime:
+		return 0, true
+	case FrequencyHourly:
+		return time.Hour, true
+	case FrequencyDaily:
+		return 6 * time.Hour, true
+	case FrequencyWeekly, FrequencyMonthly:
+		return 24 * time.Hour, true
+	case FrequencyQuarterly:
+		return 7 * 24 * time.Hour, true
+	default:
+		return time.Hour, false
+	}
+}

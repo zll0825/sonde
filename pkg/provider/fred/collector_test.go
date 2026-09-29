@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"sonde/pkg/model"
+	"sonde/pkg/pluginrunner"
 	"sonde/pkg/provider"
 )
 
@@ -421,6 +422,7 @@ func TestCollector_ReleaseGapDoesNotCountAsFailure(t *testing.T) {
 	if snaps, err := c.GetSnapshots(context.Background()); err != nil || len(snaps) != 1 {
 		t.Fatalf("first collect = %d %v, want one snapshot", len(snaps), err)
 	}
+	advanceClock(c, 25*time.Hour)
 	snaps, err := c.GetSnapshots(context.Background())
 	if err != nil {
 		t.Fatalf("release gap reported as failure: %v", err)
@@ -462,6 +464,7 @@ func TestCollector_OutageBeyondStaleThresholdIsAFailure(t *testing.T) {
 	if _, err := c.GetSnapshots(context.Background()); err != nil {
 		t.Fatalf("first collect: %v", err)
 	}
+	advanceClock(c, 7*time.Hour)
 	if _, err := c.GetSnapshots(context.Background()); err == nil {
 		t.Fatal("a daily series silent for 10 days must still be reported as a failure")
 	}
@@ -485,5 +488,86 @@ func TestCollector_BackfillWindowUnaffectedByFrequency(t *testing.T) {
 	if gotStart != wantStart.Format("2006-01-02") || gotEnd != wantEnd.Format("2006-01-02") {
 		t.Fatalf("backfill window = %s..%s, want %s..%s", gotStart, gotEnd,
 			wantStart.Format("2006-01-02"), wantEnd.Format("2006-01-02"))
+	}
+}
+
+// advanceClock moves the collector's clock forward so the poll schedule
+// treats the next GetSnapshots as a later tick.
+func advanceClock(c *Collector, d time.Duration) {
+	prev := c.now
+	c.now = func() time.Time { return prev().Add(d) }
+}
+
+func TestCollector_PollsEachSeriesByPublicationFrequency(t *testing.T) {
+	calls := map[string]int{}
+	c := testCollector(t, []Binding{
+		{MetricID: "us.mkt.ten_year_yield", SeriesID: "DGS10", UnitScale: 1, Frequency: "daily"},
+		{MetricID: "fed.ins.balance_sheet", SeriesID: "WALCL", UnitScale: 1, Frequency: "weekly"},
+		{MetricID: "us.mkt.cpi", SeriesID: "CPIAUCSL", UnitScale: 1, Frequency: "monthly"},
+	}, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls[req.URL.Query().Get("series_id")]++
+		return fredBodyAt(time.Now().Add(-24*time.Hour), "1"), nil
+	}))
+	base := time.Now()
+	at := func(offset time.Duration) {
+		t.Helper()
+		c.now = func() time.Time { return base.Add(offset) }
+		if _, err := c.GetSnapshots(context.Background()); err != nil {
+			t.Fatalf("collect at +%v: %v", offset, err)
+		}
+	}
+
+	// Hourly ticks for one day, with a little jitter on each tick.
+	for h := 0; h <= 24; h++ {
+		at(time.Duration(h)*time.Hour - time.Duration(h)*time.Second)
+	}
+	want := map[string]int{"DGS10": 5, "WALCL": 2, "CPIAUCSL": 2}
+	for series, n := range want {
+		if calls[series] != n {
+			t.Errorf("%s fetched %d times over 24h of hourly ticks, want %d (all calls: %v)", series, calls[series], n, calls)
+		}
+	}
+}
+
+func TestCollector_ForcedCollectionIgnoresSchedule(t *testing.T) {
+	calls := 0
+	c := testCollector(t, []Binding{
+		{MetricID: "us.mkt.cpi", SeriesID: "CPIAUCSL", UnitScale: 1, Frequency: "monthly"},
+	}, roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		return okFREDBody("3.2"), nil
+	}))
+	if _, err := c.GetSnapshots(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if snaps, err := c.GetSnapshots(context.Background()); err != nil || len(snaps) != 0 {
+		t.Fatalf("scheduled tick right after a poll = %d %v, want skip", len(snaps), err)
+	}
+	snaps, err := c.GetSnapshots(pluginrunner.WithForcedCollection(context.Background()))
+	if err != nil || len(snaps) != 1 {
+		t.Fatalf("forced collect = %d %v, want one snapshot", len(snaps), err)
+	}
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2 (initial + forced)", calls)
+	}
+}
+
+func TestCollector_FailedFetchRetriesNextTick(t *testing.T) {
+	calls := 0
+	c := testCollector(t, []Binding{
+		{MetricID: "us.mkt.ten_year_yield", SeriesID: "DGS10", UnitScale: 1, Frequency: "daily"},
+	}, roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			return &http.Response{StatusCode: http.StatusBadRequest, Body: io.NopCloser(strings.NewReader("bad")), Header: make(http.Header)}, nil
+		}
+		return okFREDBody("4.1"), nil
+	}))
+	if _, err := c.GetSnapshots(context.Background()); err == nil {
+		t.Fatal("first collect should fail")
+	}
+	advanceClock(c, time.Hour)
+	if snaps, err := c.GetSnapshots(context.Background()); err != nil || len(snaps) != 1 {
+		t.Fatalf("retry after failure = %d %v, want one snapshot", len(snaps), err)
 	}
 }
